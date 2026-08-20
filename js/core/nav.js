@@ -179,7 +179,13 @@ window.addEventListener('keydown', e => {
     }
   }
 });
+/* This listener is live from the moment nav.js runs, but syncBmScale only arrives
+   with ui/bookmarks.js, nearly forty files further down index.html — and a window
+   being created, shown or restored fires a resize inside that gap. refit and fit
+   are safe: core/page.js loads just ahead of this one. Same guard core/save.js
+   puts on the undo hooks, for the same reason. */
 window.addEventListener('resize', () => {
-  refit(); syncBmScale();
+  refit();
+  if(typeof syncBmScale === 'function') syncBmScale();
   requestAnimationFrame(() => document.querySelectorAll('#bkGrid .page, #grid .page').forEach(fit));
 });

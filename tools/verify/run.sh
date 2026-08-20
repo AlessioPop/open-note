@@ -11,6 +11,9 @@ rm -rf "$RUN"; mkdir -p "$RUN"
 cp -r "$SRC"/index.html "$RUN"/ 2>/dev/null
 [ -d "$SRC/js" ]  && cp -r "$SRC/js"  "$RUN"/
 [ -d "$SRC/css" ] && cp -r "$SRC/css" "$RUN"/
+# the type is local now — without this the run 404s fonts/fonts.css and sets the
+# whole app in fallback faces, which quietly changes every measurement
+[ -d "$SRC/fonts" ] && cp -r "$SRC/fonts" "$RUN"/
 cp "$HERE/probe.js" "$RUN"/
 
 # hold the load event open (the screenshot/exit fires on load) and add the probe

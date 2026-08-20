@@ -19,7 +19,13 @@ function refit(){
   refitRaf = requestAnimationFrame(() => {
     refitRaf = 0;
     document.querySelectorAll('#pageHost .page').forEach(fit);
-    repaintModels();                               // canvases are pixel-sized: redraw at the new scale
+    /* canvases are pixel-sized: redraw at the new scale. Guarded because this
+       body runs a frame after refit() was called, and the resize that starts it
+       can arrive while index.html is still working through its scripts —
+       items/model.js is fourteen of them below this one. Same reason
+       core/nav.js guards syncBmScale, and the frame's delay is what makes this
+       one show up on a cold start rather than every time. */
+    if(typeof repaintModels === 'function') repaintModels();
   });
 }
 

@@ -1,0 +1,64 @@
+{
+  "name": "open-note",
+  "productName": "Open Note",
+  "version": "0.1.0-alpha.1",
+  "description": "An artistic, page-based sketchbook for game devlogs.",
+  "author": "Alessio Popovic <alessiopopovic@gmail.com>",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "private": true,
+  "main": "desktop/main.js",
+  "desktopName": "open-note.desktop",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.alessiopopovic.opennote",
+    "productName": "Open Note",
+    "copyright": "Copyright © 2026 Alessio Popovic",
+    "artifactName": "${name}-${version}-${arch}.${ext}",
+    "directories": { "output": "dist" },
+    "files": [
+      "index.html",
+      "js/**/*",
+      "fonts/**/*",
+      "desktop/main.js",
+      "desktop/icon.png"
+    ],
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "desktop/icon.png",
+      "category": "Office",
+      "synopsis": "A page-based sketchbook for game devlogs",
+      "executableName": "open-note",
+      "syncDesktopName": true
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "desktop/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Open Note"
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "icon": "desktop/icon.png",
+      "category": "public.app-category.productivity"
+    }
+  }
+}

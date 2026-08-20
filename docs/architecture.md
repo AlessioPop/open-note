@@ -12,16 +12,30 @@ js/
   ui/               the tools around the book
   lib/              the pieces that owe nothing to this app at all
   boot.js           opens the last book — the last <script> on the page
+fonts/              the four families, carried locally — no network to set type
+desktop/            the Electron shell: a window around the app, never a part of it
 ```
 
 **One feature is one file.** A feature's markup, its behaviour, its toolbar buttons, the entry it puts in the add menu and its stylesheet all live together in that one file, and it announces itself to the rest of the app by calling `defineItem()`. Nothing in `core/` mentions a note, a plot or a deck of cards by name — it asks the registry.
 
 ## Four rules that keep it that way
 
-1. **No build step, and none coming.** No bundler, no `npm`, no dependencies. Double-clicking `index.html` has to open a working app.
+1. **No build step, and none coming.** No bundler, no transpiler, no dependencies — nothing in `js/` is generated, and double-clicking `index.html` has to open a working app. `package.json` does not change that: it belongs to the Electron shell in `desktop/`, which *wraps* the app and is never imported by it. Delete `desktop/`, `package.json` and `node_modules/` and everything still runs.
 2. **Classic `<script>` files, not ES modules.** A `type="module"` script *never executes* from `file://` — the browser blocks it — so `import` would mean the app only ran off a web server. Classic scripts run both ways, which is also what a phone's WebView will want later. They share one scope: a `const` or `function` in one file is visible in every file loaded after it, and (at run time) in the ones before it too. Nothing is on `window`.
 3. **Load order is the dependency graph.** `index.html` lists the files in the order they must load. Three positions are load-bearing: `core/registry.js` is first, because every feature calls into it while it loads; `ui/icons.js` sits just ahead of the items, so a feature can `defineIcon()` its own tile drawing as it loads; and `js/boot.js` is last, because it starts the app and everything must be registered by then. Everything between is grouped for readability.
 4. **A feature's CSS travels with the feature.** `addCSS()` collects it and `installItemCSS()` appends it all to the single `<style id="appcss">` at boot. That matters because **Export book** hands you a self-contained `.html` with one inlined stylesheet, read straight out of that tag — so styles in separate `.css` files would silently vanish from every exported book (a `file://` page cannot read an external sheet's rules).
+
+   `fonts/fonts.css` is the one sheet deliberately kept *out* of that tag. Its `@font-face` rules point at files next to it by relative path, which resolve to nothing once an exported book is somewhere else; an export links the families from Google instead (`ui/export.js`), which is what a file meant for sharing wants.
+
+## The desktop shell
+
+`desktop/main.js` is an Electron main process and nothing else — no feature knows it exists. Three things in it are load-bearing:
+
+- **The app is served from `opennote://app`, never `file://`.** Every `file://` page on a machine shares a single origin — literally `file://` — and therefore a single IndexedDB. **Export book** hands you a standalone `.html`; opened off the disk, it lands in the same storage bucket as the real library, alongside every other local page the user has ever opened. Firefox goes the other way and refuses IndexedDB on `file://` outright, which is why `tools/verify/` serves over HTTP rather than opening the file. A privileged standard scheme sidesteps both: the app gets a private, secure, stable origin of its own. **That scheme and host are the identity the user's books are filed under; changing either orphans them.**
+- **There is no application menu on Windows or Linux.** Every accelerator a default menu installs is one the page already wants: `Ctrl+Z`/`Ctrl+Shift+Z` are `core/nav.js`'s undo and redo, `Ctrl+A`/`C`/`X` belong to the table, and `Ctrl+R` would reload a notebook mid-sentence. macOS gets the smallest menu that keeps the clipboard working, deliberately without undo/redo roles, so `Cmd+Z` still reaches the page.
+- **Closing the window waits for `flush()`.** `core/save.js` debounces 600ms and hangs its last write on `beforeunload`, which cannot await. The shell holds the close, runs `flush()` to completion, then destroys the window — so the desktop app loses less than a browser tab does.
+
+A single-instance lock goes with them: two copies share one IndexedDB, `store.js` resolves a blocked open to `null`, and the second window looks fine right up until it loses the session.
 
 ## The module map
 

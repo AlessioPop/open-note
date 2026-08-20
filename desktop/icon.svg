@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Open Note — the desk, a page on it, and a strip of the red tape.
+       Drawn from the app's own palette: --desk, --paper, --line, --ink, and
+       WASHI[0] out of js/items/washi.js. The tape is straight, not tilted. -->
+  <defs>
+    <pattern id="tape" width="88" height="88" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="44" height="88" fill="#cf3a24"/>
+      <rect x="44" width="44" height="88" fill="#f2e2c4"/>
+    </pattern>
+    <filter id="lift" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="22" flood-color="#000" flood-opacity="0.42"/>
+    </filter>
+    <clipPath id="page"><rect x="168" y="120" width="688" height="784" rx="12"/></clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" rx="200" fill="#2a2e33"/>
+
+  <g filter="url(#lift)">
+    <rect x="168" y="120" width="688" height="784" rx="12" fill="#e9e6dd"/>
+  </g>
+
+  <g clip-path="url(#page)">
+    <!-- the margin rule -->
+    <line x1="262" y1="120" x2="262" y2="904" stroke="#c3cbc6" stroke-width="7"/>
+    <!-- the tape -->
+    <rect x="330" y="236" width="424" height="112" fill="url(#tape)"/>
+    <!-- the big condensed title, and a line of hand under it -->
+    <rect x="330" y="452" width="452" height="86" rx="4" fill="#191f24"/>
+    <rect x="330" y="600" width="392" height="28" rx="14" fill="#6b7076" opacity="0.55"/>
+    <rect x="330" y="672" width="330" height="28" rx="14" fill="#6b7076" opacity="0.42"/>
+    <rect x="330" y="744" width="242" height="28" rx="14" fill="#6b7076" opacity="0.28"/>
+  </g>
+</svg>

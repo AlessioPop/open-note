@@ -1,0 +1,100 @@
+# Turns a tag into downloadable builds.
+#
+#   git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1
+#
+# Each platform is built on its own runner — electron-builder cannot make a .dmg
+# from Linux, and Windows installers want Windows — then one job collects the
+# artifacts into a single GitHub Release. A tag containing -alpha or -beta is
+# published as a pre-release, so it never displaces a stable download.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:          # build without tagging, to check the pipeline
+
+permissions:
+  contents: write             # needed to create the Release
+
+jobs:
+  # Nothing gets built until the shell has been driven and checked. tools/verify/
+  # desktop.sh opens the real app in Electron and exits non-zero on any FAIL.
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Ensure a virtual display
+        run: command -v xvfb-run || (sudo apt-get update -qq && sudo apt-get install -y xvfb)
+
+      - name: Drive the desktop app
+        run: ./tools/verify/desktop.sh
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-report
+          path: tools/verify/run-desktop/report.txt
+          if-no-files-found: warn
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false        # a broken .dmg should not hide a working .exe
+      matrix:
+        include:
+          - { os: ubuntu-latest,  target: linux }
+          - { os: windows-latest, target: win }
+          - { os: macos-latest,   target: mac }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Package
+        run: npm run dist:${{ matrix.target }} -- --publish never
+        env:
+          # These are unsigned alpha builds. Without this, electron-builder hunts
+          # for a signing identity on macOS and fails the job when it finds none.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            dist/*.AppImage
+            dist/*.exe
+            dist/*.dmg
+
+  release:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}

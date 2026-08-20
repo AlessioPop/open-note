@@ -4,9 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Open Note</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Caveat:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<!-- The four families live in fonts/, so the app sets type with no network at
+     all. Not folded into <style id="appcss">: ui/export.js copies that tag into
+     every exported book, where these relative paths would resolve to nothing. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 <style id="appcss">
 :root{
   --desk:#2a2e33; --paper:#e9e6dd; --ink:#191f24; --soft:#6b7076;

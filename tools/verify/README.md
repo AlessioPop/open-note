@@ -1,13 +1,26 @@
 # Checking the sketchbook still works
 
-There is no test runner and no Node here. The app *is* the test: this drives it
-in a real headless Firefox and has the page **post its results back**, rather
-than trying to read assertions out of a screenshot.
+There is no test runner and no unit test. The app *is* the test, and there are
+two of these because the app has two lives:
+
+| | Drives | Covers |
+| --- | --- | --- |
+| `run.sh` | headless Firefox | the app itself — every feature |
+| `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
 tools/verify/run.sh              # checks the project this sits in
 tools/verify/run.sh /some/copy   # or any other copy of it
+
+tools/verify/desktop.sh          # needs `npm install` first
 ```
+
+Both print the same pass/fail report. `desktop.sh` also **exits non-zero** on a
+failure, because CI gates the release builds on it.
+
+`run.sh` needs no Node and never will. `desktop.sh` does — but only because
+Electron is Node; it still verifies by running the real app and asking it
+questions, not by loading modules.
 
 It prints a pass/fail count and every failure. 811 assertions, and they should
 all pass — if one doesn't, that is a real regression.
@@ -131,6 +144,47 @@ all pass — if one doesn't, that is a real regression.
 - that a huge sheet does not push the desk, and the toolbar with it, off screen;
 - **Export book for real** — the blob is intercepted and checked for every
   feature's styles.
+
+## The desktop shell — `desktop.sh`
+
+Five phases, each its own process and its own throwaway `userData`, so a run
+never touches the books in `~/.config/Open Note`. It requires the real
+`desktop/main.js` rather than reimplementing it, so a bug in the shell fails the
+run.
+
+- **boot** — the page is served from `opennote://app` and not `file://`, the
+  context is secure, IndexedDB really opens rather than falling through to
+  `store.js`'s in-memory fallback, the library round-trips, `flush()` is both
+  reachable and resolves (the save-on-close hook depends on it), and all 24 item
+  types and the palette are there.
+- **persist** — boot runs twice against one profile and the book's id must come
+  back identical. A different id means the library was silently rebuilt, which is
+  data loss wearing a working app.
+- **book** — opens a book, zooms, turns a page and resizes, and requires a clean
+  console throughout. Then puts a real bookmark on the page and checks
+  `syncBmScale` restores the tab scale.
+- **offline** — every `http(s)` request is cancelled at the session, and the four
+  families must still load and *measure* as themselves.
+- **race** — a copy of the app with a `resize` fired in the gap between
+  `core/nav.js` and `ui/bookmarks.js`, holding rule 3 in
+  `docs/architecture.md` honest.
+
+### Four traps
+
+1. **Cut only `http(s)`/`ws`, never everything.** `protocol.handle` serves the
+   app through `net.fetch` on a `file://` URL underneath, so a blanket block in
+   `onBeforeRequest` cancels the app's own scripts — and the page half-loads
+   instead of failing, which reads as a font bug.
+2. **`document.fonts.check()` lies.** With no matching `@font-face` at all it
+   still answers `true`, because it reports what the text *can* be drawn with.
+   Use `document.fonts.load()` and check every face came back `loaded`.
+3. **Measure against `serif`, never `monospace`.** IBM Plex Mono has the same
+   advance width as the system mono face — 504px against 504px — so a mono
+   fallback measures identically whether the real font loaded or not.
+4. **The shelf is not a book.** With a library already on disk the app opens the
+   shelf, and a probe that stops there never renders a page. The load-order bug
+   above lived entirely in code that only runs with a book open, which is why
+   **book** is its own phase.
 
 ## The three traps
 
