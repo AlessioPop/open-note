@@ -131,7 +131,7 @@
         ['cube', 'solid'], ['sphere', 'solid'], ['torus', 'solid'],
         ['square', 'solid'], ['circle', 'solid'],
         ['pie', 'chart'], ['donut', 'chart'], ['bars', 'chart'], ['stack', 'chart'],
-        ['washi', 'washi'], ['sticker', 'sticker']
+        ['washi', 'washi'], ['sticker', 'sticker'], ['molecule', 'molecule'], ['ptable', 'ptable']
       ];
       for (var i = 0; i < kinds.length; i++) {
         var kind = kinds[i][0], want = kinds[i][1];
@@ -170,7 +170,7 @@
         Object.keys(ADD_KINDS).filter(function (k) { return kinds.indexOf(k) < 0; }).join(','));
       openQuickMenu(320, 180);
       ok('palette: opens', Q('#palette').classList.contains('open'));
-      ok('palette: five shelves', QA('#palTabs .ptab').length === 5,
+      ok('palette: six shelves', QA('#palTabs .ptab').length === 6,
         QA('#palTabs .ptab').length + ' tabs');
       setShelf('write');
       var tiles = QA('#palGrid .ptile');
@@ -2682,6 +2682,7 @@
       ok('appcss: knows the deck', !!s && s.textContent.indexOf('.deck') >= 0);
       ok('appcss: knows the table', !!s && s.textContent.indexOf('.tgrid') >= 0);
       ok('appcss: knows the nodes', !!s && s.textContent.indexOf('svg.nwires') >= 0);
+      ok('appcss: knows the molecule', !!s && s.textContent.indexOf('.molsvg') >= 0);
     });
 
     /* ---- ink, layers, pages ---- */
@@ -3001,7 +3002,7 @@
         ok('export: produced a file', html.length > 5000, html.length + ' bytes');
         ok('export: is a whole document', /^<!DOCTYPE html>/i.test(html));
         /* the styles every feature contributed have to be in there */
-        ['.item', '.st-title', '.note', '.ck', '.tgrid', '.mplot', '.deck', '.msolid', '.shortcut',
+        ['.item', '.st-title', '.note', '.ck', '.tgrid', '.mplot', '.deck', '.msolid', '.molsvg', '.shortcut',
          '.washi', '.stk', '.math'].forEach(function (k) {
           ok('export: carries ' + k + ' styles', html.indexOf(k) > 0);
         });
@@ -3180,6 +3181,229 @@
         Q('#stage').offsetHeight + ' vs ' + innerHeight);
       ok('canvas: a nib is still a nib on a huge sheet', pgK() < 0.3 && pgK() > 0, pgK());
       ok('canvas: and you can pull back far enough to see it all', zMin() < 0.05, zMin());
+    });
+
+    /* ---- chemistry: the library, the molecule and the periodic table ---- */
+    await stage('chemistry', async function () {
+      var page = activePage();
+      page.items = []; await render();
+      /* the keys find the molecule under the pointer, so the whole sheet must be on screen */
+      fitToDesk(true); await sleep(150);
+      ok('chem: a science shelf with two tiles', !!TOOL_CATS.science && palTools('science').length === 2,
+        palTools('science').length + ' tiles');
+      /* the library, in brief — its own battery is longer */
+      ok('chem: 118 elements', CHEM_EL.length === 119);
+      ok('chem: iron is [Ar] 3d⁶ 4s²', chemConf(26).text === '[Ar] 3d⁶ 4s²', chemConf(26).text);
+      var caf = chemParse('Cn1cnc2c1c(=O)n(C)c(=O)n2C');
+      ok('chem: caffeine reads as C8H10N4O2 at 194.19',
+        chemFormula(caf).plain === 'C8H10N4O2' && Math.abs(chemMass(caf) - 194.19) < .02, chemFormula(caf).plain + ' ' + chemMass(caf));
+      ok('chem: benzene kekulised with three double bonds',
+        chemParse('c1ccccc1').bonds.filter(function (b) { return b.o === 2; }).length === 3);
+      ok('chem: the two Kekulé benzenes hash alike', chemHash(chemParse('C1=CC=CC=C1')) === chemHash(chemParse('c1ccccc1')));
+      ok('chem: ethanol round-trips through SMILES', chemHash(chemParse(chemWrite(chemParse('OCC')))) === chemHash(chemParse('CCO')));
+      ok('chem: aspirin is recognised', chemName(chemParse('CC(=O)Oc1ccccc1C(=O)O')) === 'aspirin');
+      var lay = chemLayout(chemParse('c1ccc2ccccc2c1'));
+      ok('chem: naphthalene lays out with every bond one long', lay.bonds.every(function (b) {
+        return Math.abs(Math.hypot(lay.atoms[b.b].x - lay.atoms[b.a].x, lay.atoms[b.b].y - lay.atoms[b.a].y) - 1) < .02; }));
+      var w = chemEmbed(chemLayout(chemParse('O')));
+      var hoh = chemAngle(w.atoms[1], w.atoms[0], w.atoms[2]);
+      ok('chem: water embeds bent at 104.5 ± 3', Math.abs(hoh - 104.5) < 3, hoh);
+      var v = chemVSEPR(chemParse('F[Xe](F)(F)F'), 1);
+      ok('chem: XeF4 is square planar AX4E2', v.shape === 'square planar' && v.ax === 'AX₄E₂', JSON.stringify(v));
+      ok('chem: the whole library parses and lays out', CHEM_LIB.every(function (e) {
+        var m = chemLayout(chemParse(e.smiles));
+        return !m.err.length && m.atoms.every(function (a) { return isFinite(a.x) && isFinite(a.y); }); }));
+
+      /* ---- the molecule, built the way a hand builds it ---- */
+      addItem('molecule', { x: 10, y: 10 }, page);
+      await sleep(120);
+      var it = page.items[page.items.length - 1];
+      ok('mol: lands empty, 2D, skeletal, straight',
+        it && it.type === 'molecule' && it.atoms.length === 0 && it.view === '2d' && it.sty === 'skel' && it.rot === 0, JSON.stringify(it));
+      var el = byType('molecule');
+      ok('mol: figure, svg, info strip and rail', !!el && !!el.querySelector('figure.mol') && !!el.querySelector('svg.molsvg') &&
+        !!el.querySelector('.molinfo') && !!el.querySelector('.molrail'));
+      select(it.id);
+      ok('mol: selected shows the rail', getComputedStyle(el.querySelector('.molrail')).display === 'flex');
+      ok('mol: the rail shows the pen', el.querySelector('.molrail .mrel b').textContent === MOL_EL);
+      var svg = function () { return el.querySelector('svg.molsvg'); };
+      var at = function (x, y) { var p = new DOMPoint(x * MOL_U, y * MOL_U).matrixTransform(svg().getScreenCTM()); return { clientX: p.x, clientY: p.y }; };
+      var ev = function (type, pt, id, extra) {
+        svg().dispatchEvent(new PointerEvent(type, Object.assign({ button: 0, pointerId: id, bubbles: true }, pt, extra || {}))); };
+      var hover = function (pt) { window.dispatchEvent(new PointerEvent('pointermove', { clientX: pt.clientX, clientY: pt.clientY, bubbles: true })); };
+      var key = function (k) { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); };
+      MOL_EL = 'C'; MOL_TOOL = 'draw'; MOL_BOND = 0;
+      ev('pointerdown', at(0, 0), 11); ev('pointerup', at(0, 0), 11);
+      await sleep(30);
+      ok('mol: a click places a carbon', it.atoms.length === 1 && it.atoms[0].e === 'C', JSON.stringify(it.atoms));
+      var a0 = it.atoms[0];
+      ev('pointerdown', at(a0.x, a0.y), 12); ev('pointermove', at(a0.x + .5, a0.y - .3), 12);
+      ev('pointermove', at(a0.x + .9, a0.y - .5), 12); ev('pointerup', at(a0.x + .9, a0.y - .5), 12);
+      await sleep(30);
+      ok('mol: a drag from an atom sprouts a bond to a new one', it.atoms.length === 2 && it.bonds.length === 1,
+        it.atoms.length + ' atoms ' + it.bonds.length + ' bonds');
+      var d01 = Math.hypot(it.atoms[1].x - it.atoms[0].x, it.atoms[1].y - it.atoms[0].y);
+      var ang = Math.atan2(it.atoms[1].y - it.atoms[0].y, it.atoms[1].x - it.atoms[0].x) / (Math.PI / 6);
+      ok('mol: the new bond is one long, on a 30° step', Math.abs(d01 - 1) < .02 && Math.abs(ang - Math.round(ang)) < .02, d01 + ' ' + ang);
+      var a1 = it.atoms[1];
+      ev('pointerdown', at(a1.x, a1.y), 13); ev('pointerup', at(a1.x, a1.y), 13);
+      await sleep(30);
+      ok('mol: a click on an atom with the same pen sprouts a chain', it.atoms.length === 3 && it.bonds.length === 2);
+      /* keys with the pointer over the atom */
+      var a2 = it.atoms[2];
+      hover(at(a2.x, a2.y)); key('o');
+      await sleep(30);
+      ok('mol: typing o over an atom makes it oxygen', it.atoms[2].e === 'O' && MOL_EL === 'O', it.atoms[2].e);
+      ok('mol: ethanol — C2H6O · 46.07', chemFormula(it).plain === 'C2H6O' && Math.abs(chemMass(it) - 46.07) < .01, chemFormula(it).plain);
+      var info = el.querySelector('.molinfo').textContent;
+      ok('mol: the strip says C2H6O · 46.07 g/mol · ethanol',
+        info.indexOf('C2H6O') >= 0 && info.indexOf('46.07') >= 0 && info.indexOf('ethanol') >= 0, info);
+      var otext = el.querySelector('.molsvg .ag[data-i="2"] text');
+      ok('mol: skeletal — the carbons are bare, the oxygen says OH',
+        el.querySelectorAll('.molsvg .ag.bare').length === 2 && !!otext && otext.textContent === 'OH', otext && otext.textContent);
+      key('c'); key('l');
+      await sleep(30);
+      ok('mol: c then l is chlorine — and the layer panel stayed shut', it.atoms[2].e === 'Cl' && !Q('#lpanel').classList.contains('open'), it.atoms[2].e);
+      await sleep(600); key('o'); await sleep(30);
+      ok('mol: back to oxygen', it.atoms[2].e === 'O');
+      var mid = at((it.atoms[1].x + it.atoms[2].x) / 2, (it.atoms[1].y + it.atoms[2].y) / 2);
+      hover(mid); key('2');
+      await sleep(30);
+      ok('mol: 2 over a bond makes it double — acetaldehyde, C2H4O', it.bonds[1].o === 2 && chemFormula(it).plain === 'C2H4O', chemFormula(it).plain);
+      key('1'); await sleep(30);
+      MOL_BOND = 0;
+      ev('pointerdown', mid, 14); ev('pointerup', mid, 14); await sleep(30);
+      ok('mol: a click on a single bond with the single pen makes it double', it.bonds[1].o === 2, it.bonds[1].o);
+      ev('pointerdown', mid, 15); ev('pointerup', mid, 15); ev('pointerdown', mid, 16); ev('pointerup', mid, 16); await sleep(30);
+      ok('mol: …then triple, then single again', it.bonds[1].o === 1, it.bonds[1].o);
+      hover(at(it.atoms[2].x, it.atoms[2].y)); key('-'); await sleep(30);
+      ok('mol: − over an atom charges it, and the formula carries the charge', it.atoms[2].q === -1 && chemFormula(it).plain === 'C2H5O-', chemFormula(it).plain);
+      key('+'); await sleep(30);
+      for (var q = 0; q < 4; q++) molSprout(it, 0, 'C', 1, 0);
+      molEdit(it, el, page);
+      ok('mol: a five-bonded carbon wears the red halo', chemOver(it, 0) && !!el.querySelector('.molsvg .mbad title'));
+      ok('mol: the window grew and the item slid with it', it.box.w > 5 && Math.abs(parseFloat(el.style.left) - it.x) < 1e-3, it.box.w + ' ' + el.style.left + ' ' + it.x);
+      var nBefore = it.atoms.length;
+      hover(at(it.atoms[3].x, it.atoms[3].y)); key('Delete'); await sleep(30);
+      ok('mol: Delete over an atom takes that atom, not the item', it.atoms.length === nBefore - 1 && page.items.length === 1, it.atoms.length + ' of ' + nBefore);
+      /* rings */
+      page.items = []; await render();
+      addItem('molecule', { x: 10, y: 10 }, page); await sleep(120);
+      it = page.items[page.items.length - 1]; el = byType('molecule'); select(it.id);
+      molRingAt(it, MOL_RINGS[0], 0, 0); molEdit(it, el, page);
+      ok('mol: a benzene ring — 6 atoms, 6 bonds, 3 double, C6H6',
+        it.atoms.length === 6 && it.bonds.length === 6 && it.bonds.filter(function (b) { return b.o === 2; }).length === 3 &&
+        chemFormula(it).plain === 'C6H6', chemFormula(it).plain);
+      molRingOnBond(it, MOL_RINGS[0], 0); molEdit(it, el, page);
+      ok('mol: benzene fused on a bond is naphthalene — 10 atoms, 11 bonds, C10H8',
+        it.atoms.length === 10 && it.bonds.length === 11 && chemFormula(it).plain === 'C10H8' && chemName(it) === 'naphthalene',
+        it.atoms.length + '/' + it.bonds.length + ' ' + chemFormula(it).plain + ' ' + chemName(it));
+      ok('mol: nobody over-valent after the fuse', it.atoms.every(function (a, i) { return !chemOver(it, i); }));
+      MOL_TOOL = 'ring'; MOL_RING = 1;
+      var a5 = it.atoms[5];
+      ev('pointerdown', at(a5.x, a5.y), 17); ev('pointerup', at(a5.x, a5.y), 17); await sleep(30);
+      ok('mol: the ring tool on an atom hangs a cyclohexane off it', it.atoms.length === 15 && it.bonds.length === 17, it.atoms.length + '/' + it.bonds.length);
+      MOL_TOOL = 'draw';
+      /* the ⌕ box */
+      var askBtn = QA('#pageHost .item[data-type=molecule] .tools button').filter(function (b) { return b.textContent === '⌕'; })[0];
+      ok('mol: has the ⌕ button', !!askBtn);
+      askBtn.click(); await sleep(60);
+      ok('mol: the ask box opens', Q('#molask').classList.contains('open'));
+      Q('#molask input').value = 'caf'; Q('#molask input').dispatchEvent(new Event('input'));
+      ok('mol: it suggests caffeine', !!Q('#molask .molsug button') && Q('#molask .molsug button').dataset.n === 'caffeine');
+      molAskTake('caffeine'); await sleep(60);
+      ok('mol: taking caffeine draws it', it.atoms.length === 14 && chemName(it) === 'caffeine' && !MOL_ASK, it.atoms.length + ' ' + chemName(it));
+      ok('mol: the strip names it', el.querySelector('.molinfo').textContent.indexOf('caffeine') >= 0);
+      it.sty = 'cond'; molRepaint(el, it);
+      var c0 = el.querySelector('.molsvg .ag[data-i="0"] text');
+      ok('mol: condensed labels every carbon', el.querySelectorAll('.molsvg .ag.bare').length === 0 && !!c0 && c0.textContent.indexOf('CH') === 0, c0 && c0.textContent);
+      it.sty = 'lewis'; molRepaint(el, it);
+      ok('mol: Lewis draws the hydrogens and the lone pairs',
+        el.querySelectorAll('.molsvg text.lh').length === 10 && el.querySelectorAll('.molsvg circle.lpd').length >= 8,
+        el.querySelectorAll('.molsvg text.lh').length + ' H, ' + el.querySelectorAll('.molsvg circle.lpd').length + ' dots');
+      it.sty = 'skel'; molRepaint(el, it);
+      /* ---- 3D ---- */
+      molView(el, it, page, '3d'); await sleep(30);
+      ok('mol: 3D draws a ball for every atom, hydrogens included', el.querySelectorAll('.molsvg.m3d circle.ball').length === 24,
+        el.querySelectorAll('.molsvg.m3d circle.ball').length);
+      ok('mol: 3D bonds as half-sticks', el.querySelectorAll('.molsvg.m3d line.stick').length >= 50);
+      ok('mol: no NaN in 3D', svg().innerHTML.indexOf('NaN') < 0);
+      ok('mol: the rail steps aside in 3D', getComputedStyle(el.querySelector('.molrail')).display === 'none');
+      var emb = molEmb(it), worst = 0;
+      emb.bonds.forEach(function (b, k) {
+        var A = emb.atoms[b.a], B = emb.atoms[b.b];
+        var d0 = (CHEM_SYM[A.e].rcov + CHEM_SYM[B.e].rcov) * (emb.arom.has(k) ? .93 : b.o === 2 ? .87 : b.o === 3 ? .78 : 1);
+        worst = Math.max(worst, Math.abs(chemDist(A, B) - d0) / d0); });
+      ok('mol: caffeine bonds within 12% of the book', worst < .12, worst);
+      var drift = 0;
+      emb.atoms.forEach(function (a) { if (a.src < 0) return; var d = it.atoms[a.src]; drift = Math.max(drift, Math.hypot(a.x / 1.45 - d.x, a.y / 1.45 - d.y)); });
+      ok('mol: the 3D keeps the face of the drawing', drift < .6, drift);
+      var r = svg().getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, y0 = it.yaw || 0;
+      ev('pointerdown', { clientX: cx, clientY: cy }, 21); ev('pointermove', { clientX: cx + 40, clientY: cy + 5 }, 21);
+      ev('pointermove', { clientX: cx + 80, clientY: cy + 10 }, 21); ev('pointerup', { clientX: cx + 80, clientY: cy + 10 }, 21);
+      /* read at once: synthetic moves have no time between them, so the flick that follows is absurd — and clamped */
+      ok('mol: dragging turns it', Math.abs((it.yaw || 0) - y0 - .88) < .01, it.yaw);
+      molStopSpin(it); await sleep(30);
+      var near = el._molPts[0], pp = new DOMPoint(near.x, near.y).matrixTransform(svg().getScreenCTM());
+      ev('pointerdown', { clientX: pp.x, clientY: pp.y }, 22); ev('pointerup', { clientX: pp.x, clientY: pp.y }, 22); await sleep(30);
+      var pkm = el.querySelector('.molinfo .pkm');
+      ok('mol: a click picks an atom and names its shape',
+        MOL_PICK && MOL_PICK.id === it.id && MOL_PICK.atoms.length === 1 && !!pkm && /tetrahedral|trigonal/.test(pkm.textContent), pkm && pkm.textContent);
+      var z0 = it.zoom || 1;
+      svg().dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
+      ok('mol: the wheel scales it', (it.zoom || 1) > z0);
+      var z1 = it.zoom;
+      svg().dispatchEvent(new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, bubbles: true, cancelable: true }));
+      ok('mol: ctrl+wheel is the desk’s', it.zoom === z1);
+      it.lp = 1; it.lab = 1; molRepaint(el, it);
+      ok('mol: lone pairs and labels draw', el.querySelectorAll('.molsvg circle.lp3').length >= 8 && el.querySelectorAll('.molsvg text.lb3').length >= 14,
+        el.querySelectorAll('.molsvg circle.lp3').length + ' ' + el.querySelectorAll('.molsvg text.lb3').length);
+      it.s3 = 'fill'; molRepaint(el, it);
+      ok('mol: space-filling has no sticks', el.querySelectorAll('.molsvg line.stick').length === 0 && el.querySelectorAll('.molsvg circle.ball').length === 24);
+      it.s3 = 'ball'; it.lp = 0; it.lab = 0;
+      addItem('molecule', { x: 50, y: 50 }, page); await sleep(120);
+      var it2 = page.items[page.items.length - 1], m2 = chemFrom('O');
+      it2.atoms = m2.atoms; it2.bonds = m2.bonds; it2.view = '3d'; it2.box = molBox(it2);
+      await render(); await sleep(60);
+      var ids = QA('#pageHost radialGradient').map(function (g) { return g.id; });
+      ok('mol: gradient ids are unique across the page', ids.length > 0 && new Set(ids).size === ids.length, ids.join(','));
+      var st = buildPage(page, false, {});
+      var sm = st.querySelectorAll('.item[data-type=molecule]');
+      ok('static: both molecules build', sm.length === 2);
+      ok('static: a picture, no rail, no buttons', !!sm[0].querySelector('svg.molsvg') && !sm[0].querySelector('.molrail') && !sm[0].querySelector('button'));
+      ok('static: the 3D picture is there too', sm[0].querySelectorAll('circle.ball').length === 24, sm[0].querySelectorAll('circle.ball').length);
+      /* ---- the periodic table ---- */
+      page.items = []; await render();
+      addItem('ptable', { x: 10, y: 10 }, page); await sleep(120);
+      var pt = page.items[page.items.length - 1], pel = byType('ptable');
+      ok('ptable: lands straight with carbon chosen', pt && pt.type === 'ptable' && pt.el === 6 && pt.rot === 0);
+      ok('ptable: 118 cells', pel.querySelectorAll('.ptc').length === 118);
+      ok('ptable: the facts say Carbon', pel.querySelector('.ptfacts').textContent.indexOf('Carbon') >= 0);
+      /* the grid once wore the class `page` and inherited the paper's height — every row stretched */
+      var ptRow = parseFloat(getComputedStyle(pel.querySelector('.ptgrid')).gridTemplateRows), ptCell = pel.querySelector('.ptc[data-z="3"]').getBoundingClientRect().height;
+      ok('ptable: the rows are as tall as the cells', ptCell > 0 && ptRow < ptCell * 1.8, ptRow + ' vs ' + ptCell);   // stretched, they were 2.7×
+      var ne = pel.querySelector('.ptc[data-z="10"]'), nr = ne.getBoundingClientRect();
+      ne.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 31, clientX: nr.left + 3, clientY: nr.top + 3, bubbles: true }));
+      window.dispatchEvent(new PointerEvent('pointerup', { button: 0, pointerId: 31, clientX: nr.left + 3, clientY: nr.top + 3, bubbles: true }));
+      await sleep(30);
+      ok('ptable: a tap on neon chooses it', pt.el === 10 && pel.querySelector('.ptfacts').textContent.indexOf('Neon') >= 0, pt.el);
+      ok('ptable: cerium sits on the row under the gap', pel.querySelector('.ptc[data-z="58"]').style.gridArea.indexOf('9') === 0,
+        pel.querySelector('.ptc[data-z="58"]').style.gridArea);
+      var sp = buildPage(page, false, {});
+      ok('static: the table prints with its facts and no buttons',
+        sp.querySelectorAll('.ptc').length === 118 && sp.querySelector('.ptfacts').textContent.indexOf('Neon') >= 0 && !sp.querySelector('button'));
+      /* the picker */
+      var got = null, anchor = Q('#qaddBtn');
+      openElementPicker(anchor, function (sym) { got = sym; }, 'C'); await sleep(60);
+      ok('picker: opens with carbon marked', Q('#ptpick').classList.contains('open') && !!Q('#ptpick .ptc.cur[data-z="6"]'));
+      Q('#ptpick .ptc[data-z="17"]').click(); await sleep(60);
+      ok('picker: one click takes chlorine and closes', got === 'Cl' && PT_ANCHOR === null, got + ' ' + PT_ANCHOR);
+      openElementPicker(anchor, function (sym) { got = sym; }, 'C'); await sleep(30);
+      key('b'); key('r');
+      ok('picker: typing b r walks to bromine', !!Q('#ptpick .ptc.hot[data-z="35"]'));
+      key('Enter'); await sleep(30);
+      ok('picker: Enter takes it', got === 'Br', got);
+      page.items = []; await render();
     });
 
     ok('probe finished', true);

@@ -21,7 +21,7 @@ python3 - "$RUN/index.html" <<'PY'
 import sys, io
 p = sys.argv[1]
 s = io.open(p, encoding='utf-8').read()
-inject = ('<img src="/slow?ms=25000" alt="" style="position:fixed;left:-9999px;width:1px;height:1px">\n'
+inject = ('<img src="/slow?ms=45000" alt="" style="position:fixed;left:-9999px;width:1px;height:1px">\n'
           '<script src="probe.js"></script>\n')
 assert '</body>' in s, 'no </body> in index.html'
 s = s.replace('</body>', inject + '</body>')

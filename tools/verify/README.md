@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature |
+| `run.sh` | headless Firefox | the app itself — every feature, 888 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,12 +22,12 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 811 assertions, and they should
+It prints a pass/fail count and every failure. 888 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 59 script files load, in order;
+- nothing throws while the 62 script files load, in order;
 - the app boots, opens a book and draws a page;
 - every entry in the add menu adds the type it claims to;
 - every item type builds live, with a body and a toolbar;
@@ -142,6 +142,20 @@ all pass — if one doesn't, that is a real regression.
   bigger than the desk — where the desk moves the paper about underneath you;
 - that growing the paper leaves what is on it where the eye had it;
 - that a huge sheet does not push the desk, and the toolbar with it, off screen;
+- **chemistry**: that the library parses and names itself, that ethanol built
+  by a click, a drag, a chain tap and keystrokes reads `C₂H₆O` at 46.07, that
+  `c` then `l` relabels to chlorine and `2` doubles the bond under the mouse,
+  that a bond click cycles its order, that `-` charges an atom, that a carbon
+  with five bonds wears the red halo, that the window slides so the drawing
+  stays put as it grows, that rings go on empty paper, fuse on a bond and hang
+  from an atom, that `caffeine` in the ⌕ box arrives laid out, that the
+  condensed and Lewis styles draw, that the 3D view has every ball with no
+  `NaN`, bonds within 12 % and no drift, that a drag turns it and a click
+  picks a shape, that the wheel sizes it, that labels, lone pairs and
+  space-fill draw with gradient ids unique to the item, that it all builds
+  statically, that the periodic table has 118 cells with rows no taller than
+  its cells, taps neon and puts cerium on the f-block row, and that the picker opens, takes a click on Cl
+  and `b` `r` `Enter` as bromine;
 - **Export book for real** — the blob is intercepted and checked for every
   feature's styles.
 
@@ -195,6 +209,8 @@ Each of these cost real time before the harness worked:
    shelf instead of a book and nothing matches.
 2. **The screenshot fires on `load`, which beats any async probe.** `run.sh`
    holds `load` open by serving a deliberately slow subresource (`/slow?ms=`).
+   The hold is 45 s; the probe takes ~30 s of page time. If it ever outgrows
+   the hold, the symptom is "NO REPORT — the probe never ran", not a failure.
 3. **App-level `let`/`const` are not on `window`.** From `probe.js` they are
    reachable as bare identifiers only — `typeof index !== 'undefined' && index`,
    never `window.index`.

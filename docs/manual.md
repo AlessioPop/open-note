@@ -43,6 +43,8 @@ Things scale to the paper they are on: a sticky note dropped on a canvas is the 
 | Pie chart / Donut / Bar chart / Stacked bar | Charts of named shares, typed straight into their own legend — a pie in four looks (flat, donut, 3D, hand-sketched), up to ten slices in six colour palettes, labels you can flip between four placements or simply drag where you want them; see **Charts** below |
 | Atlas | A contents block that draws itself from your bookmarks — every bookmark a chapter, every Heading under it a sub-header; click a line to flip there. The first bookmark you make puts one on the starting page |
 | Cube / Sphere / Torus / Square / Circle | Wireframe shapes to draw over — turn them, size them, set their measurements (a torus's radii, a sweep down to a part shape), fade them back under your pen; the square and circle lie flat and reshape by their corners; see **Shapes to draw over** below |
+| Molecule | A molecule drawn the way a chemist draws one — skeletal, condensed or Lewis — with its formula, mass and name under it, a periodic table a click away, a name-or-SMILES box, and a 3D view you can turn and measure; see **Chemistry** below |
+| Periodic table | The table on the page as a reference card — tap an element for its number, mass, electronegativity and configuration |
 | Picture | Taped-in photos with captions. Also: drag-and-drop or just **paste** a screenshot (Ctrl+V) |
 | Video | YouTube / Vimeo links, or a video file from disk (stored inside the book) |
 | 3D model | A `.obj` out of Blender — mesh, materials and textures — in a little window you can turn it in |
@@ -278,6 +280,31 @@ They are drawn as construction lines and nothing else: **no frame, no background
 - The stylus draws over them the way it draws over photos — ink is caught by a sheet above the whole page — so a guide never takes the pen off you.
 - It is arithmetic and SVG, with no mesh and no WebGL behind it, so a guide costs nothing, travels in **backups**, and comes out in print, the overview and exported books exactly as you left it.
 
+## Chemistry
+
+A **Molecule** goes on the page the way a chemist draws one: skeletal, the carbons implied at the corners, heteroatoms written out with their hydrogens, and nothing behind it but the paper. Under the drawing a small line says what you have — **formula, molar mass, and the name** when the book knows it (about two hundred common molecules, from water to caffeine; two things drawn apart read `ethanol + water`). Add one from the palette's **Science** shelf, or press Space and type `mol`.
+
+**Drawing.** Click the molecule once to pick it up; click again and the pen is yours, with a glass rail down its left edge:
+
+- **The element chip** is what the pen draws. Click it for the **periodic table** — a popover where a single click on any element takes it; while it is open, typing a symbol walks to the element and `Enter` takes it. Or skip the table: with the mouse over the molecule, **type the symbol** — `n`, `o`, `s`, `f`, `c` then `l` for chlorine, `b` then `r` for bromine — and the pen changes; over an atom, that atom changes too.
+- **Click empty paper** for an atom. **Drag from an atom** and a bond sprouts where you point, snapping to the angles a chemist would use, with a ghost showing where it will land; **let go on another atom** and it bonds to that one instead. **Click an atom** of the element you are holding and a new bond grows into the widest gap — tapping the end of a chain lengthens it. Click it holding a different element and it is relabelled.
+- **Click a bond** to step it single → double → triple; `1` `2` `3` on the keys do the same under the mouse, and the rail's bond button also offers a **wedge and a hash** for stereochemistry.
+- **Rings**: benzene first, then 6, 5, 3, 4, 7 and 8 — the ring button steps through them. Click empty paper for a free ring, **a bond to fuse** a ring onto it (naphthalene is two clicks), or **an atom to hang one** from it.
+- **Charge** puts + or − on the atom you click (click the rail button again to flip it; `+` and `-` on the keys do the same under the mouse). The **eraser** takes atoms and bonds away, and so does `Delete` under the mouse. **Select** (↖) picks atoms singly or with a box and drags them about; `Esc` lets go of them.
+- An atom asked to hold more than it can — a carbon with five bonds — wears a **red halo** until it is fixed. That is a note, not a rule: the page takes whatever you draw.
+- Hydrogens are implied the way a textbook implies them; draw one with `h` if you want it written.
+- The drawing grows its window as it grows, and the window slides under it so what you have already drawn stays where it was.
+
+**⌕ asks for one by name.** Type `aspirin`, `glucose`, `caffeine` — or a SMILES string like `CC(=O)O` — and it is drawn and laid out. **⟲** tidies anything you drew by hand into the same layout. **◐** steps the style: skeletal → **condensed** (every carbon written, `CH₃`, `OH`) → **Lewis** (every hydrogen drawn and the lone pairs as dots). **ƒ** hides and shows the formula line. **✎** turns the heteroatom colours off for a plain-ink drawing, and **Copy as SMILES** puts the line notation on the clipboard — paste it into the ⌕ box of any other molecule.
+
+**3D.** Press **3D** and the drawing becomes the molecule in space — the same molecule, with its hydrogens materialised and the geometry worked out: water bent at 104.5°, methane a tetrahedron, cyclohexane a chair, ethane staggered, a benzene ring flat, your wedges and hashes honoured. **Drag to turn it, and let go with speed and it keeps turning**, dying away on its own; a fresh grab takes it back at once. The wheel sizes it, a double-click brings it home, ⟲ goes back to the starting view, and **◐** cycles **ball-and-stick**, **sticks** and **space-filling**. **2D** brings the drawing back — nothing is lost either way, because the 3D view is worked out from the drawing rather than stored.
+
+**Click atoms to measure.** One atom says its shape — `bent · sp³ · AX₂E₂ · 104.5°` — two give a **distance** in ångströms, three an **angle**, four a **dihedral**; `Esc` clears the picks. **✎** adds element labels, shows the **lone pairs** where they sit in space, has a **keep turning** switch for a molecule you want to watch while you write, and a size slider.
+
+The **Periodic table** is the other tool on the shelf: the table on the page as a reference card, the categories in muted tints, and a tap on any element writes its number, mass, electronegativity and electron configuration along its foot.
+
+Everything here is arithmetic and SVG — no library, no server, nothing downloaded — so molecules travel in backups, print, the overview and exported books exactly as drawn.
+
 ## Blender models (.obj)
 
 Pick **3D model** in the add menu, or just **drag a `.obj` onto the page**. A model doesn't get taped in like a photo — it arrives in **its own little application window**: title bar with the file name and triangle count, chunky bevelled edges, the viewport sunk into the frame, and the caption running along the bottom as a status bar. The title bar lights up when the window is the one you're working on, exactly like a desktop that has been running since 1997. Every colour in it is mixed from the book's own theme, so it turns tan on Kraft and charcoal on Darkroom along with everything else. **▣** takes the frame off if you want the bare viewport.
@@ -399,7 +426,7 @@ In **print and in the overview** a deck shows the card it is on, question side u
 
 Press **Space** (or **Shift+A**, or right-click the paper) and the palette warps out of your cursor, Blender-style — pick a tile and the item lands right where you invoked it. The same panel sits behind the **+ Add…** button in the toolbar.
 
-Everything that can go on a page is in it, sorted onto five shelves — **Write · Math · Media · Shapes · Decor** — each tool an icon with its name under it and a fuller sentence in its tooltip. The panel remembers the shelf you left it on, and the page actions (Bookmark / Clear page / Remove page) sit along its foot. `Esc` closes it.
+Everything that can go on a page is in it, sorted onto six shelves — **Write · Math · Science · Media · Shapes · Decor** — each tool an icon with its name under it and a fuller sentence in its tooltip. The panel remembers the shelf you left it on, and the page actions (Bookmark / Clear page / Remove page) sit along its foot. `Esc` closes it.
 
 **Or just type.** The search field has focus from the moment the panel opens, so hitting Space and typing `ma` finds Matrix, Marker and 3D model whatever shelf they live on — each wearing a small tag saying which. `Enter` takes the best match, and the arrow keys walk the grid.
 

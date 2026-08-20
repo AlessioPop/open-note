@@ -1,8 +1,8 @@
 /* Open Note — ui/palette.js
    the palette — Space, Shift+A, right-click, or + Add… in the toolbar.
 
-   One glass panel instead of a wall of buttons: five shelves along the top
-   (Write · Math · Media · Shapes · Decor), a grid of icon tiles for whichever
+   One glass panel instead of a wall of buttons: six shelves along the top
+   (Write · Math · Science · Media · Shapes · Decor), a grid of icon tiles for whichever
    shelf is open, a search field that looks across all of them, and the page
    actions along the foot. It is drawn entirely from the registry — every tile
    is a defineTool() some feature declared in its own file — so a new feature
@@ -11,6 +11,7 @@
 
 defineToolCat('write',  { label: 'Write',  icon: 'pencil',  order: 10 });
 defineToolCat('math',   { label: 'Math',   icon: 'sigma',   order: 20 });
+defineToolCat('science',{ label: 'Science',icon: 'flask',   order: 25 });
 defineToolCat('media',  { label: 'Media',  icon: 'image',   order: 30 });
 defineToolCat('shapes', { label: 'Shapes', icon: 'cube',    order: 40 });
 defineToolCat('decor',  { label: 'Decor',  icon: 'sparkle', order: 50 });
