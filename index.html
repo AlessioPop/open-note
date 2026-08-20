@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Open Note</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Caveat:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<style id="appcss">
+:root{
+  --desk:#2a2e33; --paper:#e9e6dd; --ink:#191f24; --soft:#6b7076;
+  --line:#c3cbc6; --accent:#cf3a24; --accent2:#2b7d8c; --edge:#cfc9bd;
+  --tape:rgba(210,200,175,.72);
+  --disp:'Barlow Condensed',Impact,'Haettenschweiler',sans-serif;
+  --body:'Newsreader',Georgia,serif;
+  --hand:'Caveat','Segoe Script',cursive;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+body[data-theme="dark"]{--desk:#0f1114;--paper:#262a2f;--ink:#e9e6df;--soft:#9aa0a6;--line:#3a4046;--accent:#e0653f;--accent2:#58b3c0;--edge:#1c2024;--tape:rgba(255,255,255,.10)}
+body[data-theme="blue"]{--desk:#08131f;--paper:#14304d;--ink:#e6f1fb;--soft:#93b4cf;--line:#2b5a80;--accent:#f2b544;--accent2:#7fd3ff;--edge:#0d2438;--tape:rgba(255,255,255,.12)}
+body[data-theme="kraft"]{--desk:#3a3128;--paper:#d9c39a;--ink:#2c2318;--soft:#7a6a52;--line:#c0aa80;--accent:#b83a1d;--accent2:#33656b;--edge:#c2ab80;--tape:rgba(255,255,255,.28)}
+*{box-sizing:border-box}
+/* The desk is painted on the root as well as on the body. The body's colour only
+   ever reached the window by propagating up to the canvas, and a canvas nobody
+   paints is a see-through window rather than a grey one. Both carry --desk, so
+   the desk still follows the theme and none of it looks any different. */
+html,body{height:100%}
+html{background:var(--desk)}
+body{margin:0;background:var(--desk);color:var(--ink);font-family:var(--body);overflow:hidden;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,select{font:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* ---------- chrome ---------- */
+.app{height:100dvh;display:flex;flex-direction:column}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 14px;background:rgba(0,0,0,.22);border-bottom:1px solid rgba(255,255,255,.06);color:#dfdcd4;flex-wrap:wrap}
+.brand{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;opacity:.62;white-space:nowrap;cursor:pointer}
+.brand:hover{opacity:.95}
+.bar .sp{flex:1}
+.btn{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:6px 9px;border:1px solid rgba(255,255,255,.14);border-radius:2px;opacity:.85;white-space:nowrap}
+.btn:hover{opacity:1;border-color:var(--accent);color:#fff}
+.btn.on{border-color:var(--accent);color:#fff}
+.btn.off{opacity:.25;pointer-events:none}
+.save{font-family:var(--mono);font-size:10px;letter-spacing:.12em;opacity:0;transition:opacity .4s;color:var(--accent2)}
+.save.show{opacity:.9}
+/* clip, not hidden: `hidden` makes the desk a scroll container, and a scroll
+   container quietly shifts an overflowing sheet about to keep its overflow
+   reachable — so the sheet's LAYOUT position changes when its transform does,
+   and every zoom lands somewhere else. `clip` clips the same way with none of
+   that. The explicit min-height/min-width go with it: a flex item only gives up
+   its content-sized minimum for `overflow:hidden` on its own, and without them
+   the desk grows to fit the sheet and pushes the toolbar off the screen. */
+.stage{flex:1;min-height:0;min-width:0;position:relative;display:grid;place-items:center;padding:14px;overflow:hidden;overflow:clip;background:radial-gradient(120% 90% at 50% 0%,rgba(255,255,255,.05),transparent 60%);cursor:grab}
+.stage.panning{cursor:grabbing}
+/* ---------- the book ---------- */
+.book{position:relative;perspective:2200px;transform-origin:50% 50%;transition:transform .12s ease-out;will-change:transform}
+.stage.panning .book,.book.nolerp{transition:none}
+.edges{position:absolute;top:6px;bottom:6px;width:14px;pointer-events:none}
+.edges.r{right:-14px}
+.edges.l{left:-14px}
+.edges i{position:absolute;top:0;bottom:0;width:1px;background:var(--edge);opacity:.5}
+#pageHost{position:relative;display:flex;gap:8px;align-items:flex-start}
+/* Page size lives in page units (--pw × --ph, 660×884 by default) and --upx is how
+   many pixels one unit is worth: a default page still fills the desk the way it
+   always did, and dragging the page bigger really does make more paper. */
+.page{position:relative;--upx:min(calc(min(72dvh,860px)/884),calc(min(94vw,660px)/660));
+  height:calc(var(--ph,884)*var(--upx)*var(--zoom,1));aspect-ratio:var(--pw,660)/var(--ph,884);
+  background:var(--paper);border-radius:2px 6px 6px 2px;box-shadow:0 22px 50px rgba(0,0,0,.45),0 2px 0 rgba(0,0,0,.25);transition:transform .34s cubic-bezier(.3,.7,.3,1);transform-origin:left center;overflow:hidden}
+.spread .page{--upx:min(calc(min(72dvh,860px)/884),calc(min(47vw,660px)/660))}
+/* drag the paper bigger — corner for both axes, edges for one. They sit just
+   off the page, on the desk, so they never get in the way of what's on it. */
+.pgrip{position:absolute;z-index:70;touch-action:none}
+.pgrip.c{right:-15px;bottom:-15px;width:20px;height:20px;cursor:nwse-resize}
+.pgrip.x{right:-13px;top:41%;bottom:41%;width:12px;cursor:ew-resize}
+.pgrip.y{bottom:-13px;left:41%;right:41%;height:12px;cursor:ns-resize}
+.pgrip::after{content:"";position:absolute;border-radius:3px;background:var(--accent2);opacity:.17;transition:opacity .15s,inset .12s}
+.pgrip.x::after{inset:0 4px}
+.pgrip.y::after{inset:4px 0}
+.pgrip.c::after{inset:2px;border-radius:0;opacity:.3;
+  background:repeating-linear-gradient(-45deg,transparent 0 2px,var(--accent2) 2px 3.5px)}
+.pgrip:hover::after,.pgrip.on::after{opacity:.85}
+.pgrip.x:hover::after,.pgrip.x.on::after{inset:0 3px}
+.pgrip.y:hover::after,.pgrip.y.on::after{inset:3px 0}
+.pgrip.c:hover::after,.pgrip.c.on::after{opacity:.8}
+.pgsize{position:absolute;right:0;bottom:-38px;z-index:71;display:none;white-space:nowrap;
+  font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:#fff;
+  background:rgba(0,0,0,.66);padding:4px 8px;border-radius:2px;pointer-events:none}
+#pageHost.resizing .pgsize{display:block}
+body.drawing .pgrip{display:none}
+.page.carry{overflow:visible;z-index:60}
+.page.flip-next{transform:rotateY(-14deg) translateX(-6px)}
+.page.flip-prev{transform:rotateY(14deg) translateX(6px)}
+.page::before{content:"";position:absolute;left:0;top:0;bottom:0;width:34px;z-index:3;pointer-events:none;background:linear-gradient(90deg,rgba(0,0,0,.20),rgba(0,0,0,.05) 55%,transparent)}
+.page.right::before{left:auto;right:0;background:linear-gradient(-90deg,rgba(0,0,0,.20),rgba(0,0,0,.05) 55%,transparent)}
+.page::after{content:"";position:absolute;left:16px;top:24px;bottom:24px;width:0;z-index:4;pointer-events:none;border-left:1px dashed rgba(0,0,0,.28)}
+.page.right::after{left:auto;right:16px}
+body[data-theme="dark"] .page::after,body[data-theme="blue"] .page::after{border-color:rgba(255,255,255,.20)}
+/* The grain is an SVG filter blended over the whole sheet — a page's worth of it
+   is nothing, but it is rasterised over whatever it covers, so on a canvas grown
+   to several thousand pixels it is the one thing that costs real paint. Hence
+   the switch, and hence a new canvas starting without it. */
+.grain{position:absolute;inset:0;pointer-events:none;opacity:.5;mix-blend-mode:multiply;z-index:2}
+body[data-theme="dark"] .grain,body[data-theme="blue"] .grain{mix-blend-mode:overlay;opacity:.35}
+body.nograin .grain{display:none}
+.surface{position:absolute;inset:0;z-index:1;touch-action:none}
+.surface[data-paper="grid"]{background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:calc(var(--scale)*26px) calc(var(--scale)*26px)}
+.surface[data-paper="ruled"]{background-image:linear-gradient(var(--line) 1px,transparent 1px);background-size:100% calc(var(--scale)*34px);background-position:0 calc(var(--scale)*40px)}
+.surface[data-paper="dots"]{background-image:radial-gradient(var(--line) 1.2px,transparent 1.3px);background-size:calc(var(--scale)*24px) calc(var(--scale)*24px)}
+.surface[data-paper="iso"]{background-image:repeating-linear-gradient(60deg,var(--line) 0 1px,transparent 1px calc(var(--scale)*28px)),repeating-linear-gradient(-60deg,var(--line) 0 1px,transparent 1px calc(var(--scale)*28px)),repeating-linear-gradient(0deg,var(--line) 0 1px,transparent 1px calc(var(--scale)*28px));opacity:.9}
+.folio{position:absolute;right:calc(var(--scale)*22px);bottom:calc(var(--scale)*16px);z-index:5;font-family:var(--mono);font-size:calc(var(--scale)*11px);letter-spacing:.16em;color:var(--soft);pointer-events:none}
+.slug{position:absolute;left:calc(var(--scale)*46px);top:calc(var(--scale)*16px);z-index:5;display:flex;gap:calc(var(--scale)*10px);font-family:var(--mono);font-size:calc(var(--scale)*10px);letter-spacing:.16em;text-transform:uppercase;color:var(--soft)}
+.slug span{outline:none;border-bottom:1px dotted transparent;min-width:2ch}
+.slug span:hover,.slug span:focus{border-color:var(--soft)}
+.empty{position:absolute;inset:auto 0 46% 0;text-align:center;font-family:var(--hand);color:var(--soft);font-size:calc(var(--scale)*24px);opacity:.55;pointer-events:none}
+/* ---------- items ---------- */
+.item{position:absolute;z-index:6;user-select:none;touch-action:none}
+.item.dragging{cursor:grabbing;filter:drop-shadow(0 10px 14px rgba(0,0,0,.3))}
+.item .tools{position:absolute;left:0;bottom:100%;margin-bottom:calc(var(--scale)*7px);display:none;gap:3px;background:var(--ink);border-radius:4px;padding:calc(var(--scale)*3px);z-index:20;align-items:center;box-shadow:0 calc(var(--scale)*4px) calc(var(--scale)*12px) rgba(0,0,0,.34)}
+.item.sel .tools{display:flex}
+.item .tools button{font-family:var(--mono);font-size:calc(var(--scale)*14px);line-height:1;white-space:nowrap;color:var(--paper);padding:calc(var(--scale)*6px) calc(var(--scale)*8px);border-radius:3px}
+.item .tools button:hover{background:var(--accent);color:#fff}
+.tools .hld{width:calc(var(--scale)*17px);height:calc(var(--scale)*17px);border-radius:50%;padding:0;margin:0 1px;border:1px solid rgba(255,255,255,.45)}
+.tools .hld:hover{border-color:#fff;background:inherit}
+.item.sel .body{box-shadow:0 0 0 1px var(--accent2)}
+.item .rs{position:absolute;right:calc(var(--scale)*-7px);bottom:calc(var(--scale)*-7px);width:calc(var(--scale)*14px);height:calc(var(--scale)*14px);border-radius:50%;background:var(--accent2);display:none;cursor:nwse-resize;z-index:20}
+.item.sel .rs{display:block}
+.item .rot{position:absolute;left:50%;bottom:100%;margin-bottom:calc(var(--scale)*46px);transform:translateX(-50%);width:calc(var(--scale)*15px);height:calc(var(--scale)*15px);border-radius:50%;background:var(--accent);display:none;cursor:grab;z-index:21;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.item .rot::after{content:"";position:absolute;left:50%;top:100%;width:1px;height:calc(var(--scale)*12px);background:var(--accent)}
+.item.sel .rot{display:block}
+.body{position:relative}
+figure{margin:0;background:var(--paper);padding:calc(var(--scale)*8px) calc(var(--scale)*8px) calc(var(--scale)*6px);box-shadow:0 8px 18px rgba(0,0,0,.28)}
+figure img{display:block;width:100%;height:auto}
+figure figcaption{font-family:var(--mono);font-size:calc(var(--scale)*10px);color:var(--soft);padding-top:calc(var(--scale)*6px);outline:none;letter-spacing:.04em}
+figure figcaption:empty::before{content:"caption";opacity:.35}
+.shield{position:absolute;inset:0;z-index:5;display:grid;place-items:end center;padding-bottom:calc(var(--scale)*8px)}
+.shield b{font-family:var(--mono);font-weight:400;font-size:calc(var(--scale)*9px);letter-spacing:.14em;white-space:nowrap;color:#fff;background:rgba(0,0,0,.55);padding:3px 8px;border-radius:2px;opacity:0;transition:opacity .2s}
+/* ---------- bottom toolbar ---------- */
+.tools-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;padding:10px;background:rgba(0,0,0,.28);border-top:1px solid rgba(255,255,255,.06);color:#e2dfd7}
+.nav{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;letter-spacing:.1em}
+.divider{width:1px;height:20px;background:rgba(255,255,255,.14);margin:0 4px}
+.zoomTag{font-family:var(--mono);font-size:11px;letter-spacing:.08em;min-width:44px;text-align:center;cursor:pointer}
+/* ---------- settings drawer ---------- */
+.drawer{position:fixed;top:0;right:-320px;bottom:0;width:300px;background:#1c1f23;color:#e6e3db;z-index:60;transition:right .25s ease;padding:18px;overflow:auto;border-left:1px solid rgba(255,255,255,.08);font-family:var(--mono)}
+.drawer.open{right:0}
+.drawer h3{font-family:var(--disp);font-size:22px;text-transform:uppercase;letter-spacing:.05em;margin:0 0 14px}
+.drawer .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.drawer input[type=color]{width:44px;height:26px;border:1px solid rgba(255,255,255,.2);background:none;padding:1px;border-radius:2px;cursor:pointer}
+.drawer input[type=range]{width:110px;accent-color:var(--accent)}
+.drawer select{background:#0f1114;color:#fff;border:1px solid rgba(255,255,255,.2);padding:5px;font-family:var(--mono);font-size:11px}
+.drawer .sec{margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1);font-size:10px;letter-spacing:.14em;opacity:.55;text-transform:uppercase}
+.drawer .wide{width:100%;text-align:center;margin-top:10px}
+.switch{position:relative;width:36px;height:20px;background:#3a4046;border-radius:10px;cursor:pointer;transition:background .2s}
+.switch.on{background:var(--accent)}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s}
+.switch.on::after{left:18px}
+/* ---------- modal ---------- */
+.modal{position:fixed;inset:0;background:rgba(8,10,12,.7);z-index:70;display:none;place-items:center}
+.modal.open{display:grid}
+.modal .card{background:#1c1f23;color:#e6e3db;padding:22px;width:min(92vw,420px);border:1px solid rgba(255,255,255,.1);font-family:var(--mono)}
+.modal h3{font-family:var(--disp);font-size:22px;text-transform:uppercase;margin:0 0 12px;letter-spacing:.05em}
+.modal input[type=url]{width:100%;background:#0f1114;color:#fff;border:1px solid rgba(255,255,255,.2);padding:9px;font-family:var(--mono);font-size:12px}
+.modal .hint{font-size:10px;letter-spacing:.08em;opacity:.55;margin:8px 0 14px;text-transform:uppercase}
+.modal .err{font-size:10px;letter-spacing:.08em;color:#e0653f;margin:8px 0 0;min-height:14px;text-transform:uppercase}
+.modal .acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px}
+
+/* Everything else lives with the feature that owns it, in js/items/ and
+   js/ui/, and is appended here at boot by installItemCSS(). One stylesheet
+   still comes out the other end, which is what Export book writes into the
+   file it hands you. */
+</style>
+</head>
+<body data-theme="graph">
+<svg width="0" height="0" style="position:absolute"><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter></svg>
+
+<div class="app">
+  <header class="bar">
+    <span class="brand" title="Your sketchbooks">Open Note</span>
+    <span class="save" id="saveTag">saved</span>
+    <span class="sp"></span>
+    <button class="btn" id="shelfBtn" title="Your sketchbooks">☰ Books</button>
+    <button class="btn" id="layBtn" title="Layers — pick one to work on, the rest go faint (L)">▤ Layers</button>
+    <button class="btn" id="spreadBtn" title="Single page / double spread">▢ Single</button>
+    <button class="btn" id="allBtn">All pages</button>
+    <button class="btn" id="setBtn">⚙ Menu</button>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="book" id="book">
+      <div class="edges l" id="edgeL"></div>
+      <div class="edges r" id="edgeR"></div>
+      <div id="pageHost"></div>
+    </div>
+  </div>
+
+  <div class="tools-bar">
+    <button class="btn" id="qaddBtn" title="Add to the page — Space, Shift+A or right-click">+ Add…</button>
+    <button class="btn" id="drawBtn" title="Stylus — draw straight onto the page, over anything (D)">✎ Draw</button>
+    <button class="btn" id="mathBtn" title="Maths — coordinate systems, functions, vectors and matrices (M)">∑ Math</button>
+    <span class="divider"></span>
+    <button class="btn" id="undoBtn" title="Undo the last thing you did (Ctrl+Z)">↶</button>
+    <button class="btn" id="redoBtn" title="Undo the undo (Ctrl+Y)">↷</button>
+    <span class="divider"></span>
+    <button class="btn" id="paperBtn" title="Paper of the current page">grid</button>
+    <span class="divider"></span>
+    <button class="btn" id="zoomOut">−</button>
+    <span class="zoomTag" id="zoomTag" title="Click to fit the page, or go back to 100%">100%</span>
+    <button class="btn" id="zoomIn">+</button>
+    <span class="divider"></span>
+    <div class="nav">
+      <button class="btn" id="prev">◀</button>
+      <span id="folioTag">1 / 1</span>
+      <button class="btn" id="next">▶</button>
+    </div>
+    <button class="btn" id="addPage">+ Page</button>
+  </div>
+</div>
+
+<div class="sheet" id="sheet"><h2>All pages</h2><div class="grid" id="grid"></div></div>
+
+<div class="shelf" id="shelf">
+  <div class="shelfHead">
+    <h2>Sketchbooks</h2>
+    <div class="sub">pick one up, or start something new</div>
+    <button class="btn" id="shelfClose" title="Back to the open book">✕ Back to book</button>
+  </div>
+  <div class="bkgrid" id="bkGrid"></div>
+</div>
+
+<!-- the palette — its shelves and tiles are drawn from the registry by
+     js/ui/palette.js; only the shell and the page actions live here, so the
+     buttons core wires up (#clearPage, #delPage, #bmarkBtn) exist at load -->
+<div class="palette glass" id="palette" role="dialog" aria-label="Add to the page">
+  <div class="psearch"><input id="palSeek" type="text" placeholder="Search the shelves" spellcheck="false" autocomplete="off"></div>
+  <div class="ptabs" id="palTabs" role="tablist"></div>
+  <div class="pgrid" id="palGrid"></div>
+  <div class="pfoot">
+    <button class="pact" id="bmarkBtn" data-icon="bookmark" title="A tab on the book edge that jumps back to this page"><span class="lb">Bookmark page</span></button>
+    <button class="pact" id="clearPage" data-icon="eraser" title="Remove everything on this page"><span class="lb">Clear page</span></button>
+    <button class="pact" id="delPage" data-icon="trash" title="Remove this page from the book"><span class="lb">Remove page</span></button>
+  </div>
+  <div class="phint">space · shift+a · right-click — esc closes</div>
+</div>
+
+<aside class="drawer glass" id="drawer">
+  <h3>Menu</h3>
+  <div class="sec" style="margin-top:0;padding-top:0;border-top:0">Book</div>
+  <button class="btn wide" id="exportHtmlBtn">Export book (.html)</button>
+  <button class="btn wide" id="printBtn">Print / PDF</button>
+  <button class="btn wide" id="exportBtn">Back up (.json)</button>
+  <button class="btn wide" id="importBtn">Restore backup</button>
+  <div class="sec">Theme</div>
+  <div class="row"><span>Theme preset</span>
+    <select id="themeSel">
+      <option value="graph">Graph</option><option value="dark">Darkroom</option>
+      <option value="blue">Blueprint</option><option value="kraft">Kraft</option>
+    </select>
+  </div>
+  <div class="sec">Colours (override preset)</div>
+  <div class="row"><span>Paper</span><input type="color" data-var="paper"></div>
+  <div class="row"><span>Ink</span><input type="color" data-var="ink"></div>
+  <div class="row"><span>Grid lines</span><input type="color" data-var="line"></div>
+  <div class="row"><span>Accent</span><input type="color" data-var="accent"></div>
+  <div class="row"><span>Accent 2</span><input type="color" data-var="accent2"></div>
+  <div class="row"><span>Desk</span><input type="color" data-var="desk"></div>
+  <button class="btn wide" id="resetColors">Reset colours</button>
+  <div class="sec">Paper</div>
+  <div class="row"><span>This page</span>
+    <select id="paperSel">
+      <option value="grid">Grid</option><option value="ruled">Ruled</option>
+      <option value="dots">Dots</option><option value="iso">Isometric</option>
+      <option value="blank">Blank</option>
+    </select>
+  </div>
+  <div class="row"><span>New pages</span>
+    <select id="defPaperSel">
+      <option value="grid">Grid</option><option value="ruled">Ruled</option>
+      <option value="dots">Dots</option><option value="iso">Isometric</option>
+      <option value="blank">Blank</option>
+    </select>
+  </div>
+  <div class="row"><span>Paper grain</span><div class="switch on" id="grainSwitch" role="switch" aria-checked="true" tabindex="0" title="The speckle over the paper. Off is cheaper to draw — worth it on a big canvas."></div></div>
+  <div class="row"><span>Page shape</span>
+    <select id="aspectSel">
+      <option value="tall">Portrait</option>
+      <option value="a4">A4</option>
+      <option value="square">Square</option>
+      <option value="land">Landscape</option>
+      <option value="wide">Widescreen</option>
+      <option value="custom">Custom (drag the page)</option>
+    </select>
+  </div>
+  <div class="sec">Sound</div>
+  <div class="row"><span>Studio sounds</span><div class="switch on" id="sndSwitch" role="switch" aria-checked="true" tabindex="0"></div></div>
+  <div class="row"><span>Volume</span><input type="range" id="sndVol" min="0" max="100" value="50"></div>
+  <div class="sec">Keys: Space / Shift+A / right-click quick add · D stylus · L layers · ◀ ▶ flip · Ctrl+scroll zoom · drag desk to pan · Del removes · double-click text to edit · select text, then tap a dot to highlight</div>
+  <button class="btn wide" id="closeDrawer">Close</button>
+</aside>
+
+<div class="inkbar glass-lite" id="inkbar">
+  <span class="lab">Stylus</span>
+  <span class="swatches" id="inkColors"></span>
+  <button id="inkSize" title="Nib size">THIN</button>
+  <button data-ink="pen" title="Pen — draws thicker when you slow down">Pen</button>
+  <button data-ink="mark" title="Translucent marker">Marker</button>
+  <button data-ink="erase" title="Erase ink on this layer">Eraser</button>
+  <button id="inkUndo" title="Take back the last stroke on this layer — Ctrl+Z undoes whatever you did last">↶ Undo</button>
+  <button id="inkClear" title="Remove this layer's ink from this page">Clear ink</button>
+  <span class="lab">on <b id="inkLay">Base</b></span>
+  <button id="inkDone" title="Back to moving things (Esc)">✕ Done</button>
+</div>
+
+<div class="inkbar mathbar glass-lite" id="mathbar">
+  <span class="lab">∑ Math</span>
+  <button id="mAxes" title="Drop a coordinate system on the page">＋ Axes</button>
+  <button id="mFn" title="Draw a function in it — sin(x), x^2, 1/x…">ƒ(x)</button>
+  <button id="mVec" title="Drag inside the plot to pull a vector out of it">⇗ Vector</button>
+  <button id="mMat" title="A 2×2 matrix you can fill in — drag it onto a vector to apply it">▦ Matrix</button>
+  <button id="mVecBox" title="A vector card — drag it into a plot to draw it">[v] Vector</button>
+  <span class="divider"></span>
+  <span class="lab">draw over</span>
+  <button id="mScube" title="A cube to draw over — drag to turn it, wheel to size it">◰ Cube</button>
+  <button id="mSsphere" title="A sphere to draw over — drag to turn it, wheel to size it">◕ Sphere</button>
+  <button id="mStorus" title="A torus to draw over — drag to turn it, wheel to size it">◎ Torus</button>
+  <button id="mSsquare" title="A square to draw over — flat, but it turns in space like the rest">◻ Square</button>
+  <button id="mScircle" title="A circle to draw over — flat, but it turns in space like the rest">◯ Circle</button>
+  <span class="divider"></span>
+  <button id="mFill" title="Make the plot fill the page">Fill page</button>
+  <span class="lab">x <input class="num" id="mX0" title="Left edge"><input class="num" id="mX1" title="Right edge"></span>
+  <span class="lab">y <input class="num" id="mY0" title="Bottom edge"><input class="num" id="mY1" title="Top edge"></span>
+  <button id="mGrid" title="Grid — solid, dashed, dotted or blank">grid solid</button>
+  <button id="mAxis" title="Axes with numbers / without / off">axes</button>
+  <span class="divider"></span>
+  <button id="mBasis" title="Show î and ĵ — drag their tips to change the basis">î ĵ</button>
+  <button id="mHome" title="Put the origin back in the middle">⌂ View</button>
+  <button id="mReset" title="Back to the standard basis">⟲ Basis</button>
+  <span class="lab" id="mBasisTag"></span>
+  <span class="lab hint" id="mHint"></span>
+  <button id="mDone" title="Back to moving things (Esc)">✕ Done</button>
+</div>
+
+<aside class="lpanel glass" id="lpanel">
+  <div class="head"><span>Layers</span><button class="act" id="layAdd" title="Add a layer above">+ New layer</button></div>
+  <div id="lrows"></div>
+  <div class="lfoot"><span>Fade other layers</span><div class="switch on" id="fadeSwitch" role="switch" aria-checked="true" tabindex="0"></div></div>
+  <div class="lfoot" style="border:0;padding-top:0;margin-top:6px"><button class="act" id="layShowAll">Show all</button><button class="act" id="layClose">Close</button></div>
+  <div class="lhint">click a layer to work on it · ▤ on an item moves it · new things land on the chosen layer</div>
+</aside>
+
+<div class="modal" id="vidModal">
+  <div class="card glass">
+    <h3>Add video</h3>
+    <input type="url" id="vidUrl" placeholder="YouTube / Vimeo link, or a bare video ID…">
+    <div class="err" id="vidErr"></div>
+    <div class="hint">or embed a video file from your computer (stored inside the book)</div>
+    <div class="acts">
+      <button class="btn" id="vidFileBtn">Choose file…</button>
+      <button class="btn" id="vidCancel">Cancel</button>
+      <button class="btn" id="vidOk">Embed link</button>
+    </div>
+  </div>
+</div>
+
+<div class="printArea" id="printArea"></div>
+<input type="file" id="imgInput" accept="image/*" hidden>
+<input type="file" id="vidInput" accept="video/*" hidden>
+<input type="file" id="objInput" accept=".obj,.mtl,model/obj,image/*" multiple hidden>
+<input type="file" id="fileInput" hidden>
+<input type="file" id="sheetInput" accept=".xlsx,.xlsm,.ods,.csv,.tsv,.tab,.txt,text/csv" hidden>
+<input type="file" id="pptxInput" accept=".pptx,.pptm,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden>
+<input type="file" id="foldInput" multiple hidden>
+<input type="file" id="jsonInput" accept="application/json,.json" hidden>
+<input type="file" id="cardImg" accept="image/*" hidden>
+<input type="file" id="cardVid" accept="video/*" hidden>
+<input type="file" id="cardObj" accept=".obj,.mtl,model/obj,image/*" multiple hidden>
+<input type="file" id="cardFile" hidden>
+<div class="peek" id="peek"></div>
+<div class="scope" id="scope"></div>
+<div class="fview foldview" id="fold"></div>
+<div class="fview" id="fview"></div>
+<div class="sview" id="sview"></div>
+<!-- the engine — storage, state, and the page itself -->
+<script src="js/core/registry.js"></script>
+<script src="js/core/store.js"></script>
+<script src="js/core/util.js"></script>
+<script src="js/lib/sound.js"></script>
+<script src="js/lib/spring.js"></script>
+<script src="js/core/state.js"></script>
+<script src="js/core/save.js"></script>
+<script src="js/core/history.js"></script>
+<script src="js/core/theme.js"></script>
+<script src="js/core/zoom.js"></script>
+<script src="js/lib/latex.js"></script>
+<script src="js/lib/sheet.js"></script>
+<script src="js/lib/pptx.js"></script>
+<script src="js/core/richtext.js"></script>
+<script src="js/core/media.js"></script>
+<script src="js/core/item.js"></script>
+<script src="js/core/drag.js"></script>
+<script src="js/core/page.js"></script>
+<script src="js/core/add.js"></script>
+<script src="js/core/nav.js"></script>
+<script src="js/core/book.js"></script>
+<!-- ahead of the items so a feature can defineIcon() its own tile drawing -->
+<script src="js/ui/icons.js"></script>
+
+<!-- one file per thing you can put on a page — each registers itself -->
+<script src="js/items/text.js"></script>
+<script src="js/items/note.js"></script>
+<script src="js/items/check.js"></script>
+<script src="js/items/code.js"></script>
+<script src="js/items/table.js"></script>
+<script src="js/items/image.js"></script>
+<script src="js/items/video.js"></script>
+<script src="js/items/file.js"></script>
+<script src="js/items/folder.js"></script>
+<script src="js/items/model.js"></script>
+<script src="js/items/slides.js"></script>
+<script src="js/items/deck.js"></script>
+<script src="js/items/plot.js"></script>
+<script src="js/items/chart.js"></script>
+<script src="js/items/solid.js"></script>
+<script src="js/items/mat.js"></script>
+<script src="js/items/cards.js"></script>
+<script src="js/items/calc.js"></script>
+<script src="js/items/atlas.js"></script>
+<script src="js/items/node.js"></script>
+<script src="js/items/washi.js"></script>
+<script src="js/items/sticker.js"></script>
+
+<!-- the tools around the book -->
+<script src="js/ui/layers.js"></script>
+<script src="js/ui/ink.js"></script>
+<script src="js/ui/strings.js"></script>
+<script src="js/ui/glass.js"></script>
+<script src="js/ui/palette.js"></script>
+<script src="js/ui/props.js"></script>
+<script src="js/ui/bookmarks.js"></script>
+<script src="js/ui/mathbar.js"></script>
+<script src="js/ui/overview.js"></script>
+<script src="js/ui/shelf.js"></script>
+<script src="js/ui/canvas.js"></script>
+<script src="js/ui/print.js"></script>
+<script src="js/ui/backup.js"></script>
+<script src="js/ui/export.js"></script>
+
+<!-- last — opens the book and starts everything -->
+<script src="js/boot.js"></script>
+
+</body>
+</html>
