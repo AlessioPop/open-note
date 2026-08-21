@@ -169,12 +169,18 @@ Not yet: nodes cannot be filed into a folder. A graph shut inside one would go d
 
 ## Logic gates
 
-Digital Lego. Conventional gate symbols on the paper, wired port to port, with
-signals arriving the moment you flick a switch, hold a button or a clock ticks.
-There is no global run button: the sheet works itself out as its inputs change.
+Digital Lego. Conventional gate symbols share one contained workspace, wired
+port to port, with signals arriving the moment you flick a switch, hold a button
+or a clock ticks. There is no global run button: the circuit works itself out as
+its inputs change.
 
-**Add them** from `+ Add…` (or right-click the paper, or Space) → the **Logic**
-shelf.
+**Add them** from `+ Add…` (or right-click the paper, or Space) → the **Science**
+shelf → **Logic circuit**. This puts one contained workspace on the sheet.
+Select its empty background to reveal the component rail beside it and the
+contextual toolbar above it;
+the crowded catalogue lives there instead of filling the main menu. The rail is
+large enough to show every component's icon and name, and the mouse wheel scrolls
+the catalogue without moving the sheet underneath it.
 
 | | What it is |
 |---|---|
@@ -191,6 +197,40 @@ sharp at any zoom, print properly, and take whatever theme and paper you are
 working on.
 
 ### Wiring them up
+
+Drag a component from the circuit's side rail to the exact spot you want on the
+canvas. A click still adds it to the next open spot when precision does not
+matter. **Move** is the default mode: drag directly anywhere on a component body
+and it follows the pointer. No hover target or separate grab handle is required.
+Drag **✥** in the contextual toolbar to move the whole environment, and pull its
+lower-right corner handle to resize the canvas. Making it wider reveals more circuit world without
+automatically enlarging the components; making it narrower never blows them up.
+Wheel over a selected circuit to zoom its contents around the pointer, drag
+empty canvas to pan, and double-click the empty canvas or press the percentage
+between − and + to return to 100%. Local zoom never changes the frame size.
+
+Choose **Inspector** in the contextual toolbar when you want a body tap to select a
+component instead. Its local inspector then offers the actions that belong to
+that component: switch Style, clock controls, stored Q, Truth table, Unplug,
+Copy and Delete. Switch back to Move for direct rearrangement.
+
+The same contextual toolbar keeps workspace actions off the canvas and out of
+the component catalogue. It appears only while the circuit is selected:
+
+- **− · percentage · +** zoom the circuit world without resizing its frame.
+- **Canvas** hides or restores the canvas surface while leaving components,
+  leads and controls visible. This is useful when the circuit should sit cleanly
+  over the note's paper.
+- **Circuits** opens a searchable library of common graphs, including half and
+  full adders, a multiplexer, equality and parity checks, a D register, a toggle
+  counter, a tri-state line and a JK example. Loading one replaces the current
+  graph after confirmation; what arrives is made of ordinary editable
+  components and leads, not a locked special object.
+
+**Switches, push buttons and clocks are direct controls.** Use the control
+itself and the circuit responds without selecting the component or opening the
+page-item options toolbar. Pick the component separately when you want its
+appearance, clock speed, stored state, duplicate, unplug or delete actions.
 
 Every gate has **ports** — a dot on the edge for each input and for its output.
 The dot you can see is small; the target you can hit is three times the size of
@@ -212,18 +252,20 @@ you can tell a junction from two leads that merely cross over one another.
 
 **Click a lead to pick it out** — it thickens and a small chip appears on it with
 the value it is carrying. `Delete` removes it, and so does the ✕ on the chip.
-Escape puts it back. A gate's **⌦** button unplugs every lead on it at once, and
-**⧉** makes another gate just like it beside it.
+Escape puts it back. A component's **⌦** action unplugs every lead on it at once,
+and **⧉** makes another component just like it nearby. `Delete` removes the
+locally picked component or lead before it ever applies to the whole circuit.
 
-Marquee-select a connected set of logic items and the main toolbar offers
-**⇥ Tidy logic**. It resets their rotations, orders them from sources through
-gates to outputs, keeps peers in their existing vertical order, and replaces
-the selected internal leads with rounded orthogonal routes. The circuit's
-connections and values do not change, and the group stays selected afterwards.
+The contextual toolbar's **⇥ Tidy** action orders components from sources through
+gates to outputs, keeps peers in their existing vertical order, and replaces the
+leads with rounded orthogonal routes. The circuit's connections, values and
+stored states do not change.
 
-**Turn a gate to any angle** with the rotate handle and the leads stay on its
-ports — and leave along the way the gate is now facing. Move it, resize it, put
-it on another layer: the leads follow.
+Leads are drawn below components, while the component body is slightly
+translucent. A crossing lead therefore remains traceable without drawing over a
+symbol or its ports. A symbol's own short port lines stop at the outline instead
+of continuing underneath its translucent body, so no dark tips show inside a
+gate. Moving the body moves every attached lead immediately.
 
 ### What the wires are carrying
 
@@ -292,12 +334,13 @@ the gate letters them on its own face so you can see which is which.
 
 ### Where it ends
 
-Gates and their leads save, print, export and back up like everything else on the
-sheet, and undo/redo covers placing a gate, making and breaking a lead, changing
-a control, and tidying a circuit. A gate is stored as what it *means* —
-`{gate:"nand"}` and a
-list of leads between named ports — never as a picture of itself, so a note made
-today still draws with tomorrow's symbols.
+The circuit, its components and its leads save, print, export and back up like
+everything else on the sheet, and undo/redo covers adding a component, making
+and breaking a lead, changing a control, and tidying. A component is stored as
+what it *means* — `{gate:"nand"}` and a list of leads between named ports —
+never as a picture of itself, so a note made today still draws with tomorrow's
+symbols. Notes made with the earlier standalone logic items remain readable and
+editable; the contained environment is the new-item workflow.
 
 **Not yet:** shared multi-driver buses, propagation delays, renamable ports on a
 custom gate, or folding a group of gates into one reusable gate of its own.
@@ -614,7 +657,7 @@ In **print** a deck shows the card it is on, question side up. In an **export th
 
 Press **Space** (or **Shift+A**, or right-click the paper) and the palette warps out of your cursor, Blender-style — pick a tile and the item lands right where you invoked it. The same panel sits behind the **+ Add…** button in the toolbar.
 
-Everything that can go on the sheet is in it, sorted onto seven shelves — **Write · Math · Logic · Science · Media · Shapes · Decor** — each tool an icon with its name under it and a fuller sentence in its tooltip. The panel remembers the shelf you left it on, and **Clear canvas** — which wipes everything off, items and ink, after a confirmation — sits along its foot. `Esc` closes it.
+Everything that can go on the sheet is in it, sorted onto six shelves — **Write · Math · Science · Media · Shapes · Decor** — each tool an icon with its name under it and a fuller sentence in its tooltip. Logic circuits live under Science; their individual components stay in the circuit's own rail. The panel remembers the shelf you left it on, and **Clear canvas** — which wipes everything off, items and ink, after a confirmation — sits along its foot. `Esc` closes it.
 
 **Or just type.** The search field has focus from the moment the panel opens, so hitting Space and typing `ma` finds Matrix, Marker and 3D model whatever shelf they live on — each wearing a small tag saying which. `Enter` takes the best match, and the arrow keys walk the grid.
 

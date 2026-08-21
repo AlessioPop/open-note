@@ -58,6 +58,10 @@ window.addEventListener('keydown', e => {
   }
   if(!index) return;
   if(SCOPE){ scopeKey(e); return; }               // one card has the screen: the keys are its own
+  /* A contained editor gets first refusal on a key before core treats it as a
+     command for the whole page item. The registry keeps this generic: core
+     neither knows what a circuit node is nor what another feature may pick. */
+  if(Object.keys(ITEMS).some(t => ITEMS[t].key && ITEMS[t].key(e))) return;
   if(e.key === ' ' || (e.shiftKey && (e.key === 'a' || e.key === 'A'))){
     e.preventDefault(); quickAtPointer(); return;
   }

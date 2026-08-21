@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1158 assertions, driven in headless Firefox
+tools/verify/       the harness: 1192 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -136,7 +136,7 @@ right up until it loses the session.
 
 | File | Lines | What it does |
 |---|---:|---|
-| `registry.js` | 138 | `defineItem()`, `defineTool()`, `defineSelectionAction()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
+| `registry.js` | 140 | `defineItem()`, `defineTool()`, `defineSelectionAction()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
 | `store.js` | 68 | IndexedDB for the note, its sheet and its blobs, with an in-memory fallback |
 | `util.js` | 68 | `uid` `$` `clamp` `esc`, sheet sizes and page units, the theme palettes, the stored-HTML sanitiser |
 | `state.js` | 39 | the open note, its sheet, the selection, the zoom — and `sheet()`, the only way to ask for the paper |
@@ -147,7 +147,7 @@ right up until it loses the session.
 | `richtext.js` | 34 | editing text in place, and the ∑ button |
 | `media.js` | 21 | handing stored blobs to the page as object URLs |
 | `item.js` | 201 | **`buildItem()`** — builds any item from its spec; also what an item owns and deleting one or a selection |
-| `drag.js` | 180 | rotate, drag and resize — the throw for one item and rigid movement for a selected group |
+| `drag.js` | 184 | rotate, drag and resize — the throw for one item and rigid movement for a selected group |
 | `select.js` | 156 | the toolbar's one-shot marquee, the selected-id set, bulk deletion and feature-owned group actions |
 | `page.js` | 104 | **`buildPage()`** — the paper, its items and its ink, live or static |
 | `sheet.js` | 207 | **`growSheet()`** — the rails, and every stored fraction remapped so nothing moves when the paper does |
@@ -199,7 +199,8 @@ shelf** — a new file under `items/science/` had better call
 | `math/cards.js` | 397 | `matrix`, `vecbox` — any size through the ✎ panel, the label algebra (`M⁻¹` undone is `M`), determinants between bars, eigen rows |
 | `math/calc.js` | 264 | `calc` — the written-out product: the animated working, folding it to just the answer, taking it apart again, and standing in as an operand itself |
 | `math/node.js` | 1099 | `node` — five kinds of card, the little graph they make, the wires between them, and the colour wheel |
-| `logic/gate.js` | 1703 | `logic` — combinational and sequential circuits: controls, ten gates, SR/D/JK/T flip-flops, the five-state evaluator and clock scheduler, port-level wires, truth tables and selection-aware circuit layout |
+| `logic/gate.js` | 1729 | `logic` — the component definitions, shared symbols, five-state evaluator, clock scheduler, truth tables and backward-compatible standalone logic items |
+| `logic/circuit.js` | 905 | `circuit` — the contained editor, categorized drag palette, resizable local pan/zoom viewport, common-circuit library, nested port wires and signal-flow layout |
 | `science/ptable.js` | 154 | `ptable` — the periodic table as a reference card, and `openElementPicker()`, the popover every element chip opens |
 | `science/nuchart.js` | 680 | `nuchart` — the chart of the nuclides: 5646 squares as ten paths, the magic-number rules, four colourings, pan and zoom on a viewBox, Karlsruhe-split squares for the long-lived metastable states, arrows to every daughter and the whole decay chain, and a foot that works the Q values out as you press |
 | `science/fits.js` | 617 | `fits` — an astronomy file as a shortcut, and the reader behind it: `hdu.info()`, the header in three aligned columns with a search over all of them, COMMENT and HISTORY runs folded in place, every data unit given as a shape and a type rather than as numbers, and columns you pick and drag off the window onto the sheet, where they land as an ordinary table |
@@ -289,13 +290,20 @@ defineTool({ kind:'note', cat:'write', label:'Sticky', icon:'note',
              hint:'Sticky notes in 5 colours', order:30 })
 ```
 
-`cat` names a shelf — `write`, `math`, `logic`, `science`, `media`, `shapes` or
-`decor`, declared in `chrome/palette.js`, and **the same word as the folder the
-file is in**. `defineToolCat()` adds another if a new area of the app ever
-deserves one — that is how `science` got there when the molecules arrived, and
-`logic` when the gates did. `icon` names a
+`cat` names a user-facing shelf — `write`, `math`, `science`, `media`, `shapes`
+or `decor`, declared in `chrome/palette.js`. Source folders remain technical
+module boundaries, while the shelf is chosen for how a person looks for the
+feature: the contained logic editor lives in `items/logic/` but is found under
+Science. `defineToolCat()` adds another if a new area of the app deserves one.
+`icon` names a
 drawing in `chrome/icons.js`, and `defineIcon()` registers one the set doesn't
 have. `order` sorts within the shelf; ties keep load order.
+
+An item spec may declare `palette:false` when its add-kinds exist only for
+backward compatibility or programmatic use. Standalone `logic` records use that
+escape hatch: old notes still build and edit them, while the one public Logic
+circuit tile under Science adds the contained workflow. The palette remains a view over the
+registry rather than a second source of item construction rules.
 
 **Dropped files.** Core does not know what a `.png`, an `.obj` or an `.xlsx` is.
 It asks each feature that declares `takes` — keenest first — and the first one
@@ -338,9 +346,9 @@ an operation without a type branch in selection or the toolbar.
 
 ## Circuits, and the graph seam under them
 
-`js/items/logic/gate.js` is the first thing in the app that needs a **directed,
-port-level, functional** connection between two items, and it is worth writing
-down why it did not reuse either of the two connection models already here.
+`js/items/logic/gate.js` and `logic/circuit.js` need a **directed, port-level,
+functional** connection between components, and it is worth writing down why
+they do not reuse either of the two connection models already here.
 
 **`page.links` cannot express it.** A string is `{id, a, b, c}` — two item ids
 and a colour, undirected, and meaning whatever the person who tied it meant. An
@@ -351,7 +359,7 @@ and is the only reason the circuit computes anything. Forcing that into the
 string record would have meant a link whose `a` and `b` sometimes mean an item
 and sometimes an item-and-a-port, read by two files that disagree about which.
 
-So a sheet carries a second list beside `page.links`:
+Older standalone logic items keep a second list beside `page.links`:
 
 ```js
 page.wires = [
@@ -370,6 +378,58 @@ and an item is stored as what it *means*, never as a picture of itself:
 { id, type: 'logic', gate: 'dff',  q: 1, clk: 0, … }
 { id, type: 'logic', gate: 'cust', def: { name, n, table: [0,0,0,1] }, … }
 ```
+
+New circuits contain the same records and wire shape inside one page item:
+
+```js
+{
+  id, type: 'circuit', x, y, w, rot, z, lay,
+  nodes: [{ id, type: 'logic', gate: 'sw', on: 1, x, y, w, z }, …],
+  wires: [{ id, from: { item, port }, to: { item, port }, clean, route }, …]
+}
+```
+
+The evaluator accepts a deliberately tiny page-shaped interface: `{id, items,
+wires}`. `circuit.js` exposes its `nodes` and `wires` through that adapter, with
+the real parent page id used for persistence. Model-provider, repaint and redraw
+hooks let the shared clock, evaluator and truth-table code see nested components
+without teaching `gate.js` the container's DOM or teaching core about logic.
+
+Editor mode is runtime UI state, not document meaning. `LC_MODE` defaults every
+circuit to `move`; the whole component body then owns one pointer gesture that
+tracks movement 1:1, while a release inside its seven-pixel hysteresis remains a
+switch/clock tap or push-button hold. `inspect` maps the same body tap to
+`LC_PICK` and its local action strip. Ports win before either recognizer, so
+wiring never depends on mode. The scrollable rail stops wheel propagation while
+leaving the event's default action intact: its catalogue scrolls natively rather
+than panning the sheet.
+
+The rail is only a component catalogue. A seven-pixel pointer hysteresis lets a
+tile remain an ordinary click or become a drag with a lightweight ghost; the
+drop point is converted into the circuit's normalized coordinates and handed to
+the same `lcAdd()` path. Modes, Tidy, zoom, canvas visibility and the example
+library are contributed through the ordinary item `tools()` hook. They appear
+only in the contextual selection toolbar, outside the circuit body's measured
+layout, so control wrapping cannot change canvas geometry during resize.
+
+The contained circuit is a resizable page item with its own view. Stored `zoom`,
+`viewX` and `viewY` map stable world positions into the stage; wheel zoom keeps
+the world point under the pointer anchored and empty-canvas drag changes only
+the view centre. Component drag and palette drop apply the inverse mapping back
+into world coordinates. Wires, nodes and static output remain one transformed
+layer, while the inspector and toolbar stay at a stable readable size above it.
+
+Frame resize is deliberately independent. A local `ResizeObserver` reapplies a
+viewport-density factor of `min(1, 48 / environment.w)` to the shared world
+layer. A wider frame therefore exposes more world while components retain their
+physical size; a narrower frame may make them smaller but never magnifies them.
+Core drag stays generic and explicit local zoom remains an independent control.
+
+`LC_PRESETS` is declarative data: a name, searchable description and arrays of
+ordinary node and wire records. Loading Half adder, Full adder or any of the
+other examples creates fresh ids and then returns to the exact same evaluator,
+renderer and editor as a hand-built graph. There is no template component, no
+parallel simulation path and nothing special to preserve in a backup.
 
 The **geometry** is shared, though — `pinPoint()` from `paper/strings.js`, the
 overlay's coordinate space, and `onPageOverlay()` for the static render — so
@@ -407,11 +467,12 @@ items. Its phase is runtime state; only reached flip-flop state is queued for
 persistence, with history capture disabled so a running note cannot consume
 its undo stack.
 
-**Tidy logic changes geometry, never topology.** The selection action checks
-that its items are one connected component, ranks them in signal order (with
-flip-flops as new sources), preserves vertical peer order, springs their stored
-positions to the layout and marks only internal selected wires for rounded
-orthogonal routing. The same stored route goes through live, print and export.
+**Tidy logic changes geometry, never topology.** Both the legacy selection
+action and the contained editor share the signal-ranking function (with
+flip-flops as new sources), preserve vertical peer order, spring stored
+positions to the layout and mark their wires for rounded orthogonal routing.
+The same stored route goes through live, print and export. A new pointer gesture
+interrupts the springs and commits their current positions.
 
 **Nothing is cached.** Working a sheet out is one Map and one sweep, and a stale
 answer after an undo would be a wrong picture on the paper. That is a far worse
@@ -438,6 +499,13 @@ rather than off to one side of it.
 
 Anything else that ever needs to attach to a *place on* an item rather than to
 the item should do the same: put something in the DOM there and measure it.
+
+Contained circuits add one useful exception because their editor owns a stable
+normalized `1000 × 620` coordinate system and does not rotate its internal
+components. Their port coordinates come from the very same symbol geometry and
+are converted directly into that viewBox. Live drawing and static output thus
+produce identical paths without a layout measurement; legacy standalone items
+retain the rotation-aware DOM measurement above.
 
 ## Adding a new feature
 
@@ -638,13 +706,13 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1158 assertions**, and they are the real specification of this app. Among them:
-that all 70 script files load without throwing; that a fresh note is one empty
+**1192 assertions**, and they are the real specification of this app. Among them:
+that all 71 script files load without throwing; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a
 third on the real one; that every add-menu entry adds the type it claims to;
 that the palette and the registry agree in both directions — every tile a
-registered kind, every kind a tile; that nothing tilts on its way onto the
+registered kind, every public kind a tile; that nothing tilts on its way onto the
 paper; that growing the sheet leaves every item and every stroke exactly where
 the eye had it, that one `Ctrl`+`Z` puts the paper *and* everything on it back,
 and that there is a ceiling; that a zoom gesture scales rather than relays out
@@ -661,8 +729,16 @@ one input replaces the first rather than joining it, that a circuit wired in a
 ring is marked rather than run for ever, and that a gate turned a quarter turn
 swings its ports a quarter turn — which is the whole of the rotation-aware port
 geometry, held honest; that tri-state isolation, the four-bit display, all four
-flip-flop tables and real rising edges agree, and that marquee-selected circuits
-move, delete and tidy without changing their connections; that a real
+flip-flop tables and real rising edges agree; that Science contains one public
+Logic circuit whose contextual rail holds all four named families;
+that nested controls operate without page selection, components stay above
+translucent leads, local Delete preserves the environment, local zoom leaves its
+frame alone and frame resize does not enlarge components, palette tiles drag to a chosen point, the
+canvas surface can disappear, common circuits search and load as ordinary
+working graphs, Tidy restores signal order, and static rendering retains the
+nested graph; and that legacy
+marquee-selected circuits move, delete and tidy without changing their
+connections; that a real
 `.pptx` built in the harness comes back as two slides through the master's
 colour map; that a real `.fits` built in the harness walks to three HDUs whose
 headers start exactly where the last one's data ended, that a `CONTINUE` card is

@@ -93,7 +93,7 @@ body.nograin .grain{display:none}
 .item .tools button:hover{background:var(--accent);color:#fff}
 .tools .hld{width:calc(var(--scale)*17px);height:calc(var(--scale)*17px);border-radius:50%;padding:0;margin:0 1px;border:1px solid rgba(255,255,255,.45)}
 .tools .hld:hover{border-color:#fff;background:inherit}
-.item.sel .body{box-shadow:0 0 0 1px var(--accent2)}
+.item.sel > .body{box-shadow:0 0 0 1px var(--accent2)}
 .item .rs{position:absolute;right:calc(var(--scale)*-7px);bottom:calc(var(--scale)*-7px);width:calc(var(--scale)*14px);height:calc(var(--scale)*14px);border-radius:50%;background:var(--accent2);display:none;cursor:nwse-resize;z-index:20}
 .item.sel .rs{display:block}
 .item .rot{position:absolute;left:50%;bottom:100%;margin-bottom:calc(var(--scale)*46px);transform:translateX(-50%);width:calc(var(--scale)*15px);height:calc(var(--scale)*15px);border-radius:50%;background:var(--accent);display:none;cursor:grab;z-index:21;box-shadow:0 1px 3px rgba(0,0,0,.4)}
@@ -408,6 +408,7 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <script src="js/items/math/calc.js"></script>
 <script src="js/items/math/node.js"></script>
 <script src="js/items/logic/gate.js"></script>
+<script src="js/items/logic/circuit.js"></script>
 <script src="js/items/science/ptable.js"></script>
 <script src="js/items/science/nuchart.js"></script>
 <script src="js/items/science/molecule.js"></script>

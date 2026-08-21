@@ -45,13 +45,12 @@ a node into a plot, say, so the series carries what a real drop would put in it
 - **Ink is in thousandths of the sheet's WIDTH on both axes.** On a 1980 × 1240
   sheet the bottom edge is at y = 626, not 1000.
 - **Give every table and figure a caption.** An empty one shows its grey
-  `caption` placeholder, which looks like a defect in a screenshot. (A logic
-  gate is the exception: its placeholder only appears on a gate you have picked
-  up, so a circuit of a dozen of them is not a circuit of a dozen ghost words.)
+  `caption` placeholder, which looks like a defect in a screenshot. (Components
+  inside a Logic circuit do not carry page captions.)
 - **Anything drawn *between* items is laid after the render, not during it.**
   The strings and the node wires are put up by `drawStaticStrings`, but the
-  logic leads are measured off the port dots, which do not exist until the sheet
-  has been rendered — hence `logicAfter()` calling `lgSync()`. A scene that
+  logic leads are painted after the sheet has been rendered — hence
+  `logicAfter()` calling `lgSync()`. A scene that
   wires things together and shows no wires has forgotten its `After`.
 - The recompression at the end is lossless on purpose. Quantising to a 256
   colour palette halves the files again but bands the desk's gradient.

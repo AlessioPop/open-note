@@ -156,7 +156,8 @@
         ['cube', 'solid'], ['sphere', 'solid'], ['torus', 'solid'],
         ['square', 'solid'], ['circle', 'solid'],
         ['pie', 'chart'], ['donut', 'chart'], ['bars', 'chart'], ['stack', 'chart'],
-        ['washi', 'washi'], ['sticker', 'sticker'], ['molecule', 'molecule'], ['ptable', 'ptable'], ['nuchart', 'nuchart']
+        ['washi', 'washi'], ['sticker', 'sticker'], ['molecule', 'molecule'],
+        ['circuit', 'circuit'], ['ptable', 'ptable'], ['nuchart', 'nuchart']
       ];
       for (var i = 0; i < kinds.length; i++) {
         var kind = kinds[i][0], want = kinds[i][1];
@@ -191,11 +192,15 @@
         kinds.every(function (k) { return ADD_KINDS[k]; }),
         kinds.filter(function (k) { return !ADD_KINDS[k]; }).join(','));
       ok('palette: every add-kind has a tile',
-        Object.keys(ADD_KINDS).every(function (k) { return kinds.indexOf(k) >= 0; }),
-        Object.keys(ADD_KINDS).filter(function (k) { return kinds.indexOf(k) < 0; }).join(','));
+        Object.keys(ADD_KINDS).every(function (k) {
+          return ADD_KINDS[k].spec.palette === false || kinds.indexOf(k) >= 0;
+        }),
+        Object.keys(ADD_KINDS).filter(function (k) {
+          return ADD_KINDS[k].spec.palette !== false && kinds.indexOf(k) < 0;
+        }).join(','));
       openQuickMenu(320, 180);
       ok('palette: opens', Q('#palette').classList.contains('open'));
-      ok('palette: seven shelves', QA('#palTabs .ptab').length === 7,
+      ok('palette: six shelves', QA('#palTabs .ptab').length === 6,
         QA('#palTabs .ptab').length + ' tabs');
       setShelf('write');
       var tiles = QA('#palGrid .ptile');
@@ -3037,18 +3042,246 @@
         LG_ORDER.every(function (k) { return (ICONS['lg-' + k].match(/<text/g) || []).length <= 1; }),
         LG_ORDER.filter(function (k) {
           return (ICONS['lg-' + k].match(/<text/g) || []).length > 1; }).join(','));
+      var cleanAnd = lgSym(mk('and'), false, 0), cleanNot = lgSym(mk('not'), false, 0);
+      ok('logic: symbol stubs stop at the outline instead of showing a tip inside the body',
+        /M6 [^\"]+H30/.test(cleanAnd) && /M76 [^\"]+H94/.test(cleanAnd) &&
+        /M86 [^\"]+H94/.test(cleanNot) && cleanAnd.indexOf('H38') < 0 && cleanAnd.indexOf('M74 ') < 0,
+        cleanAnd);
       var oldCat = curCat;
-      curCat = 'logic'; Q('#palSeek').value = ''; renderGrid();
-      var logicHeads = [].slice.call(Q('#palGrid').querySelectorAll('.pgroup'))
-        .map(function (x) { return x.textContent; });
-      ok('palette: logic is divided into the four named families',
-        logicHeads.join('|') === 'Input controls|Output controls|Logic gates|Flip-flops',
-        logicHeads.join('|'));
-      ok('palette: every logic device appears once under those families',
-        Q('#palGrid').querySelectorAll('.ptile').length === LG_ORDER.length &&
-        new Set(LG_ORDER).size === LG_ORDER.length,
-        Q('#palGrid').querySelectorAll('.ptile').length + ' tiles for ' + LG_ORDER.length);
+      curCat = 'science'; Q('#palSeek').value = ''; renderGrid();
+      ok('palette: Logic circuit lives under Science instead of a separate shelf',
+        !TOOL_CATS.logic && !!Q('#palGrid .ptile[data-add="circuit"]') &&
+        !Q('#palTabs [data-cat="logic"]'),
+        Q('#palGrid').querySelectorAll('.ptile').length + ' Science tiles');
+      ok('palette: the circuit keeps the Science shelf free of component subgroups',
+        Q('#palGrid').querySelectorAll('.pgroup').length === 0);
       curCat = oldCat; renderGrid();
+
+      /* The crowded catalogue now lives beside a selected circuit. Controls
+         remain direct even while the environment is not selected, so a switch
+         never summons a page-item toolbar merely because it was operated. */
+      var cSw = lgMake('sw', { id:uid(), x:5, y:22, z:1 }); cSw.w = 16;
+      var cGate = lgMake('buf', { id:uid(), x:40, y:22, z:2 }); cGate.w = 16;
+      var cLamp = lgMake('lamp', { id:uid(), x:76, y:22, z:3 }); cLamp.w = 16;
+      var env = { id:uid(), type:'circuit', x:8, y:8, w:48, rot:0, z:1, lay:lay,
+        cap:'', nodes:[cSw,cGate,cLamp], wires:[] };
+      join(env, cSw, 'q', cGate, 'a'); join(env, cGate, 'q', cLamp, 'a');
+      page.items = [env]; page.wires = []; await render(); select(null);
+      var envEl = Q('#pageHost .item[data-id="' + env.id + '"]');
+      ok('circuit: its rail and controls stay hidden until the environment is selected',
+        getComputedStyle(envEl.querySelector('.lcrail')).display === 'none' &&
+        getComputedStyle(envEl.querySelector(':scope > .tools')).display === 'none' &&
+        !envEl.querySelector('.lchead,.lcbar'));
+      var cTap = envEl.querySelector('.lcnode[data-id="' + cSw.id + '"] .lgsw');
+      var cr = cTap.getBoundingClientRect(), cev = {
+        clientX:cr.left + cr.width/2, clientY:cr.top + cr.height/2,
+        bubbles:true, pointerId:42, isPrimary:true
+      };
+      cTap.dispatchEvent(new PointerEvent('pointerdown', cev));
+      cTap.dispatchEvent(new PointerEvent('pointerup', cev));
+      ok('circuit: operating a switch changes the nested circuit directly',
+        cSw.on === 1 && lgEval(lcModel(env,page)).get(cLamp.id) === 1,
+        cSw.on + ',' + lgEval(lcModel(env,page)).get(cLamp.id));
+      ok('circuit: operating a switch does not select it or open a page toolbar',
+        selected === null && !envEl.classList.contains('sel'), selected);
+      ok('circuit: Move is the default and there is no hover-only grab handle',
+        envEl.dataset.lcMode === 'move' && !envEl.querySelector('.lcgrab'), envEl.dataset.lcMode);
+      var moveBody = envEl.querySelector('.lcnode[data-id="' + cGate.id + '"] .lgw');
+      var mr = moveBody.getBoundingClientRect(), beforeMove = { x:cGate.x, y:cGate.y };
+      var md = { clientX:mr.left+mr.width/2, clientY:mr.top+mr.height/2,
+        bubbles:true, pointerId:43, isPrimary:true };
+      moveBody.dispatchEvent(new PointerEvent('pointerdown', md));
+      moveBody.dispatchEvent(new PointerEvent('pointermove', { clientX:md.clientX+36,
+        clientY:md.clientY+22, bubbles:true, pointerId:43, isPrimary:true }));
+      moveBody.dispatchEvent(new PointerEvent('pointerup', { clientX:md.clientX+36,
+        clientY:md.clientY+22, bubbles:true, pointerId:43, isPrimary:true }));
+      ok('circuit: dragging the component body moves it directly, even without selecting the environment',
+        cGate.x > beforeMove.x && cGate.y > beforeMove.y && selected === null,
+        beforeMove.x + ',' + beforeMove.y + ' → ' + cGate.x + ',' + cGate.y);
+      ok('circuit: components sit above their connecting leads',
+        +getComputedStyle(envEl.querySelector('.lcnodes')).zIndex >
+        +getComputedStyle(envEl.querySelector('.lcwires')).zIndex);
+      ok('circuit: a component body is slightly translucent over a passing lead',
+        +getComputedStyle(envEl.querySelector('.lgb')).fillOpacity < 1,
+        getComputedStyle(envEl.querySelector('.lgb')).fillOpacity);
+      select(env.id);
+      var railHeads = [].slice.call(envEl.querySelectorAll('.lcrail section>b'))
+        .map(function (x) { return x.textContent; });
+      ok('circuit: its side rail is divided into the four named families',
+        railHeads.join('|') === 'Input controls|Output controls|Logic gates|Flip-flops',
+        railHeads.join('|'));
+      ok('circuit: the side rail contains every component once',
+        envEl.querySelectorAll('.lcrail [data-gate]').length === LG_ORDER.length,
+        envEl.querySelectorAll('.lcrail [data-gate]').length + ' components');
+      ok('circuit: every component in the larger rail has a visible name',
+        [].slice.call(envEl.querySelectorAll('.lcrail [data-gate]')).every(function (b) {
+          return b.querySelector('span') && b.querySelector('span').textContent.trim();
+        }));
+      var circuitTools = envEl.querySelector(':scope > .tools');
+      var circuitActs = [].slice.call(circuitTools.querySelectorAll('[data-lc-act]'))
+        .map(function (x) { return x.dataset.lcAct; });
+      ok('circuit: navigation, zoom, inspection, tidy and library controls live in the contextual toolbar',
+        [].slice.call(circuitTools.querySelectorAll('[data-lc-mode]')).map(function (x) {
+          return x.dataset.lcMode; }).join('|') === 'move|inspect' &&
+        circuitActs.join('|') === 'move-canvas|tidy|zoom-out|zoom-reset|zoom-in|frame|presets|clear' &&
+        getComputedStyle(circuitTools).display === 'flex' &&
+        !envEl.querySelector('.lcbar,.lchead,.lcrail [data-lc-mode],.lcrail [data-lc-act]'),
+        circuitActs.join('|'));
+      var panBeforeRailWheel = panY;
+      envEl.querySelector('.lcrail').dispatchEvent(new WheelEvent('wheel', {
+        bubbles:true, deltaY:80, deltaMode:0
+      }));
+      ok('circuit: the named catalogue accepts native wheel scrolling',
+        getComputedStyle(envEl.querySelector('.lcrail')).overflowY === 'auto' &&
+        envEl.querySelector('.lcrail').scrollHeight > envEl.querySelector('.lcrail').clientHeight &&
+        panY === panBeforeRailWheel,
+        envEl.querySelector('.lcrail').scrollHeight + ' / ' + envEl.querySelector('.lcrail').clientHeight);
+      var frameButton = circuitTools.querySelector('[data-lc-act="frame"]');
+      frameButton.click();
+      await waitFor(function () {
+        return getComputedStyle(envEl.querySelector('.lcstage')).backgroundColor === 'rgba(0, 0, 0, 0)';
+      }, 1000);
+      ok('circuit: Canvas hides the surface without hiding its contents or controls',
+        env.frame === 0 && envEl.querySelector('.lcenv').classList.contains('noframe') &&
+        getComputedStyle(envEl.querySelector('.lcstage')).backgroundColor === 'rgba(0, 0, 0, 0)' &&
+        envEl.querySelectorAll('.lcnode').length === env.nodes.length &&
+        !envEl.querySelector('.lcstage [data-lc-act],.lchead'));
+      frameButton.click();
+      var zoomNode = envEl.querySelector('.lcnode[data-id="' + cGate.id + '"]');
+      var zoomStage = envEl.querySelector('.lcstage'), zoomStageBefore = zoomStage.getBoundingClientRect().width;
+      var zoomGateBefore = zoomNode.getBoundingClientRect().width;
+      zoomStage.dispatchEvent(new WheelEvent('wheel', { bubbles:true, deltaY:120, deltaMode:0,
+        clientX:zoomStage.getBoundingClientRect().left + zoomStage.getBoundingClientRect().width/2,
+        clientY:zoomStage.getBoundingClientRect().top + zoomStage.getBoundingClientRect().height/2 }));
+      var zoomStageAfter = zoomStage.getBoundingClientRect().width, zoomGateAfter = zoomNode.getBoundingClientRect().width;
+      ok('circuit: local zoom changes its world without resizing the circuit tab',
+        env.zoom < 1 && Math.abs(zoomStageAfter - zoomStageBefore) < 1 && zoomGateAfter < zoomGateBefore * .95 &&
+        getComputedStyle(envEl.querySelector(':scope > .rs')).display !== 'none',
+        Math.round(zoomStageBefore) + '→' + Math.round(zoomStageAfter) + ' canvas; ' +
+        Math.round(zoomGateBefore) + '→' + Math.round(zoomGateAfter) + ' gate');
+      circuitTools.querySelector('[data-lc-act="zoom-reset"]').click();
+      ok('circuit: reset restores the local view without automatic component scaling',
+        env.zoom === 1 && env.viewX === 50 && env.viewY === 50 &&
+        Math.abs(zoomNode.getBoundingClientRect().width - zoomGateBefore) < 1,
+        env.zoom + ' at ' + env.viewX + ',' + env.viewY);
+      var resizeFrameBefore = zoomStage.getBoundingClientRect().width;
+      var resizeGateBefore = zoomNode.getBoundingClientRect().width;
+      env.w = 72; envEl.style.width = '72%'; lcApplyView(envEl,env);
+      var resizeFrameAfter = zoomStage.getBoundingClientRect().width;
+      var resizeGateAfter = zoomNode.getBoundingClientRect().width;
+      ok('circuit: resizing reveals canvas without automatically enlarging components',
+        resizeFrameAfter > resizeFrameBefore * 1.4 && Math.abs(resizeGateAfter / resizeGateBefore - 1) < .08,
+        Math.round(resizeFrameBefore) + '→' + Math.round(resizeFrameAfter) + ' canvas; ' +
+        Math.round(resizeGateBefore) + '→' + Math.round(resizeGateAfter) + ' gate');
+      env.w = 48; envEl.style.width = '48%'; lcApplyView(envEl,env);
+      var droppedBefore = env.nodes.length;
+      var dragTile = envEl.querySelector('.lcrail [data-gate="nand"]');
+      var dragTileRect = dragTile.getBoundingClientRect(), dropRect = envEl.querySelector('.lcstage').getBoundingClientRect();
+      var dragStart = { clientX:dragTileRect.left+dragTileRect.width/2,
+        clientY:dragTileRect.top+dragTileRect.height/2, bubbles:true, pointerId:46, isPrimary:true };
+      dragTile.dispatchEvent(new PointerEvent('pointerdown', dragStart));
+      dragTile.dispatchEvent(new PointerEvent('pointermove', { clientX:dropRect.left+dropRect.width*.58,
+        clientY:dropRect.top+dropRect.height*.72, bubbles:true, pointerId:46, isPrimary:true }));
+      dragTile.dispatchEvent(new PointerEvent('pointerup', { clientX:dropRect.left+dropRect.width*.58,
+        clientY:dropRect.top+dropRect.height*.72, bubbles:true, pointerId:46, isPrimary:true }));
+      var droppedGate = env.nodes[env.nodes.length - 1];
+      ok('circuit: a named component can be dragged from the rail to a chosen canvas position',
+        env.nodes.length === droppedBefore + 1 && droppedGate.gate === 'nand' &&
+        droppedGate.x > 45 && droppedGate.y > 50 && !document.querySelector('.lcdnd'),
+        droppedGate.gate + ' at ' + Math.round(droppedGate.x) + ',' + Math.round(droppedGate.y));
+      cSw.x = 74; cGate.x = 41; cLamp.x = 7; lcRefresh(envEl,env,page);
+      var tidy = circuitTools.querySelector('[data-lc-act="tidy"]');
+      tidy.click();
+      await waitFor(function () {
+        return !envEl._lcTidy && cSw.x < cGate.x && cGate.x < cLamp.x;
+      }, 4000);
+      ok('circuit: Tidy restores signal order and clean lead routing',
+        env.wires.every(function (w) { return w.clean === 1; }) &&
+        cSw.x < cGate.x && cGate.x < cLamp.x,
+        cSw.x + ',' + cGate.x + ',' + cLamp.x);
+      var nodeCount = env.nodes.length;
+      envEl.querySelector('.lcrail [data-gate="and"]').click();
+      ok('circuit: a side-rail choice adds inside the environment, not onto the page',
+        env.nodes.length === nodeCount + 1 && page.items.length === 1 &&
+        env.nodes[env.nodes.length - 1].gate === 'and');
+      circuitTools.querySelector('[data-lc-mode="inspect"]').click();
+      var addedGate = env.nodes[env.nodes.length - 1];
+      envEl.querySelector('.lcnode[data-id="' + cSw.id + '"] .lgw').dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles:true, pointerId:44, isPrimary:true }));
+      envEl.querySelector('.lcinspect [data-act="look"]').click();
+      ok('circuit: Inspector mode exposes and applies a switch Style action',
+        cSw.look === 'rocker', cSw.look);
+      envEl.querySelector('.lcnode[data-id="' + addedGate.id + '"] .lgw').dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles:true, pointerId:45, isPrimary:true }));
+      ok('circuit: Inspector mode turns a body tap into a local component selection',
+        envEl.dataset.lcMode === 'inspect' && LC_PICK.get(env.id).id === addedGate.id &&
+        !envEl.querySelector('.lcinspect').hidden);
+      var tableButton = envEl.querySelector('.lcinspect [data-act="table"]');
+      tableButton.click();
+      ok('circuit: a nested gate retains its truth-table inspector',
+        !!Q('#lgtt.open') && /AND/.test(Q('#lgtt .lgttn').textContent),
+        Q('#lgtt .lgttn').textContent);
+      lgTTClose();
+      window.dispatchEvent(new KeyboardEvent('keydown', { key:'Delete', bubbles:true }));
+      ok('circuit: Delete removes the locally picked component, not its environment',
+        env.nodes.length === nodeCount && page.items.length === 1 && page.items[0] === env,
+        env.nodes.length + ' nested, ' + page.items.length + ' page items');
+      envEl.querySelector('.lcrail [data-gate="cust"]').click();
+      var custom = env.nodes[env.nodes.length - 1];
+      envEl.querySelector('.lcinspect [data-act="table"]').click();
+      Q('#lgtt .lgttedit [data-s="1"]').click();
+      ok('circuit: a nested custom gate still edits its own truth table',
+        custom.def.n === 3 && custom.def.table.length === 8,
+        custom.def.n + ' inputs, ' + custom.def.table.length + ' rows');
+      ok('circuit: changing a nested custom gate redraws its ports in place',
+        envEl.querySelector('.lcnode[data-id="' + custom.id + '"]').querySelectorAll('.lgp').length === 4,
+        envEl.querySelector('.lcnode[data-id="' + custom.id + '"]').querySelectorAll('.lgp').length + ' ports');
+      var topCount = page.items.length, nestedCount = env.nodes.length;
+      Q('#lgtt .lgttout').click();
+      await waitFor(function () { return Q('#pageHost .item[data-type="table"]'); }, 2500);
+      var tableOut = page.items.find(function (x) { return x.type === 'table'; });
+      ok('circuit: putting a nested truth table on the sheet does not put it inside the graph',
+        page.items.length === topCount + 1 && !!tableOut && env.nodes.length === nestedCount &&
+        !env.nodes.some(function (x) { return x.type === 'table'; }));
+      lgTTClose();
+      page.items = page.items.filter(function (x) { return x !== tableOut; });
+      await render(); select(env.id);
+      envEl = Q('#pageHost .item[data-id="' + env.id + '"]');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key:'Delete', bubbles:true }));
+      var cStatic = buildPage(page, false, {});
+      ok('circuit: static pages retain nested components and their leads',
+        cStatic.querySelectorAll('.lcnode').length === env.nodes.length &&
+        cStatic.querySelectorAll('.lcwires g[data-w]').length === env.wires.length,
+        cStatic.querySelectorAll('.lcnode').length + ' nodes, ' +
+        cStatic.querySelectorAll('.lcwires g[data-w]').length + ' leads');
+      ok('circuit: its searchable library includes common combinational and sequential examples',
+        LC_PRESETS.length >= 8 && ['half-adder','full-adder','mux-2','d-register','t-counter']
+          .every(function (id) { return LC_PRESETS.some(function (p) { return p.id === id; }); }) &&
+        LC_PRESETS.every(function (p) {
+          return lcPresetBuild(p,env).nodes.every(function (n) {
+            return n.x >= 0 && n.y >= 0 && n.x + lcNodeWidth(env,n) <= 100.01 &&
+              n.y + lcNodeHeight(env,n) <= 100.01;
+          });
+        }),
+        LC_PRESETS.map(function (p) { return p.name; }).join(', '));
+      env.nodes = []; env.wires = []; lcRefresh(envEl,env,page);
+      circuitTools = envEl.querySelector(':scope > .tools');
+      circuitTools.querySelector('[data-lc-act="presets"]').click();
+      var presetPanel = envEl.querySelector('.lcpresets'), presetSearch = presetPanel.querySelector('input');
+      presetSearch.value = 'half adder'; presetSearch.dispatchEvent(new Event('input', { bubbles:true }));
+      var presetHits = presetPanel.querySelectorAll('[data-preset]');
+      ok('circuit: circuit search filters the library by a familiar circuit name',
+        !presetPanel.hidden && presetHits.length === 1 && presetHits[0].dataset.preset === 'half-adder',
+        presetHits.length + ' result(s)');
+      presetHits[0].click();
+      var halfLamps = env.nodes.filter(function (n) { return n.gate === 'lamp'; });
+      var halfVals = lgEval(lcModel(env,page));
+      ok('circuit: loading a preset builds an ordinary editable and working graph',
+        env.nodes.length === 6 && env.wires.length === 6 && halfLamps.length === 2 &&
+        halfVals.get(halfLamps[0].id) === 1 && halfVals.get(halfLamps[1].id) === 0 &&
+        envEl.dataset.lcMode === 'move' && presetPanel.hidden,
+        env.nodes.length + ' nodes, ' + env.wires.length + ' leads');
+      select(null);
       ok('logic: and eight inputs is as far as it goes',
         lgDef(mk('cust', { def: { n: 40, table: [] } })).ins.length === 8);
 
@@ -3272,9 +3505,11 @@
                  bubbles: true, pointerId: 7, isPrimary: true };
       };
       var at = mid(swEl.querySelector('.lgsw'));
-      swEl.dispatchEvent(new PointerEvent('pointerdown', at));
-      swEl.dispatchEvent(new PointerEvent('pointerup', at));
+      swEl.querySelector('.lgsw').dispatchEvent(new PointerEvent('pointerdown', at));
+      swEl.querySelector('.lgsw').dispatchEvent(new PointerEvent('pointerup', at));
       ok('switch: a click flicks it', sw.on === 1, sw.on);
+      ok('switch: flicking it does not select it or open its options',
+        selected === null && !swEl.classList.contains('sel'), selected);
       ok('switch: and the gate follows at once',
         el(gate).querySelector('.lgw').dataset.v === '1', el(gate).querySelector('.lgw').dataset.v);
       ok('switch: and so does the lamp',
@@ -3297,8 +3532,8 @@
           .every(function (g) { return g.getAttribute('data-v') === '1'; }));
       /* a drag across it is not a click */
       var r0 = swEl.getBoundingClientRect();
-      swEl.dispatchEvent(new PointerEvent('pointerdown', mid(swEl.querySelector('.lgsw'))));
-      swEl.dispatchEvent(new PointerEvent('pointerup',
+      swEl.querySelector('.lgsw').dispatchEvent(new PointerEvent('pointerdown', mid(swEl.querySelector('.lgsw'))));
+      swEl.querySelector('.lgsw').dispatchEvent(new PointerEvent('pointerup',
         { clientX: r0.left + r0.width / 2 + 40, clientY: r0.top + r0.height / 2,
           bubbles: true, pointerId: 7, isPrimary: true }));
       ok('switch: a hand that moved was dragging it, not flicking it', sw.on === 1, sw.on);
@@ -4362,8 +4597,10 @@
       page.items = []; await render();
       /* the keys find the molecule under the pointer, so the whole sheet must be on screen */
       fitToDesk(true); await sleep(150);
-      ok('chem: a science shelf, with the molecule on it', !!TOOL_CATS.science &&
-        palTools('science').length === 4 && palTools('science').some(function (t) { return t.kind === 'molecule'; }),
+      ok('chem: Science holds both molecules and logic circuits', !!TOOL_CATS.science &&
+        palTools('science').length === 5 && ['molecule','circuit'].every(function (kind) {
+          return palTools('science').some(function (t) { return t.kind === kind; });
+        }),
         palTools('science').map(function (t) { return t.kind; }).join(','));
       /* the library, in brief — its own battery is longer */
       ok('chem: 118 elements', CHEM_EL.length === 119);

@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 1158 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 1192 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,12 +22,12 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 1158 assertions, and they should
+It prints a pass/fail count and every failure. 1192 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 70 script files load, in order;
+- nothing throws while the 71 script files load, in order;
 - the app boots, opens a note and draws its sheet — one sheet, 1980 × 1320,
   four rails, and no page furniture of any kind;
 - every entry in the add menu adds the type it claims to;
@@ -143,8 +143,20 @@ all pass — if one doesn't, that is a real regression.
   as A; that SR, D, JK and T implement their characteristic tables, D changes on
   a real rising edge and Q-bar is inverse; that the push button holds only until
   release and the clock scheduler advances without a simulation step; that the
-  Logic palette has its four labelled families and a switch can really change
-  from lever to rocker to plain 0/1; that a lead really can be
+  Science shelf has one contained Logic circuit, whose contextual rail has the four
+  labelled families and every named component once in a wheel-isolated,
+  scrollable catalogue; that its workspace controls stay in the contextual
+  item toolbar and the canvas has no control header or labels; that Move is the default and a component body drags directly without a
+  hover handle; that a palette tile drags to a chosen position as well as
+  accepting a click; that Inspector exposes switch Style and
+  truth-table actions; that a nested switch operates without selecting the
+  environment or opening its toolbar, component stubs stop cleanly at their
+  outlines, components render above translucent leads, local zoom leaves the
+  circuit frame unchanged and frame resize does not enlarge components, Canvas hides only the surface, circuit search
+  loads an ordinary working half adder, Tidy restores signal order, local
+  Delete removes a component rather than its environment, and static output
+  keeps every nested component and lead; that a switch can really change from
+  lever to rocker to plain 0/1; that a lead really can be
   dragged from an output onto an input, from a bare input onto an output, picked
   up off an input it already drives and moved, and dropped on bare paper to come
   out; that clicking one picks it out and `Delete` takes it away; that deleting a

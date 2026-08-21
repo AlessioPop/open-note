@@ -23,10 +23,12 @@
        tools:   (mk, it, el, page) => {},   // its own toolbar buttons
        wire:    (el, it, page) => {},       // live behaviour, on screen only
        after:   (it, el, page) => {},       // what happens right after it is added
+       key:     e => false,                 // true when the feature consumed a local key gesture
        media:   it => [],        // extra stored blobs it owns, beyond it.media
        takes:   (files, at, page) => false,   // claim files dropped on the page
        takesRank: 1,             // …how keenly, when two features could both want them
        fileable: true,           // may be dropped into a folder (bring icon/label/open)
+       palette: false,           // keep legacy/programmatic add-kinds out of the main palette
        icon:    it => '…',       // how it looks as an icon — in a folder, or folded down
        label:   it => 'name',    // …what it is called under that icon
        meta:    it => '3 columns · 812 rows',   // …and the line beside the name

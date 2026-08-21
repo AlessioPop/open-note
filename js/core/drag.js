@@ -174,7 +174,11 @@ function startResize(e, it, el, page){
   const r = surfaceRect(el), sx = e.clientX, ow = it.w;
   el.setPointerCapture(e.pointerId);
   const mn = minItemW();
-  const mv = ev => { it.w = clamp(ow + (ev.clientX - sx) / r.width * 100, mn, 100); el.style.width = it.w + '%'; wakeRopes(); };
+  const mv = ev => {
+    it.w = clamp(ow + (ev.clientX - sx) / r.width * 100, mn, 100);
+    el.style.width = it.w + '%';
+    wakeRopes();
+  };
   const up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); queueSave(page.id); };
   el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up);
 }

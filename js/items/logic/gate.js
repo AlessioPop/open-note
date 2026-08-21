@@ -2,11 +2,11 @@
    logic gates: Boolean circuits, wired up on the sheet itself */
 
 /* ================= what this is =================
-   Digital Lego. Put conventional gate symbols on the paper, pull leads between
-   their ports, flick a switch, and watch the ones and noughts arrive at the
-   other end. Every gate is an ordinary item — it drags, turns, resizes, sits on
-   a layer, prints, exports, backs up and undoes like anything else, because it
-   *is* like anything else.
+   Digital Lego. Put conventional gate symbols in a circuit environment, pull
+   leads between their ports, flick a switch, and watch the ones and noughts
+   arrive at the other end. The shared records and evaluator also keep older
+   standalone logic items working; circuit.js supplies the preferred contained
+   editor without duplicating what a component means.
 
    Three things are worth knowing before reading on.
 
@@ -27,8 +27,9 @@
    **A wire is not a string.** The strings in js/paper/strings.js tie two ITEMS
    together and mean whatever you want them to; a wire joins one named PORT to
    another named PORT, has a direction, and carries a value. Those are different
-   enough that they are different records — `page.wires`, beside `page.links` —
-   though the geometry, the overlay and the static-render hook are all shared.
+   enough that they are different records — `page.wires` for older standalone
+   items or a circuit's nested `wires` — though their path and signal semantics
+   stay shared.
 
    The graph here is deliberately a little more general than Boolean logic
    needs: ports are named rather than numbered, values are an open set rather
@@ -168,6 +169,14 @@ function lgOwnDef(it){
    worse trade than the microseconds it saves. */
 const lgWires = page => (page && Array.isArray(page.wires)) ? page.wires : [];
 const lgIsGate = it => !!(it && it.type === 'logic');
+/* A circuit environment is page-shaped — items plus wires — but nested inside
+   one page item. Providers let clocks and repainting see those models without
+   teaching this file what an environment looks like. */
+const LG_MODEL_PROVIDERS = [], LG_SYNCERS = [], LG_REDRAWERS = [];
+const defineLogicModels = fn => { if(typeof fn === 'function') LG_MODEL_PROVIDERS.push(fn); };
+const defineLogicSync = fn => { if(typeof fn === 'function') LG_SYNCERS.push(fn); };
+const defineLogicRedraw = fn => { if(typeof fn === 'function') LG_REDRAWERS.push(fn); };
+const lgModels = () => openPages().concat(LG_MODEL_PROVIDERS.flatMap(fn => fn() || []));
 
 /* which item drives each input of `id` — the map every reader wants */
 function lgDrivers(page, id){
@@ -317,7 +326,7 @@ function lgClockState(it){
 function lgClockValue(it){ return it.paused ? (it.on ? LG_1 : LG_0) : lgClockState(it).v; }
 function lgClockArm(){
   clearTimeout(lgClockTimer); lgClockTimer = 0;
-  const running = openPages().flatMap(p => (p.items || []).filter(it =>
+  const running = lgModels().flatMap(p => (p.items || []).filter(it =>
     lgIsGate(it) && lgKind(it) === 'clk' && !it.paused));
   if(!running.length) return;
   const now = performance.now();
@@ -327,7 +336,7 @@ function lgClockArm(){
 function lgClockTick(){
   lgClockTimer = 0;
   const now = performance.now(); let any = false;
-  for(const page of openPages()){
+  for(const page of lgModels()){
     let moved = false;
     for(const it of (page.items || []).filter(it => lgIsGate(it) && lgKind(it) === 'clk' && !it.paused)){
       const s = lgClockState(it), half = 500 / lgClockHz(it);
@@ -420,10 +429,17 @@ function lgSym(it, plain, v){
   const top = rd1(cy - 22), bot = rd1(cy + 22);
   let s = '';
 
-  /* ---- the stubs: every symbol's ports reach the same distance ---- */
+  /* ---- the stubs: stop at the body outline, never underneath it ----
+     Bodies are intentionally a little translucent so a crossing circuit lead
+     remains traceable. Letting a symbol's own stub continue underneath would
+     therefore leave a dirty little tip visible inside the gate. */
+  const inEdge = { and:30, or:34, tri:32, box:26, lamp:33, digit:28, ff:26 }[sh.body] || 38;
   if(g.outs.length && sh.body !== 'switch' && sh.body !== 'const' && sh.body !== 'button' && sh.body !== 'clock')
-    for(const y of oys) s += '<path ' + wire + ' d="M74 ' + y + 'H94"/>';
-  for(const y of ys) s += '<path ' + wire + ' d="M6 ' + y + 'H38"/>';
+    g.outs.forEach((p, i) => {
+      const edge = sh.bubble ? 86 : sh.body === 'ff' && p === 'nq' ? 85 : 76;
+      s += '<path ' + wire + ' d="M' + edge + ' ' + oys[i] + 'H94"/>';
+    });
+  for(const y of ys) s += '<path ' + wire + ' d="M6 ' + y + 'H' + inEdge + '"/>';
 
   /* ---- the bodies ---- */
   if(sh.body === 'and')
@@ -634,6 +650,7 @@ function lgSync(){
     if(it) lgPaint(el, it, pg, valsOf(pg));
   });
   lgLay();
+  LG_SYNCERS.forEach(fn => fn());
   lgTTSync();
 }
 
@@ -659,7 +676,8 @@ function lgBoard(){
     svg = document.createElementNS(SVGNS, 'svg');
     svg.setAttribute('class', LG_SVG);
     svg.setAttribute('preserveAspectRatio', 'none');
-    host.appendChild(svg);
+    const surf = host.querySelector('.surface');
+    (surf || host).appendChild(svg);
   }
   svg.setAttribute('viewBox', '0 0 ' + rd1(BOARD.vw) + ' ' + rd1(BOARD.vh));
   return svg;
@@ -794,7 +812,7 @@ function lgStaticWires(wrap, page, bIdx){
   svg.setAttribute('class', LG_SVG);
   svg.setAttribute('viewBox', '0 0 ' + SVW + ' ' + SVH);
   svg.setAttribute('preserveAspectRatio', 'none');
-  wrap.appendChild(svg);
+  (wrap.querySelector('.surface') || wrap).appendChild(svg);
   const fan = {};
   for(const w of list) fan[lgJoint(w)] = (fan[lgJoint(w)] || 0) + 1;
   const drawn = {};
@@ -1351,7 +1369,7 @@ function lgTTSync(){
 /* a gate whose shape has changed — a custom one gaining a port — is rebuilt */
 function lgRedrawItem(it, page){
   const el = document.querySelector('#pageHost .item[data-id="' + it.id + '"]');
-  if(!el) return;
+  if(!el){ LG_REDRAWERS.some(fn => fn(it, page)); return; }
   const old = el.querySelector('.lgw');
   if(!old) return;
   const holder = document.createElement('div');
@@ -1370,6 +1388,7 @@ function lgRedrawItem(it, page){
    node graph and drops onto a coordinate system like any other. */
 function lgTableOut(it, page){
   const g = lgDef(it), n = g.ins.length, cols = n + 1;
+  const target = page.parent || page, env = page.env;
   const rows = [g.ins.concat([g.outs[0] || 'out'])];
   for(let i = 0; i < (1 << n); i++){
     const r = [];
@@ -1378,23 +1397,22 @@ function lgTableOut(it, page){
     rows.push(r);
   }
   const t = { id: uid(), type: 'table',
-    x: clamp(it.x + pctW(180), 0, 100 - pctW(200)), y: clamp(it.y, 0, 100 - pctH(200)),
+    x: clamp(env ? env.x + env.w + pctW(20) : it.x + pctW(180), 0, 100 - pctW(200)),
+    y: clamp(env ? env.y : it.y, 0, 100 - pctH(200)),
     w: clamp(9 * cols * pgK(), minItemW(), 100),
-    fs: 15, rot: 0, z: maxZ(page) + 1, lay: curLayerId(),
+    fs: 15, rot: 0, z: maxZ(target) + 1, lay: env ? env.lay : curLayerId(),
     rows, cw: rows[0].map(() => 1 / cols), al: rows[0].map(() => 'c'),
     head: 1, ts: 'lines', fmt: {}, cap: g.name + ' — truth table' };
-  page.items.push(t);
-  queueSave(page.id); SND.plop();
+  target.items.push(t);
+  queueSave(target.id); SND.plop();
   lgSay('the table is on the sheet beside it');
   render().then(() => { select(t.id); lgWake(); });
 }
 
 /* ================= the item ================= */
 /* Ports have to take the pointer without the gate being dragged out from under
-   it, which is one stopPropagation. A switch is the other way round: swallowing
-   its pointerdown would make it the one gate that could not be picked up, so it
-   toggles on a pointerup the hand did not move — a click, told from a drag by
-   how far it went. */
+   it. Controls also own their gestures: flicking a switch or holding a button
+   changes the circuit without selecting the component or opening its toolbar. */
 function lgBind(el, it, page){
   const w = el.querySelector('.lgw');
   if(!w) return;
@@ -1406,7 +1424,12 @@ function lgBind(el, it, page){
   if(tap){
     let dn = null;
     el.addEventListener('pointerdown', e => {
-      dn = e.target.closest('.lgp') ? null : { x: e.clientX, y: e.clientY };
+      if(e.target.closest('.lgp') || e.target.closest('.lgsw,.lgclock') !== tap){ dn = null; return; }
+      /* Operating a control is not selecting an item. In particular it must
+         not make the page toolbar appear under the user's finger. */
+      e.preventDefault(); e.stopImmediatePropagation();
+      try{ tap.setPointerCapture(e.pointerId); }catch(err){}
+      dn = { x: e.clientX, y: e.clientY };
     });
     el.addEventListener('pointerup', e => {
       const d = dn; dn = null;
@@ -1446,20 +1469,26 @@ function lgBind(el, it, page){
   if(lgKind(it) === 'clk') lgClockArm();
 }
 
+/* The same record builder serves legacy standalone gates and the components
+   nested in a circuit environment. Keeping defaults here prevents the two ways
+   of adding a clock or flip-flop from quietly becoming different devices. */
+function lgMake(k, base){
+  const it = { ...base, type: 'logic', gate: k, w: 22, rot: 0, cap: '' };
+  if(k === 'sw' || k === 'btn') it.on = 0;
+  if(k === 'clk'){ it.on = 0; it.hz = 1; it.paused = false; }
+  if(LG_GATES[k].seq){ it.q = 0; it.clk = 0; it.w = 24; }
+  if(k === 'digit') it.w = 24;
+  if(k === 'cust') it.def = { name: 'Custom', n: 2, table: [0, 0, 0, 1] };
+  return it;
+}
+
 defineItem('logic', {
   add: (() => {
     const a = {};
-    for(const k in LG_GATES) a['lg-' + k] = base => {
-      const it = { ...base, type: 'logic', gate: k, w: 22, rot: 0, cap: '' };
-      if(k === 'sw' || k === 'btn') it.on = 0;
-      if(k === 'clk'){ it.on = 0; it.hz = 1; it.paused = false; }
-      if(LG_GATES[k].seq){ it.q = 0; it.clk = 0; it.w = 24; }
-      if(k === 'digit') it.w = 24;
-      if(k === 'cust') it.def = { name: 'Custom', n: 2, table: [0, 0, 0, 1] };
-      return it;
-    };
+    for(const k in LG_GATES) a['lg-' + k] = base => lgMake(k, base);
     return a;
   })(),
+  palette: false,                 // old notes still render; new gates live in a circuit environment
   sound: 'pop',
   html: (it, c) => lgHTML(it, c),
   wire(el, it, page){ lgBind(el, it, page); lgWake(); },
@@ -1554,11 +1583,8 @@ const LG_PALETTE = [
   { label: 'Flip-flops', order: 40, kinds: ['srff', 'dff', 'jkff', 'tff'] }
 ];
 const LG_ORDER = LG_PALETTE.flatMap(g => g.kinds);
-LG_PALETTE.forEach(group => group.kinds.forEach((k, i) => {
+LG_PALETTE.forEach(group => group.kinds.forEach(k => {
   defineIcon('lg-' + k, lgIcon(k));
-  defineTool({ kind: 'lg-' + k, cat: 'logic', group: group.label, groupOrder: group.order,
-               label: LG_GATES[k].name, icon: 'lg-' + k,
-               hint: LG_GATES[k].name + ' — ' + LG_GATES[k].tip, order: 10 + i });
 }));
 
 /* ================= how it looks ================= */
@@ -1570,7 +1596,7 @@ addCSS('logic', `
    is drawn in kraft ink. */
 .lgw{position:relative}
 .lgsvg{display:block;width:100%;height:auto;overflow:visible}
-.lgw .lgb{fill:var(--paper);stroke:var(--ink);stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round}
+.lgw .lgb{fill:var(--paper);fill-opacity:.9;stroke:var(--ink);stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round}
 .lgw .lgs{fill:none;stroke:var(--ink);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
 .lgw .lgd{fill:var(--ink);stroke:none}
 .lgw .lgnum{fill:var(--ink);stroke:none;font-family:var(--mono);font-size:19px;
@@ -1624,7 +1650,7 @@ addCSS('logic', `
    Never colour alone: a one is bright AND thick, a nought is muted AND thin,
    unknown, high-impedance and loop-error leads each wear a different dash.
    Every state is told from the others with the colour taken away. */
-svg.lgwires{position:absolute;inset:0;width:100%;height:100%;z-index:192;pointer-events:none;
+svg.lgwires{position:absolute;inset:0;width:100%;height:100%;z-index:5;pointer-events:none;
   overflow:visible}
 svg.lgwires path{fill:none}
 svg.lgwires .lgl{stroke:var(--soft);stroke-width:2.2;stroke-linecap:round;opacity:.7}
