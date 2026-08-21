@@ -178,9 +178,16 @@ function openProps(anchor, spec){
   }
   el.classList.add('open');
   syncProps();
-  /* above the button it came from; when the top of the screen is in the way,
-     step to whichever side has more room — never over the thing being
-     measured, which the whole point is to watch changing. Below is last. */
+  placePanel(el, anchor);
+}
+
+/* ---- where a panel opened off an item's toolbar goes ----
+   Above the button it came from; when the top of the screen is in the way, to
+   whichever side has room — never over the thing being described, which the
+   whole point is to watch changing. Below is last. Shared, because every panel
+   an item opens off its toolbar wants exactly this and the rule is fiddly
+   enough that two copies of it would drift. */
+function placePanel(el, anchor){
   const r = anchor.getBoundingClientRect();
   /* stepping sideways, it steps past the whole toolbar the button sits in —
      half a toolbar hidden behind the panel is half a toolbar lost */

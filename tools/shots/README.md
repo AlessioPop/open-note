@@ -3,6 +3,8 @@
     tools/shots/run.sh              every scene
     tools/shots/run.sh molecules    just that one
 
+Five of them: `canvas`, `molecules`, `nuclides`, `data`, `logic`.
+
 Output lands in `docs/img/`, which `README.md` links to.
 
 A screenshot taken by hand goes stale the first time a colour, a font or a
@@ -43,6 +45,13 @@ a node into a plot, say, so the series carries what a real drop would put in it
 - **Ink is in thousandths of the sheet's WIDTH on both axes.** On a 1980 × 1240
   sheet the bottom edge is at y = 626, not 1000.
 - **Give every table and figure a caption.** An empty one shows its grey
-  `caption` placeholder, which looks like a defect in a screenshot.
+  `caption` placeholder, which looks like a defect in a screenshot. (A logic
+  gate is the exception: its placeholder only appears on a gate you have picked
+  up, so a circuit of a dozen of them is not a circuit of a dozen ghost words.)
+- **Anything drawn *between* items is laid after the render, not during it.**
+  The strings and the node wires are put up by `drawStaticStrings`, but the
+  logic leads are measured off the port dots, which do not exist until the sheet
+  has been rendered — hence `logicAfter()` calling `lgSync()`. A scene that
+  wires things together and shows no wires has forgotten its `After`.
 - The recompression at the end is lossless on purpose. Quantising to a 256
   colour palette halves the files again but bands the desk's gradient.

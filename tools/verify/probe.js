@@ -195,7 +195,7 @@
         Object.keys(ADD_KINDS).filter(function (k) { return kinds.indexOf(k) < 0; }).join(','));
       openQuickMenu(320, 180);
       ok('palette: opens', Q('#palette').classList.contains('open'));
-      ok('palette: six shelves', QA('#palTabs .ptab').length === 6,
+      ok('palette: seven shelves', QA('#palTabs .ptab').length === 7,
         QA('#palTabs .ptab').length + ' tabs');
       setShelf('write');
       var tiles = QA('#palGrid .ptile');
@@ -1043,6 +1043,8 @@
         '.deck', '.plot', '.mplotbox', '.mleg',
         '.chfig', '.chbox', 'svg.chsvg', '.chleg', '.chrow', '.chsw', '.chpct',
         '.solid', '.sowrap', '.washi', '.stk', '.stk svg',
+        '.lgw', '.lgsvg', '.lgw .lgb', '.lgw .lgs', '.lgw .lgdot', '.lgw .lghit',
+        'svg.lgwires', 'svg.lgwires .lgl',
         '.mcard', '.mgrid', '.mcell', '.mlab',
         '#stage', '#book', '.page', '.surface', '.grain', '.prail'
       ];
@@ -2944,6 +2946,675 @@
       await render();
     });
 
+    /* ---- logic gates: the truth tables, the leads, and the circuit ----
+       The tables below are written out again here on purpose. Reading them back
+       out of LG_GATES would only prove the file agrees with itself; these are
+       what a textbook prints, and both the definitions and the evaluated
+       circuit are held against them. */
+    await stage('logic', async function () {
+      var page = sheet();
+      var keepItems = page.items.slice(), keepWires = (page.wires || []).slice();
+      var lay = curLayerId();
+      var TRUTH = {
+        and: [0, 0, 0, 1], nand: [1, 1, 1, 0], or: [0, 1, 1, 1], nor: [1, 0, 0, 0],
+        xor: [0, 1, 1, 0], xnor: [1, 0, 0, 1], buf: [0, 1], not: [1, 0]
+      };
+      var TWO = ['and', 'nand', 'or', 'nor', 'xor', 'xnor'], ONE = ['buf', 'not'];
+      var mk = function (gate, extra) {
+        var g = { id: uid(), type: 'logic', gate: gate, x: 5, y: 5, w: 11, rot: 0,
+                  z: 1, lay: lay, cap: '' };
+        if (gate === 'sw') g.on = 0;
+        if (gate === 'cust') g.def = { name: 'Custom', n: 2, table: [0, 0, 0, 1] };
+        for (var k in (extra || {})) g[k] = extra[k];
+        return g;
+      };
+      var join = function (p, a, ap, b, bp) {
+        p.wires = p.wires || [];
+        var w = { id: uid(), from: { item: a.id, port: ap }, to: { item: b.id, port: bp } };
+        p.wires.push(w);
+        return w;
+      };
+      var V = function (p, it) { return lgEval(p).get(it.id); };
+
+      /* ---- the definitions say what the textbook says ---- */
+      var defBad = [];
+      Object.keys(TRUTH).forEach(function (k) {
+        if (LG_GATES[k].table.join('') !== TRUTH[k].join('')) defBad.push(k);
+      });
+      ok('logic: every built-in definition carries the table it should',
+        defBad.length === 0, defBad.join(','));
+      ok('logic: the inverting gates are the plain ones turned over',
+        LG_GATES.nand.table.join('') === LG_GATES.and.table.map(function (v) { return 1 - v; }).join('') &&
+        LG_GATES.nor.table.join('') === LG_GATES.or.table.map(function (v) { return 1 - v; }).join('') &&
+        LG_GATES.xnor.table.join('') === LG_GATES.xor.table.map(function (v) { return 1 - v; }).join('') &&
+        LG_GATES.not.table.join('') === LG_GATES.buf.table.map(function (v) { return 1 - v; }).join(''));
+      ok('logic: and the inverting symbols are the plain ones plus one bubble',
+        LG_GATES.nand.shape.body === LG_GATES.and.shape.body && LG_GATES.nand.shape.bubble === true &&
+        LG_GATES.nor.shape.body === LG_GATES.or.shape.body && LG_GATES.nor.shape.bubble === true &&
+        LG_GATES.xnor.shape.body === LG_GATES.or.shape.body && LG_GATES.xnor.shape.back === true &&
+        LG_GATES.not.shape.body === LG_GATES.buf.shape.body && LG_GATES.not.shape.bubble === true);
+
+      /* ---- every table, driven for real, all four rows of it ---- */
+      var sa = mk('sw'), sb = mk('sw');
+      page.items = [sa, sb]; page.wires = [];
+      var G = {};
+      Object.keys(TRUTH).forEach(function (k) {
+        var g = mk(k); G[k] = g; page.items.push(g);
+        join(page, sa, 'q', g, 'a');
+        if (TWO.indexOf(k) >= 0) join(page, sb, 'q', g, 'b');
+      });
+      var wrong = [];
+      for (var i = 0; i < 4; i++) {
+        sa.on = (i >> 1) & 1; sb.on = i & 1;
+        var vals = lgEval(page);
+        TWO.forEach(function (k) {
+          if (vals.get(G[k].id) !== TRUTH[k][i]) wrong.push(k + '(' + sa.on + sb.on + ')=' + vals.get(G[k].id));
+        });
+        ONE.forEach(function (k) {
+          if (vals.get(G[k].id) !== TRUTH[k][sa.on]) wrong.push(k + '(' + sa.on + ')=' + vals.get(G[k].id));
+        });
+      }
+      ok('logic: all eight gates give the right answer on every row', wrong.length === 0,
+        wrong.join(' '));
+
+      /* the first input is the high bit — only a lopsided table can prove it */
+      var cu = mk('cust', { def: { name: 'A-not-B', n: 2, table: [0, 0, 1, 0] } });
+      page.items.push(cu);
+      join(page, sa, 'q', cu, 'a'); join(page, sb, 'q', cu, 'b');
+      sa.on = 1; sb.on = 0;
+      ok('logic: the first input is the high bit of the row number', V(page, cu) === 1, V(page, cu));
+      sa.on = 0; sb.on = 1;
+      ok('logic: and the other way round is a different row', V(page, cu) === 0, V(page, cu));
+      ok('logic: a custom gate is named by what is written on it', lgDef(cu).name === 'A-not-B');
+      /* the palette tile is the same drawing as the thing it puts on the paper */
+      var noIcon = LG_ORDER.filter(function (k) {
+        return !ICONS['lg-' + k] || ICONS['lg-' + k].length < 40; });
+      ok('logic: every gate ships the tile that draws it', noIcon.length === 0 &&
+        LG_ORDER.length === Object.keys(LG_GATES).length, noIcon.join(','));
+      ok('logic: and no tile carries writing too small to read',
+        LG_ORDER.every(function (k) { return (ICONS['lg-' + k].match(/<text/g) || []).length <= 1; }),
+        LG_ORDER.filter(function (k) {
+          return (ICONS['lg-' + k].match(/<text/g) || []).length > 1; }).join(','));
+      ok('logic: and eight inputs is as far as it goes',
+        lgDef(mk('cust', { def: { n: 40, table: [] } })).ins.length === 8);
+
+      /* ---- constants and the lamp ---- */
+      var z = mk('zero'), o = mk('one'), lp = mk('lamp');
+      page.items = [z, o, lp]; page.wires = [];
+      ok('logic: a constant 0 is a nought', V(page, z) === 0, V(page, z));
+      ok('logic: a constant 1 is a one', V(page, o) === 1, V(page, o));
+      ok('logic: a lamp with nothing in it says it does not know', V(page, lp) === 'x', V(page, lp));
+      join(page, o, 'q', lp, 'a');
+      ok('logic: a lamp shows what is wired into it', V(page, lp) === 1, V(page, lp));
+      ok('logic: and nothing can be wired out of a lamp', lgDef(lp).outs.length === 0);
+
+      /* ---- one output feeding three inputs, and three levels of it ---- */
+      var s1 = mk('sw', { on: 1 }), inv = mk('not');
+      var a1 = mk('and'), o1 = mk('or'), x1 = mk('xor');
+      page.items = [s1, inv, a1, o1, x1]; page.wires = [];
+      join(page, s1, 'q', inv, 'a');
+      ['a', 'b'].forEach(function (p) {
+        join(page, inv, 'q', a1, p); join(page, inv, 'q', o1, p); join(page, inv, 'q', x1, p);
+      });
+      var fv = lgEval(page);
+      ok('logic: one output feeds three gates at once',
+        fv.get(a1.id) === 0 && fv.get(o1.id) === 0 && fv.get(x1.id) === 0,
+        [fv.get(a1.id), fv.get(o1.id), fv.get(x1.id)].join(','));
+      s1.on = 0; fv = lgEval(page);
+      ok('logic: and all three follow the one switch',
+        fv.get(a1.id) === 1 && fv.get(o1.id) === 1 && fv.get(x1.id) === 0,
+        [fv.get(a1.id), fv.get(o1.id), fv.get(x1.id)].join(','));
+
+      var n1 = mk('not'), n2 = mk('not'), n3 = mk('not'), sc = mk('sw', { on: 1 });
+      page.items = [sc, n1, n2, n3]; page.wires = [];
+      join(page, sc, 'q', n1, 'a'); join(page, n1, 'q', n2, 'a'); join(page, n2, 'q', n3, 'a');
+      ok('logic: three inverters in a row invert', V(page, n3) === 0, V(page, n3));
+      sc.on = 0;
+      ok('logic: and follow the switch down the whole chain', V(page, n3) === 1, V(page, n3));
+
+      /* ---- an input nothing drives is not a nought ---- */
+      var half = mk('and'), zz = mk('zero');
+      page.items = [half, zz]; page.wires = [];
+      ok('logic: a gate with nothing wired in says it does not know', V(page, half) === 'x', V(page, half));
+      join(page, zz, 'q', half, 'a');
+      ok('logic: half-wired is still not known — b is not a nought',
+        V(page, half) === 'x', V(page, half));
+      var dn = mk('not');
+      page.items.push(dn); join(page, half, 'q', dn, 'a');
+      ok('logic: and not knowing carries downstream', V(page, dn) === 'x', V(page, dn));
+
+      /* ---- one driver per input ---- */
+      var t1 = mk('sw', { on: 1 }), t0 = mk('sw', { on: 0 }), tg = mk('buf');
+      page.items = [t1, t0, tg]; page.wires = [];
+      ok('logic: connecting works', lgConnect(page, { item: t1.id, port: 'q' }, { item: tg.id, port: 'a' }));
+      ok('logic: and it carries the value', V(page, tg) === 1, V(page, tg));
+      lgConnect(page, { item: t0.id, port: 'q' }, { item: tg.id, port: 'a' });
+      ok('logic: a second lead into one input replaces the first, it does not join it',
+        page.wires.filter(function (w) { return w.to.item === tg.id && w.to.port === 'a'; }).length === 1,
+        page.wires.length + ' leads');
+      ok('logic: and the newest one is the one that drives it', V(page, tg) === 0, V(page, tg));
+      ok('logic: the same lead made twice is not a second lead',
+        !lgConnect(page, { item: t0.id, port: 'q' }, { item: tg.id, port: 'a' }) &&
+        page.wires.length === 1, page.wires.length + ' leads');
+      ok('logic: a gate refuses to be wired into itself',
+        !lgConnect(page, { item: tg.id, port: 'q' }, { item: tg.id, port: 'a' }));
+      ok('logic: an output cannot be wired to an output',
+        !lgConnect(page, { item: t0.id, port: 'q' }, { item: t1.id, port: 'q' }));
+      ok('logic: nor an input that does not exist',
+        !lgConnect(page, { item: t0.id, port: 'q' }, { item: tg.id, port: 'zz' }));
+
+      /* ---- a ring: it says so rather than running for ever ---- */
+      var r1 = mk('not'), r2 = mk('not'), after = mk('buf'), ind = mk('sw', { on: 1 });
+      page.items = [r1, r2, after, ind]; page.wires = [];
+      join(page, r1, 'q', r2, 'a'); join(page, r2, 'q', r1, 'a');
+      join(page, r2, 'q', after, 'a');
+      var t0ms = Date.now(), rv = lgEval(page), took = Date.now() - t0ms;
+      ok('logic: a circuit wired in a ring is worked out, not run for ever', took < 400, took + ' ms');
+      ok('logic: both gates in the ring are marked',
+        rv.get(r1.id) === 'e' && rv.get(r2.id) === 'e',
+        rv.get(r1.id) + ',' + rv.get(r2.id));
+      ok('logic: so is what hangs off it', rv.get(after.id) === 'e', rv.get(after.id));
+      ok('logic: but a gate nowhere near it is untouched', rv.get(ind.id) === 1, rv.get(ind.id));
+      ok('logic: and the leads in the ring are marked too',
+        lgWireVal(rv, page.wires[0]) === 'e' && lgWireVal(rv, page.wires[2]) === 'e');
+      /* breaking the ring lets it settle again */
+      lgDisconnect(page, page.wires[1], true);
+      var bv = lgEval(page);
+      ok('logic: cutting one lead lets the whole thing settle',
+        bv.get(r1.id) === 'x' && bv.get(after.id) === 'x',
+        bv.get(r1.id) + ',' + bv.get(after.id));
+
+      /* ================= on the paper ================= */
+      var sw = mk('sw', { on: 0, x: 8, y: 10, w: 12 });
+      var gate = mk('and', { x: 34, y: 10, w: 12 });
+      var lamp = mk('lamp', { x: 60, y: 10, w: 12 });
+      page.items = [sw, gate, lamp]; page.wires = [];
+      join(page, sw, 'q', gate, 'a'); join(page, sw, 'q', gate, 'b');
+      join(page, gate, 'q', lamp, 'a');
+      await render();
+      await sleep(60);
+
+      var el = function (it) { return Q('#pageHost .item[data-id="' + it.id + '"]'); };
+      ok('live: a gate is on the sheet', !!el(gate) && !!el(gate).querySelector('svg.lgsvg'));
+      ok('live: it has a toolbar', !!el(gate).querySelector('.tools button'));
+      ok('live: its symbol keeps its own proportions',
+        el(gate).querySelector('.lgsvg').getAttribute('viewBox') === '0 0 100 64',
+        el(gate).querySelector('.lgsvg').getAttribute('viewBox'));
+      ok('live: no NaN anywhere in a symbol',
+        !/NaN/.test(el(gate).querySelector('.lgsvg').innerHTML) &&
+        !/NaN/.test(el(lamp).querySelector('.lgsvg').innerHTML) &&
+        !/NaN/.test(el(sw).querySelector('.lgsvg').innerHTML));
+      ok('live: three ports on a two-input gate',
+        el(gate).querySelectorAll('.lgp').length === 3,
+        el(gate).querySelectorAll('.lgp').length + ' ports');
+      ok('live: the hit area is much bigger than the dot you can see',
+        +el(gate).querySelector('.lghit').getAttribute('r') >=
+        3 * +el(gate).querySelector('.lgdot').getAttribute('r'),
+        el(gate).querySelector('.lghit').getAttribute('r') + ' vs ' +
+        el(gate).querySelector('.lgdot').getAttribute('r'));
+      ok('live: every port says what it is', [].slice.call(el(gate).querySelectorAll('.lgp'))
+        .every(function (p) { return p.querySelector('title') && p.getAttribute('aria-label'); }));
+      ok('live: the leads are drawn', !!Q('#pageHost svg.lgwires') &&
+        Q('#pageHost svg.lgwires').querySelectorAll('g[data-w]').length === 3,
+        Q('#pageHost svg.lgwires') ?
+          Q('#pageHost svg.lgwires').querySelectorAll('g[data-w]').length : 'no overlay');
+      ok('live: a lead that is fanned out wears a junction blob',
+        Q('#pageHost svg.lgwires circle.lgjn'));
+      ok('live: nothing is bright while the switch is off',
+        el(gate).querySelector('.lgw').dataset.v === '0' &&
+        el(lamp).querySelector('.lgw').dataset.v === '0',
+        el(gate).querySelector('.lgw').dataset.v + ',' + el(lamp).querySelector('.lgw').dataset.v);
+      /* Nothing has repainted anything yet: what a symbol says has to be right
+         the moment it is built, because print, a thumbnail and an export never
+         get a second pass at it. */
+      ok('live: a symbol knows its value the moment it is built, with no repaint',
+        el(sw).querySelector('.lgval').textContent === '0' &&
+        el(lamp).querySelector('.lgval').textContent === '0',
+        el(sw).querySelector('.lgval').textContent + ',' +
+        el(lamp).querySelector('.lgval').textContent);
+      /* a circuit of a dozen gates should not be a circuit of a dozen ghost
+         captions — the offer is there when you pick one up, and not before */
+      var capOf = function (it) {
+        return getComputedStyle(el(it).querySelector('figcaption'), '::before').content;
+      };
+      ok('caption: a gate nobody has picked up carries no ghost word under it',
+        capOf(gate) === 'none', capOf(gate));
+      select(gate.id);
+      ok('caption: and picking it up offers one', /caption/.test(capOf(gate)), capOf(gate));
+      select(null);
+
+      /* a click on the switch turns the whole circuit on */
+      var swEl = el(sw);
+      var mid = function (n) {
+        var r = n.getBoundingClientRect();
+        return { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+                 bubbles: true, pointerId: 7, isPrimary: true };
+      };
+      var at = mid(swEl.querySelector('.lgsw'));
+      swEl.dispatchEvent(new PointerEvent('pointerdown', at));
+      swEl.dispatchEvent(new PointerEvent('pointerup', at));
+      ok('switch: a click flicks it', sw.on === 1, sw.on);
+      ok('switch: and the gate follows at once',
+        el(gate).querySelector('.lgw').dataset.v === '1', el(gate).querySelector('.lgw').dataset.v);
+      ok('switch: and so does the lamp',
+        el(lamp).querySelector('.lgw').dataset.v === '1');
+      ok('switch: the lamp lights with rays as well as colour, so a print still reads',
+        getComputedStyle(el(lamp).querySelector('.lgray')).display !== 'none',
+        getComputedStyle(el(lamp).querySelector('.lgray')).display);
+      /* a glyph written in the paper's own colour is a glyph that is not there */
+      var swNum = el(sw).querySelector('.lgval');
+      var inkIs = getComputedStyle(el(sw).querySelector('.lgs')).stroke;
+      ok('switch: the one it is sending is written in ink, not in paper',
+        !!swNum && swNum.textContent === '1' && getComputedStyle(swNum).fill === inkIs,
+        (swNum && swNum.textContent) + ' ' + (swNum && getComputedStyle(swNum).fill) +
+        ' vs ink ' + inkIs);
+      ok('lamp: a lit bulb writes its one in paper, so it reads against the fill',
+        getComputedStyle(el(lamp).querySelector('.lgval')).fill !== inkIs,
+        getComputedStyle(el(lamp).querySelector('.lgval')).fill);
+      ok('switch: and the leads out of it say one',
+        [].slice.call(Q('#pageHost svg.lgwires').querySelectorAll('g[data-w]'))
+          .every(function (g) { return g.getAttribute('data-v') === '1'; }));
+      /* a drag across it is not a click */
+      var r0 = swEl.getBoundingClientRect();
+      swEl.dispatchEvent(new PointerEvent('pointerdown', mid(swEl.querySelector('.lgsw'))));
+      swEl.dispatchEvent(new PointerEvent('pointerup',
+        { clientX: r0.left + r0.width / 2 + 40, clientY: r0.top + r0.height / 2,
+          bubbles: true, pointerId: 7, isPrimary: true }));
+      ok('switch: a hand that moved was dragging it, not flicking it', sw.on === 1, sw.on);
+
+      /* ---- the four states are told apart with the colour taken away ---- */
+      var lines = [].slice.call(Q('#pageHost svg.lgwires').querySelectorAll('g[data-w] .lgl'));
+      var styleOf = function (v) {
+        var g = Q('#pageHost svg.lgwires g[data-w]');
+        var was = g.getAttribute('data-v');
+        g.setAttribute('data-v', v);
+        var cs = getComputedStyle(g.querySelector('.lgl'));
+        var out = cs.strokeDasharray + '|' + cs.strokeWidth;
+        g.setAttribute('data-v', was);
+        return out;
+      };
+      var looks = ['0', '1', 'x', 'e'].map(styleOf);
+      ok('logic: the four signal states differ by more than colour',
+        new Set(looks).size === 4, looks.join('  '));
+
+      /* ---- pulling a lead by hand ---- */
+      var pull = function (from, to) {
+        var a = mid(from), b = mid(to);
+        from.dispatchEvent(new PointerEvent('pointerdown', a));
+        window.dispatchEvent(new PointerEvent('pointermove', b));
+        window.dispatchEvent(new PointerEvent('pointerup', b));
+      };
+      var extra = mk('or', { x: 34, y: 40, w: 12 });
+      page.items.push(extra);
+      await render(); await sleep(40);
+      pull(el(sw).querySelector('.lgp-out .lghit'),
+           el(extra).querySelector('.lgp-in[data-p="a"] .lghit'));
+      ok('wire drag: dragged from an output onto an input, it connects',
+        !!lgFindWire(page, extra.id, 'a') &&
+        lgFindWire(page, extra.id, 'a').from.item === sw.id,
+        JSON.stringify(page.wires.map(function (w) { return w.to.item + '.' + w.to.port; })));
+      ok('wire drag: the ghost is cleared up after it',
+        !Q('#pageHost svg.lgwires .lghost') && !document.body.classList.contains('lgwiring'));
+      /* and backwards: from a bare input onto an output */
+      pull(el(extra).querySelector('.lgp-in[data-p="b"] .lghit'),
+           el(gate).querySelector('.lgp-out .lghit'));
+      ok('wire drag: and the same gesture backwards, from an input to an output',
+        !!lgFindWire(page, extra.id, 'b') &&
+        lgFindWire(page, extra.id, 'b').from.item === gate.id,
+        JSON.stringify(page.wires.map(function (w) { return w.from.item + '>' + w.to.port; })));
+      /* pulling on an input that is already driven picks the lead up and moves it */
+      var moveTo = mk('not', { x: 60, y: 40, w: 12 });
+      page.items.push(moveTo);
+      await render(); await sleep(40);
+      var before = page.wires.length;
+      pull(el(extra).querySelector('.lgp-in[data-p="b"] .lghit'),
+           el(moveTo).querySelector('.lgp-in[data-p="a"] .lghit'));
+      ok('wire drag: pulling a driven input picks the lead up rather than starting a second',
+        page.wires.length === before && !lgFindWire(page, extra.id, 'b') &&
+        !!lgFindWire(page, moveTo.id, 'a') &&
+        lgFindWire(page, moveTo.id, 'a').from.item === gate.id,
+        page.wires.length + ' of ' + before);
+      /* let go over bare paper and the lead is simply gone */
+      before = page.wires.length;
+      pull(el(extra).querySelector('.lgp-in[data-p="a"] .lghit'), Q('#pageHost .surface'));
+      ok('wire drag: let go over the paper, the lead comes out',
+        page.wires.length === before - 1, page.wires.length + ' of ' + before);
+
+      /* ---- picking a lead out, and taking it away ---- */
+      await render(); await sleep(40);
+      var g0 = Q('#pageHost svg.lgwires g[data-w]');
+      var wid = g0.dataset.w;
+      g0.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      ok('lead: clicking one picks it out',
+        !!Q('#pageHost svg.lgwires g[data-w].sel') && !!Q('.lgchip'));
+      var n = page.wires.length;
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+      ok('lead: Delete takes the one that is picked out away',
+        page.wires.length === n - 1 && !page.wires.some(function (w) { return w.id === wid; }),
+        page.wires.length + ' of ' + n);
+      ok('lead: and the chip goes with it', !Q('.lgchip'));
+
+      /* ---- a gate that goes takes its leads with it ---- */
+      page.items = [sw, gate, lamp]; page.wires = [];
+      join(page, sw, 'q', gate, 'a'); join(page, sw, 'q', gate, 'b');
+      join(page, gate, 'q', lamp, 'a');
+      await render(); await sleep(40);
+      removeItem(page, gate);
+      await sleep(60);
+      ok('gone: deleting a gate takes every lead on it', (page.wires || []).length === 0,
+        JSON.stringify(page.wires));
+      ok('gone: and the lamp is back to not knowing', V(page, lamp) === 'x', V(page, lamp));
+
+      /* ---- ports are measured, not assumed: a turned gate proves it ----
+         Rotation about an element's own middle leaves that middle where it was,
+         so the middle of a rotated dot's box IS the dot. Turn a gate a quarter
+         turn and its output port must swing a quarter turn about the gate's
+         middle — which it cannot do if the anchor came off an unrotated box. */
+      var rg = mk('and', { x: 30, y: 30, w: 14, rot: 0 });
+      page.items = [rg]; page.wires = [];
+      await render(); await sleep(40);
+      var vecOf = function () {
+        var e = el(rg), d = e.querySelector('.lgp-out .lgdot');
+        var er = e.getBoundingClientRect(), dr = d.getBoundingClientRect();
+        return { x: (dr.left + dr.right) / 2 - (er.left + er.right) / 2,
+                 y: (dr.top + dr.bottom) / 2 - (er.top + er.bottom) / 2 };
+      };
+      var v0 = vecOf();
+      /* measured from the middle of the ITEM, which is what rotate() turns
+         about — not from the middle of the symbol, which sits a caption's
+         height above it */
+      ok('rotation: the output port starts out to the right of the middle', v0.x > 4,
+        v0.x.toFixed(1) + ',' + v0.y.toFixed(1));
+      rg.rot = 90;
+      el(rg).style.transform = 'rotate(90deg)';
+      var v9 = vecOf();
+      ok('rotation: a quarter turn swings the port a quarter turn',
+        Math.abs(v9.x - (-v0.y)) < 2.5 && Math.abs(v9.y - v0.x) < 2.5,
+        'was ' + v0.x.toFixed(1) + ',' + v0.y.toFixed(1) +
+        ' now ' + v9.x.toFixed(1) + ',' + v9.y.toFixed(1));
+      ok('rotation: which is nowhere near the edge of its box',
+        Math.abs(v9.x) < Math.abs(v0.x) * 0.6,
+        v9.x.toFixed(1) + ' vs ' + v0.x.toFixed(1));
+      rg.rot = 37;
+      el(rg).style.transform = 'rotate(37deg)';
+      var v37 = vecOf(), L0 = Math.hypot(v0.x, v0.y), L37 = Math.hypot(v37.x, v37.y);
+      ok('rotation: turning it does not stretch the reach of its ports',
+        Math.abs(L0 - L37) < 2.5, L0.toFixed(1) + ' vs ' + L37.toFixed(1));
+      ok('rotation: and a lead leaves along the way the gate is facing',
+        Math.abs(lgDir(37).x - Math.cos(37 * Math.PI / 180)) < 1e-9 &&
+        Math.abs(lgDir(37).y - Math.sin(37 * Math.PI / 180)) < 1e-9);
+      rg.rot = 0;
+
+      /* ---- moving and resizing: the leads follow ---- */
+      var ma = mk('sw', { on: 1, x: 8, y: 60, w: 12 }), mb = mk('not', { x: 40, y: 60, w: 12 });
+      page.items = [ma, mb]; page.wires = [];
+      join(page, ma, 'q', mb, 'a');
+      await render(); await sleep(40);
+      lgLay();
+      var dOf = function () {
+        var g = Q('#pageHost svg.lgwires g[data-w]');
+        return g ? g.querySelector('.lgl').getAttribute('d') : '';
+      };
+      var d0 = dOf();
+      ok('follow: a lead is drawn between them', !!d0 && d0.indexOf('NaN') < 0, d0);
+      mb.x = 62; el(mb).style.left = '62%';
+      lgLay();
+      ok('follow: moving a gate moves the lead with it', dOf() !== d0 && dOf().indexOf('NaN') < 0,
+        dOf());
+      var d1 = dOf();
+      mb.w = 20; el(mb).style.width = '20%';
+      lgLay();
+      ok('follow: and so does resizing it', dOf() !== d1 && dOf().indexOf('NaN') < 0, dOf());
+
+      /* ---- what it says for itself: the truth table ---- */
+      var tt = mk('nand', { x: 20, y: 20, w: 12 }), ts = mk('sw', { on: 1, x: 5, y: 20, w: 12 });
+      page.items = [ts, tt]; page.wires = [];
+      join(page, ts, 'q', tt, 'a');
+      await render(); await sleep(40);
+      select(tt.id);
+      var ttBtn = [].slice.call(el(tt).querySelectorAll('.tools button'))
+        .filter(function (b) { return b.textContent === '⊞'; })[0];
+      ok('table: a gate offers its truth table', !!ttBtn);
+      ttBtn.click();
+      await sleep(60);
+      ok('table: the panel opens', !!Q('#lgtt.open'));
+      var pr = Q('#lgtt').getBoundingClientRect(), gr = el(tt).getBoundingClientRect();
+      ok('table: and not on top of the gate it is explaining',
+        pr.right <= gr.left + 1 || pr.left >= gr.right - 1 ||
+        pr.bottom <= gr.top + 1 || pr.top >= gr.bottom - 1,
+        'panel ' + [pr.left, pr.top, pr.right, pr.bottom].map(Math.round).join(',') +
+        ' gate ' + [gr.left, gr.top, gr.right, gr.bottom].map(Math.round).join(','));
+      ok('table: with four rows and three columns',
+        Q('#lgtt .lgttt tbody').children.length === 4 &&
+        Q('#lgtt .lgttt thead tr').children.length === 3,
+        Q('#lgtt .lgttt tbody').children.length + ' rows');
+      ok('table: the columns are named after the ports',
+        [].slice.call(Q('#lgtt .lgttt thead tr').children)
+          .map(function (c) { return c.textContent; }).join('') === 'abq',
+        [].slice.call(Q('#lgtt .lgttt thead tr').children)
+          .map(function (c) { return c.textContent; }).join(''));
+      ok('table: it holds the gate\'s real answers',
+        [].slice.call(Q('#lgtt .lgttt tbody').children)
+          .map(function (r) { return r.lastElementChild.textContent; }).join('') === '1110',
+        [].slice.call(Q('#lgtt .lgttt tbody').children)
+          .map(function (r) { return r.lastElementChild.textContent; }).join(''));
+      ok('table: with b unwired, no row claims to be the one it is on',
+        !Q('#lgtt .lgttt tr.on') && /not driven/.test(Q('#lgtt .lgttnow').textContent),
+        Q('#lgtt .lgttnow').textContent);
+      join(page, ts, 'q', tt, 'b');
+      lgSync();
+      ok('table: wire the last input and the right row lights up',
+        !!Q('#lgtt .lgttt tr.on') &&
+        [].slice.call(Q('#lgtt .lgttt tbody').children).indexOf(Q('#lgtt .lgttt tr.on')) === 3,
+        [].slice.call(Q('#lgtt .lgttt tbody').children).indexOf(Q('#lgtt .lgttt tr.on')));
+      ok('table: and it says what it is doing in words',
+        /a=1\s+b=1\s+→\s+q=0/.test(Q('#lgtt .lgttnow').textContent),
+        Q('#lgtt .lgttnow').textContent);
+      ts.on = 0; lgSync();
+      ok('table: flicking the switch walks the lit row',
+        [].slice.call(Q('#lgtt .lgttt tbody').children).indexOf(Q('#lgtt .lgttt tr.on')) === 0,
+        [].slice.call(Q('#lgtt .lgttt tbody').children).indexOf(Q('#lgtt .lgttt tr.on')));
+      ok('table: a built-in gate\'s answers cannot be typed over',
+        !Q('#lgtt .lgttt td[data-r]'));
+      /* the same table, as a real table on the paper */
+      var was = page.items.length;
+      Q('#lgtt .lgttout').click();
+      await sleep(160);
+      var made = page.items[page.items.length - 1];
+      ok('table: it can be put on the sheet as an ordinary table',
+        page.items.length === was + 1 && made.type === 'table', made && made.type);
+      ok('table: with a header row and one row per combination',
+        made.rows.length === 5 && made.rows[0].join('') === 'abq' &&
+        made.rows.map(function (r) { return r[r.length - 1]; }).join('') === 'q1110',
+        JSON.stringify(made.rows));
+      page.items = page.items.filter(function (x) { return x !== made; });
+      lgTTClose();
+      await sleep(60);
+
+      /* ---- a custom gate is the one you may type over ---- */
+      var cg = mk('cust', { x: 20, y: 20, w: 14 });
+      page.items = [cg]; page.wires = [];
+      await render(); await sleep(40);
+      select(cg.id);
+      var cBtn = [].slice.call(el(cg).querySelectorAll('.tools button'))
+        .filter(function (b) { return b.textContent === '⊞✎'; })[0];
+      ok('custom: it offers an editor rather than a reading', !!cBtn);
+      cBtn.click();
+      await sleep(60);
+      ok('custom: the answers are clickable', !!Q('#lgtt .lgttt td[data-r]'));
+      ok('custom: it starts as an AND', lgDef(cg).table.join('') === '0001',
+        lgDef(cg).table.join(''));
+      lgSync();
+      ok('custom: repainting the circuit does not rub the gate\'s name out',
+        el(cg).querySelector('.lgnum').textContent === 'Custom',
+        el(cg).querySelector('.lgnum').textContent);
+      ok('custom: and its ports are lettered on its own face',
+        el(cg).querySelectorAll('.lgtiny').length === lgDef(cg).ins.length &&
+        [].slice.call(el(cg).querySelectorAll('.lgtiny'))
+          .map(function (t) { return t.textContent; }).join('') === 'ab',
+        el(cg).querySelectorAll('.lgtiny').length + ' letters');
+      Q('#lgtt .lgttt td[data-r="0"]').click();
+      await sleep(40);
+      ok('custom: clicking an answer turns it over', lgDef(cg).table.join('') === '1001',
+        lgDef(cg).table.join(''));
+      ok('custom: which is a gate of its own now — XNOR, as it happens',
+        lgDef(cg).table.join('') === LG_GATES.xnor.table.join(''));
+      Q('#lgtt .lgttedit [data-s="1"]').click();
+      await sleep(60);
+      ok('custom: a third input doubles the table', lgDef(cg).ins.length === 3 &&
+        lgDef(cg).table.length === 8, lgDef(cg).ins.length + ' in, ' +
+        lgDef(cg).table.length + ' rows');
+      ok('custom: and the answers already written are kept',
+        lgDef(cg).table.slice(0, 4).join('') === '1001', lgDef(cg).table.join(''));
+      ok('custom: the symbol grew a port to match',
+        el(cg).querySelectorAll('.lgp-in').length === 3,
+        el(cg).querySelectorAll('.lgp-in').length + ' inputs');
+      ok('custom: and it is taller than a two-input gate', lgH(cg) > 64, lgH(cg));
+      Q('#lgtt .lgttedit [data-s="-1"]').click();
+      await sleep(60);
+      ok('custom: taking an input away takes its port with it',
+        lgDef(cg).ins.length === 2 && el(cg).querySelectorAll('.lgp-in').length === 2,
+        lgDef(cg).ins.length + ',' + el(cg).querySelectorAll('.lgp-in').length);
+      lgTTClose();
+      await sleep(60);
+
+      /* ---- undo ---- */
+      var act = function () {
+        document.body.dispatchEvent(new PointerEvent('pointerdown',
+          { bubbles: true, pointerId: 3, isPrimary: true }));
+      };
+      page.items = []; page.wires = [];
+      queueSave(page.id); histCommit();
+      await render();
+      act();
+      addItem('lg-and', { x: 20, y: 20 }, page);
+      await sleep(140);
+      act(); histCommit();
+      ok('undo: a gate placed from the palette is one step', page.items.length === 1 &&
+        page.items[0].type === 'logic', page.items.length + ' items');
+      await undo();
+      ok('undo: and it comes off the sheet again', sheet().items.length === 0,
+        sheet().items.length + ' items');
+      await redo();
+      ok('redo: and back on it', sheet().items.length === 1);
+
+      page = sheet();
+      var ua = mk('sw', { on: 0, x: 8, y: 8, w: 12 }), ub = mk('not', { x: 40, y: 8, w: 12 });
+      page.items = [ua, ub]; page.wires = [];
+      queueSave(page.id); histCommit();
+      await render();
+      act();
+      lgConnect(page, { item: ua.id, port: 'q' }, { item: ub.id, port: 'a' });
+      histCommit();
+      ok('undo: making a connection is a step of its own',
+        (sheet().wires || []).length === 1, (sheet().wires || []).length);
+      await undo();
+      ok('undo: and it takes the lead out again', (sheet().wires || []).length === 0,
+        (sheet().wires || []).length);
+      await redo();
+      ok('redo: and puts it back', (sheet().wires || []).length === 1);
+
+      page = sheet();
+      var swu = page.items.find(function (x) { return x.gate === 'sw'; });
+      act();
+      lgToggle(swu, page);
+      histCommit();
+      ok('undo: flicking a switch is a step', swu.on === 1, swu.on);
+      await undo();
+      ok('undo: and it flicks back',
+        sheet().items.find(function (x) { return x.gate === 'sw'; }).on === 0);
+      await redo();
+      ok('redo: and on again',
+        sheet().items.find(function (x) { return x.gate === 'sw'; }).on === 1);
+
+      /* ---- saved, and read back ---- */
+      page = sheet();
+      var fa = mk('sw', { on: 1, x: 8, y: 8, w: 12 }), fb = mk('xor', { x: 40, y: 8, w: 12 });
+      page.items = [fa, fb]; page.wires = [];
+      join(page, fa, 'q', fb, 'a'); join(page, fa, 'q', fb, 'b');
+      queueSave(page.id);
+      await flush();
+      var read = await kvGet(kPage(page.id));
+      ok('save: the leads are written to the store with the sheet',
+        !!read && (read.wires || []).length === 2, read ? (read.wires || []).length : 'no page');
+      ok('save: and the circuit read back says the same thing',
+        lgEval(read).get(fb.id) === lgEval(page).get(fb.id) &&
+        lgEval(read).get(fb.id) === 0, lgEval(read).get(fb.id));
+      ok('save: a gate is stored as what it means, not as its picture',
+        !/svg|path d=/.test(JSON.stringify(read.items.filter(function (x) {
+          return x.type === 'logic'; }))),
+        JSON.stringify(read.items[1]).slice(0, 120));
+
+      /* ---- backed up, and restored ---- */
+      var snap = JSON.parse(JSON.stringify(await backupNote()));
+      var back = snap.pages[0];
+      ok('backup: the circuit is in the backup file', (back.wires || []).length === 2,
+        (back.wires || []).length);
+      ok('backup: a restore does not renumber items — which is why the leads still land',
+        back.items.map(function (x) { return x.id; }).join(',') ===
+        page.items.map(function (x) { return x.id; }).join(','));
+      ok('backup: and it works out the same after the round trip',
+        lgEval(back).get(fb.id) === 0, lgEval(back).get(fb.id));
+      fa.on = 0;
+      ok('backup: the copy is a copy — the live sheet moved and it did not',
+        lgEval(back).get(fb.id) === 0 && lgEval(page).get(fb.id) === 0);
+
+      /* ---- print, a thumbnail and an export all draw it ---- */
+      fa.on = 1;
+      page.items.push(mk('lamp', { x: 70, y: 8, w: 12 }));
+      join(page, fb, 'q', page.items[2], 'a');
+      await render(); await sleep(40);
+      var host = document.createElement('div');
+      host.style.cssText = 'position:fixed;left:-9999px;top:0;width:660px';
+      document.body.appendChild(host);
+      var pg = buildPage(page, false);
+      host.appendChild(pg); fit(pg);
+      drawStaticStrings(pg, page);
+      var ssvg = pg.querySelector('svg.lgwires');
+      ok('static: the leads are drawn for a print too', !!ssvg &&
+        ssvg.querySelectorAll('path.lgl').length === 3,
+        ssvg ? ssvg.querySelectorAll('path.lgl').length : 'no overlay');
+      ok('static: with no NaN in any of them', !!ssvg &&
+        ![].slice.call(ssvg.querySelectorAll('path.lgl')).some(function (p) {
+          return /NaN/.test(p.getAttribute('d') || ''); }));
+      ok('static: they carry the value they are carrying',
+        !!ssvg && [].slice.call(ssvg.querySelectorAll('path.lgl'))
+          .every(function (p) { return p.getAttribute('data-v') === '0' ||
+                                       p.getAttribute('data-v') === '1'; }),
+        ssvg ? [].slice.call(ssvg.querySelectorAll('path.lgl'))
+          .map(function (p) { return p.getAttribute('data-v'); }).join(',') : '');
+      ok('static: a junction blob comes through as well',
+        !!ssvg && !!ssvg.querySelector('circle.lgjn'));
+      ok('static: a lamp built for a print reads its value, not a placeholder',
+        pg.querySelector('.item[data-id="' + page.items[2].id + '"] .lgval').textContent === '0',
+        pg.querySelector('.item[data-id="' + page.items[2].id + '"] .lgval').textContent);
+      ok('static: the symbols come through, still knowing their values',
+        pg.querySelectorAll('.lgw').length === 3 &&
+        pg.querySelector('.item[data-id="' + fb.id + '"] .lgw').dataset.v === '0',
+        pg.querySelectorAll('.lgw').length + ' symbols');
+      ok('static: and with no handles on them',
+        !pg.querySelector('.lgw ~ .rot') && !pg.querySelector('.rs'));
+      host.remove();
+
+      /* ---- every theme draws it in that theme's ink ---- */
+      var themeWas = index.theme;
+      var inks = [];
+      ['graph', 'dark', 'blue', 'kraft'].forEach(function (t) {
+        index.theme = t; applyTheme();
+        var cs = getComputedStyle(el(fb).querySelector('.lgb'));
+        inks.push(cs.stroke);
+      });
+      index.theme = themeWas; applyTheme();
+      ok('themes: the symbol takes each theme\'s ink rather than a baked-in black',
+        new Set(inks).size === 4 && inks.every(function (c) { return /rgb/.test(c); }),
+        inks.join(' '));
+
+      page.items = keepItems; page.wires = keepWires;
+      lgDeselect();
+      queueSave(page.id); histCommit();
+      await render();
+    });
+
     /* ---- the stylesheet the export inlines ---- */
     await stage('appcss', async function () {
       var s = document.getElementById('appcss');
@@ -2956,6 +3627,7 @@
       ok('appcss: knows the deck', !!s && s.textContent.indexOf('.deck') >= 0);
       ok('appcss: knows the table', !!s && s.textContent.indexOf('.tgrid') >= 0);
       ok('appcss: knows the nodes', !!s && s.textContent.indexOf('svg.nwires') >= 0);
+      ok('appcss: knows the logic gates', !!s && s.textContent.indexOf('svg.lgwires') >= 0);
       ok('appcss: knows the molecule', !!s && s.textContent.indexOf('.molsvg') >= 0);
       ok('appcss: knows the chart of the nuclides', !!s && s.textContent.indexOf('.nusvg') >= 0);
     });
@@ -3245,6 +3917,15 @@
       mk({ type: 'table', cols: ['a', 'b'], rows: [['1', '2']] });
       mk({ type: 'washi', pat: 0 });
       mk({ type: 'sticker', k: 0 });
+      /* a whole little circuit, so the export has leads to draw as well as symbols */
+      var esw = { id: uid(), type: 'logic', gate: 'sw', on: 1, x: 8, y: 40, w: 11, rot: 0,
+                  z: 90, lay: curLayerId(), cap: '' };
+      var enot = { id: uid(), type: 'logic', gate: 'nand', x: 34, y: 40, w: 11, rot: 0,
+                   z: 91, lay: curLayerId(), cap: '' };
+      page.items.push(esw, enot);
+      var keepWires = (page.wires || []).slice();
+      page.wires = [{ id: uid(), from: { item: esw.id, port: 'q' }, to: { item: enot.id, port: 'a' } },
+                    { id: uid(), from: { item: esw.id, port: 'q' }, to: { item: enot.id, port: 'b' } }];
       await render();
 
       /* export revokes the object URL the instant it has clicked the link, so
@@ -3268,17 +3949,32 @@
         ok('export: is a whole document', /^<!DOCTYPE html>/i.test(html));
         /* the styles every feature contributed have to be in there */
         ['.item', '.st-title', '.note', '.ck', '.tgrid', '.mplot', '.deck', '.msolid', '.molsvg', '.shortcut',
-         '.washi', '.stk', '.math'].forEach(function (k) {
+         '.washi', '.stk', '.math', '.lgw', 'svg.lgwires'].forEach(function (k) {
           ok('export: carries ' + k + ' styles', html.indexOf(k) > 0);
         });
         ok('export: the sheet is in it', (html.match(/class="page"/g) || []).length === 1);
         ok('export: has items in it', (html.match(/class="item"/g) || []).length >= 5);
         ok('export: no live handles', html.indexOf('class="rot"') < 0);
         ok('export: it is the sheet, not a flipbook', html.indexOf('class="viewnav"') < 0);
+        /* the circuit is a picture over there, but it is the RIGHT picture:
+           the symbols, the leads between them, and the values they settled on */
+        ok('export: the gate symbols came out',
+          html.indexOf('data-id="' + esw.id + '"') > 0 && html.indexOf('data-id="' + enot.id + '"') > 0,
+          'gates in the file: ' + (html.match(/data-gate="[a-z]+"/g) || []).join(',') +
+          ' · on the sheet: ' + page.items.filter(function (x) { return x.type === 'logic'; })
+            .map(function (x) { return x.gate; }).join(','));
+        ok('export: with the leads drawn between them',
+          (html.match(/class="lgl"/g) || []).length === 2,
+          (html.match(/class="lgl"/g) || []).length + ' leads');
+        ok('export: carrying the values the circuit settled on',
+          html.indexOf('data-v="1"') > 0);
+        ok('export: and no svg was stored to get them there — the record is the gate',
+          html.indexOf('"gate"') < 0);
       } finally {
         HTMLAnchorElement.prototype.click = realClick;
         URL.createObjectURL = realCreate;
         page.items = keep;
+        page.wires = keepWires;
         await render();
       }
     });

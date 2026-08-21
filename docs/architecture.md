@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 988 assertions, driven in headless Firefox
+tools/verify/       the harness: 1120 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -166,10 +166,10 @@ right up until it loses the session.
 
 | File | Lines | What it does |
 |---|---:|---|
-| `icons.js` | 69 | the line-icon set — `icn('table')` — and `defineIcon()` for a feature's own. Loads ahead of the items so they can register icons while loading |
+| `icons.js` | 70 | the line-icon set — `icn('table')` — and `defineIcon()` for a feature's own. Loads ahead of the items so they can register icons while loading |
 | `glass.js` | 69 | the glass material and the warp that every floating panel shares |
-| `palette.js` | 210 | the palette — shelves, tiles and search, drawn from the registry |
-| `props.js` | 264 | the properties popover — glass sliders, steppers, the sweep dial and a deed button; `openProps()` for any feature with measurements |
+| `palette.js` | 215 | the palette — shelves, tiles and search, drawn from the registry |
+| `props.js` | 271 | the properties popover — glass sliders, steppers, the sweep dial and a deed button; `openProps()` for any feature with measurements, and `placePanel()`, the above-then-beside-then-below rule every panel an item opens off its toolbar follows |
 | `mathbar.js` | 101 | the maths toolbar |
 | `map.js` | 174 | the map: the whole sheet, and where you are standing on it |
 | `shelf.js` | 100 | the shelf of notes |
@@ -182,7 +182,8 @@ right up until it loses the session.
 Each one is self-contained and registers itself. **The folder is the palette
 shelf** — a new file under `items/science/` had better call
 `defineTool({ cat:'science', … })`, and a new shelf is one `defineToolCat()` in
-`chrome/palette.js` plus a folder to match.
+`chrome/palette.js` plus a folder to match. Seven of them so far: `write`,
+`math`, `logic`, `science`, `media`, `shapes`, `decor`.
 
 | File | Lines | Registers |
 |---|---:|---|
@@ -197,6 +198,7 @@ shelf** — a new file under `items/science/` had better call
 | `math/cards.js` | 397 | `matrix`, `vecbox` — any size through the ✎ panel, the label algebra (`M⁻¹` undone is `M`), determinants between bars, eigen rows |
 | `math/calc.js` | 264 | `calc` — the written-out product: the animated working, folding it to just the answer, taking it apart again, and standing in as an operand itself |
 | `math/node.js` | 1099 | `node` — five kinds of card, the little graph they make, the wires between them, and the colour wheel |
+| `logic/gate.js` | 1265 | `logic` — Boolean circuits: eight gate symbols derived from four shared primitives, a switch, two constants, a lamp and a truth-table gate of your own; the port-level wire overlay, the topological evaluator with its cycle marking, and the truth-table panel |
 | `science/ptable.js` | 154 | `ptable` — the periodic table as a reference card, and `openElementPicker()`, the popover every element chip opens |
 | `science/nuchart.js` | 680 | `nuchart` — the chart of the nuclides: 5646 squares as ten paths, the magic-number rules, four colourings, pan and zoom on a viewBox, Karlsruhe-split squares for the long-lived metastable states, arrows to every daughter and the whole decay chain, and a foot that works the Q values out as you press |
 | `science/fits.js` | 617 | `fits` — an astronomy file as a shortcut, and the reader behind it: `hdu.info()`, the header in three aligned columns with a search over all of them, COMMENT and HISTORY runs folded in place, every data unit given as a shape and a type rather than as numbers, and columns you pick and drag off the window onto the sheet, where they land as an ordinary table |
@@ -286,10 +288,11 @@ defineTool({ kind:'note', cat:'write', label:'Sticky', icon:'note',
              hint:'Sticky notes in 5 colours', order:30 })
 ```
 
-`cat` names a shelf — `write`, `math`, `science`, `media`, `shapes` or `decor`,
-declared in `chrome/palette.js`, and **the same word as the folder the file is
-in**. `defineToolCat()` adds another if a new area of the app ever deserves one
-— that is how `science` got there when the molecules arrived. `icon` names a
+`cat` names a shelf — `write`, `math`, `logic`, `science`, `media`, `shapes` or
+`decor`, declared in `chrome/palette.js`, and **the same word as the folder the
+file is in**. `defineToolCat()` adds another if a new area of the app ever
+deserves one — that is how `science` got there when the molecules arrived, and
+`logic` when the gates did. `icon` names a
 drawing in `chrome/icons.js`, and `defineIcon()` registers one the set doesn't
 have. `order` sorts within the shelf; ties keep load order.
 
@@ -316,6 +319,91 @@ Three things every item gets for free, with no field to set:
 - **The rest of the toolbar** — pin, arrow, layer, front, back, delete — and
   dragging, rotating, resizing, layers, ink over the top, print, backup and
   export.
+
+## Circuits, and the graph seam under them
+
+`js/items/logic/gate.js` is the first thing in the app that needs a **directed,
+port-level, functional** connection between two items, and it is worth writing
+down why it did not reuse either of the two connection models already here.
+
+**`page.links` cannot express it.** A string is `{id, a, b, c}` — two item ids
+and a colour, undirected, and meaning whatever the person who tied it meant. An
+arrow adds a direction but attaches to the *box* of an item rather than to
+anything in particular on it, and is still decoration: nothing reads it. A wire
+between gates has to name a port at each end, has to know which way it points,
+and is the only reason the circuit computes anything. Forcing that into the
+string record would have meant a link whose `a` and `b` sometimes mean an item
+and sometimes an item-and-a-port, read by two files that disagree about which.
+
+So a sheet carries a second list beside `page.links`:
+
+```js
+page.wires = [
+  { id, from: { item: 'src-id', port: 'q' },
+        to:   { item: 'dst-id', port: 'a' } }
+]
+```
+
+and an item is stored as what it *means*, never as a picture of itself:
+
+```js
+{ id, type: 'logic', gate: 'nand', x, y, w, rot, z, lay }
+{ id, type: 'logic', gate: 'sw',   on: 1, … }
+{ id, type: 'logic', gate: 'cust', def: { name, n, table: [0,0,0,1] }, … }
+```
+
+The **geometry** is shared, though — `pinPoint()` from `paper/strings.js`, the
+overlay's coordinate space, and `onPageOverlay()` for the static render — so
+there is one way of drawing a line between two things on the sheet and three
+features using it.
+
+**The evaluator knows nothing about Boolean logic.** `lgEval(page)` walks the
+wire graph in dependency order and asks each node what it is worth; only
+`lgOne()` — twenty lines — reads a truth table. That is the seam a scientific
+dataflow would grow along later: ports are *named* rather than numbered, values
+are an open set rather than a bit, and the order, the fan-out and the cycle
+handling are all indifferent to what is travelling. `js/items/math/node.js` is
+the older, table-shaped graph and stays where it is; nothing has been merged on
+speculation.
+
+**Order comes from Kahn's algorithm, and so does cycle detection.** Start with
+the gates nothing feeds, and let a gate join the queue once every input it has
+is settled. What the walk never reaches is exactly what is in a loop or
+downstream of one, and it is marked `e`. There is no recursion, no visit flag and
+no iteration limit, so a circuit wired in a ring cannot hang, blow the stack, or
+cost more than one that is fine.
+
+**Four signal states, not two.** `0`, `1`, `x` (nothing is driving this) and `e`
+(this cannot settle). An undriven input is emphatically not a nought, and `x`
+propagates — that is the difference between a circuit you have not finished and
+a circuit that is wrong. A later four-state simulation adds `z` as one more
+member of the set and one more branch in `lgOne()`; no signature changes.
+
+**Nothing is cached.** Working a sheet out is one Map and one sweep, and a stale
+answer after an undo would be a wrong picture on the paper. That is a far worse
+trade than the microseconds a cache saves, and it is why `html()` can compute the
+value it draws rather than reading one off the item — which in turn is why a
+print, a thumbnail and an export come out right without anything having to repaint
+them first.
+
+### Ports are measured, never assumed
+
+The one genuinely hard part. An item on this sheet may be turned to any angle,
+and **a turned gate's ports are nowhere near the edges of its bounding box** —
+`getBoundingClientRect()` on the item gives the axis-aligned box of the *rotated*
+symbol, so `edgePoint()` (which the arrows in `strings.js` use) is wrong for a
+wire.
+
+What is true at every angle: rotation about an element's own centre maps that
+centre to itself, so the middle of a small symmetric element's box **is** that
+element, turned or not. So every port is a `<circle>` in the gate's own SVG, and
+a lead's anchor is that circle's box centre read off the DOM — exact at 0°, at
+37° and at anything the app grows later. The tangent a lead leaves along is
+`it.rot` turned into a unit vector, so a wire comes out of the nose of a gate
+rather than off to one side of it.
+
+Anything else that ever needs to attach to a *place on* an item rather than to
+the item should do the same: put something in the DOM there and measure it.
 
 ## Adding a new feature
 
@@ -516,8 +604,8 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**988 assertions**, and they are the real specification of this app. Among them:
-that all 68 script files load without throwing; that a fresh note is one empty
+**1120 assertions**, and they are the real specification of this app. Among them:
+that all 69 script files load without throwing; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a
 third on the real one; that every add-menu entry adds the type it claims to;
@@ -532,7 +620,13 @@ cell colours a python line the way the editor would and reparses it as rust;
 that a table works out its formulas, reads a real `.xlsx` built in the harness,
 and hands two columns to a plot; that a chart draws one slice per positive row
 with the labels the label engine promises; that a node graph works out each card
-once and says so rather than hanging when it is wired in a circle; that a real
+once and says so rather than hanging when it is wired in a circle; that every one
+of the eight built-in truth tables comes out right on every row of it, that an
+input nothing is wired into is *not* read as a nought, that a second lead into
+one input replaces the first rather than joining it, that a circuit wired in a
+ring is marked rather than run for ever, and that a gate turned a quarter turn
+swings its ports a quarter turn — which is the whole of the rotation-aware port
+geometry, held honest; that a real
 `.pptx` built in the harness comes back as two slides through the master's
 colour map; that a real `.fits` built in the harness walks to three HDUs whose
 headers start exactly where the last one's data ended, that a `CONTINUE` card is

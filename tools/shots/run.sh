@@ -17,7 +17,7 @@ PORT="${PORT:-8741}"
 HOLD_MS="${HOLD_MS:-9000}"
 W="${W:-1440}"; H="${H:-900}"
 
-SCENES="${*:-canvas molecules nuclides data}"
+SCENES="${*:-canvas molecules nuclides data logic}"
 
 command -v firefox >/dev/null || { echo "firefox not found" >&2; exit 2; }
 

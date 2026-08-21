@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 988 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 1120 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,12 +22,12 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 988 assertions, and they should
+It prints a pass/fail count and every failure. 1120 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 68 script files load, in order;
+- nothing throws while the 69 script files load, in order;
 - the app boots, opens a note and draws its sheet — one sheet, 1980 × 1320,
   four rails, and no page furniture of any kind;
 - every entry in the add menu adds the type it claims to;
@@ -125,6 +125,40 @@ all pass — if one doesn't, that is a real regression.
   middle carries down the wires, that a lead really can be pulled out of a
   socket and dropped on a table, out of a card into a socket, and onto a plot to
   become a series — and that print draws the wires too;
+- **logic gates**: that every one of the eight built-in definitions carries the
+  table a textbook prints and that the inverting four really are the plain four
+  turned over and given one bubble; that a real circuit driven by two switches
+  gives the right answer on all four rows of all eight; that the first input is
+  the high bit of the row number, which only a lopsided custom table can prove;
+  that one output feeds three gates at once and three inverters in a row invert;
+  that a gate with nothing wired into one input says it does not know rather than
+  reading it as a nought, and that not knowing carries downstream; that a second
+  lead into one input replaces the first rather than joining it, that a gate
+  refuses to be wired into itself, and that an output cannot be wired to an
+  output; that a ring is worked out rather than run for ever, that both gates in
+  it and everything hanging off it are marked while a gate nowhere near it is
+  untouched, and that cutting one lead lets the whole thing settle; that the four
+  signal states differ by more than their colour; that a lead really can be
+  dragged from an output onto an input, from a bare input onto an output, picked
+  up off an input it already drives and moved, and dropped on bare paper to come
+  out; that clicking one picks it out and `Delete` takes it away; that deleting a
+  gate takes every lead on it; that **a gate turned a quarter turn swings its
+  output port a quarter turn about its own middle** — nowhere near the edge of
+  its box — and that turning it does not stretch the reach of its ports; that
+  moving and resizing a gate move the lead with it; that the truth-table panel
+  opens beside the gate rather than on top of it, lights the row the gate is
+  standing on, lights none while an input is bare, walks the lit row when a
+  switch is flicked, refuses to be typed over on a built-in, and writes itself
+  out as an ordinary table; that a custom gate's answers *can* be clicked, that a
+  third input doubles the table while keeping what was written, and that the
+  symbol grows a port to match; that a symbol knows its value the moment it is
+  built, with no repaint — which is what print, thumbnails and exports depend on;
+  that placing a gate, making a connection and flicking a switch are each one
+  `Ctrl`+`Z`; that the leads are written to the store with the sheet and read
+  back saying the same thing, that a backup carries them and does not renumber
+  the items they point at, and that print, an export and a thumbnail draw the
+  leads, the junction blobs and the values; and that the symbols take each
+  theme's ink rather than a baked-in black;
 - **the colour wheel**: that the hue goes round from straight up and reads back
   as the hue that drew it, that a colour taken down to black still remembers its
   hue on the way up again, that a hex typed in sets the wheel and a colour set

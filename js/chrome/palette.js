@@ -1,16 +1,22 @@
 /* Open Note — ui/palette.js
    the palette — Space, Shift+A, right-click, or + Add… in the toolbar.
 
-   One glass panel instead of a wall of buttons: six shelves along the top
-   (Write · Math · Science · Media · Shapes · Decor), a grid of icon tiles for whichever
-   shelf is open, a search field that looks across all of them, and the page
-   actions along the foot. It is drawn entirely from the registry — every tile
-   is a defineTool() some feature declared in its own file — so a new feature
-   appears here without this file changing. It warps out of the exact point it
-   was summoned from (ui/glass.js), and remembers the shelf you left it on. */
+   One glass panel instead of a wall of buttons: seven shelves along the top
+   (Write · Math · Logic · Science · Media · Shapes · Decor), a grid of icon
+   tiles for whichever shelf is open, a search field that looks across all of
+   them, and the page actions along the foot. It is drawn entirely from the
+   registry — every tile is a defineTool() some feature declared in its own
+   file — so a new feature appears here without this file changing. It warps out
+   of the exact point it was summoned from (ui/glass.js), and remembers the
+   shelf you left it on. */
 
 defineToolCat('write',  { label: 'Write',  icon: 'pencil',  order: 10 });
 defineToolCat('math',   { label: 'Math',   icon: 'sigma',   order: 20 });
+/* Logic sits beside Math because that is what it is — but on its own shelf
+   rather than inside it: thirteen gate tiles buried among the plots would bury
+   the plots too, and js/items/logic/ is a folder, which by the rule in
+   docs/architecture.md means a shelf of the same name. */
+defineToolCat('logic',  { label: 'Logic',  icon: 'logic',   order: 22 });
 defineToolCat('science',{ label: 'Science',icon: 'flask',   order: 25 });
 defineToolCat('media',  { label: 'Media',  icon: 'image',   order: 30 });
 defineToolCat('shapes', { label: 'Shapes', icon: 'cube',    order: 40 });

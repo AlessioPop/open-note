@@ -161,6 +161,45 @@
         html: 'drag one card onto another<br>and it does the arithmetic' });
       return { plt, math };
     },
+    /* ---- logic ----
+       A one-bit full adder, wired port to port, plus the same three bits going
+       into a custom majority gate of its own. Nothing here is posed: the values
+       on the lamps are what lgEval() worked out from the switches. */
+    logic(page){
+      const gate = (g, x, y, w, extra) => {
+        const it = ADD_KINDS['lg-' + g].make(
+          { id: uid(), x, y, rot: 0, z: ++Z, lay: curLayerId() }, 'lg-' + g);
+        Object.assign(it, { w }, extra || {});
+        page.items.push(it);
+        return it;
+      };
+      const lead = (a, ap, b, bp) => (page.wires = page.wires || []).push(
+        { id: uid(), from: { item: a.id, port: ap }, to: { item: b.id, port: bp } });
+      const a  = gate('sw', 3, 11, 9, { on: 1, cap: 'A' });
+      const b  = gate('sw', 3, 33, 9, { on: 0, cap: 'B' });
+      const ci = gate('sw', 3, 61, 9, { on: 1, cap: 'carry in' });
+      const x1 = gate('xor', 20, 19, 11);
+      const x2 = gate('xor', 42, 33, 11);
+      const a1 = gate('and', 20, 47, 11);
+      const a2 = gate('and', 42, 61, 11);
+      const o1 = gate('or',  62, 55, 11);
+      const ls = gate('lamp', 67, 29, 9, { cap: 'sum' });
+      const lc = gate('lamp', 83, 55, 9, { cap: 'carry' });
+      const mj = gate('cust', 67, 77, 12,
+        { def: { name: 'MAJ', n: 3, table: [0, 0, 0, 1, 0, 1, 1, 1] }, cap: 'your own gate' });
+      lead(a, 'q', x1, 'a');  lead(b, 'q', x1, 'b');
+      lead(x1, 'q', x2, 'a'); lead(ci, 'q', x2, 'b');
+      lead(a, 'q', a1, 'a');  lead(b, 'q', a1, 'b');
+      lead(x1, 'q', a2, 'a'); lead(ci, 'q', a2, 'b');
+      lead(a1, 'q', o1, 'a'); lead(a2, 'q', o1, 'b');
+      lead(x2, 'q', ls, 'a'); lead(o1, 'q', lc, 'a');
+      lead(a, 'q', mj, 'a');  lead(b, 'q', mj, 'b'); lead(ci, 'q', mj, 'c');
+      put(page, 'hand', 20, 84, { w: 34, fs: 21,
+        html: 'flick a switch and the ones<br>run down the wires' });
+    },
+    /* the leads are laid against the sheet once it has been rendered — they are
+       measured off the ports themselves, which do not exist until then */
+    logicAfter(){ lgSync(); lgWake(); },
     /* The wire from the graph into the plot is made by the app's own call, after
        the first render, so the series carries exactly what a real drop puts in
        it — the columns, the points and the axis names, worked out from the table
@@ -175,7 +214,8 @@
   const SIZE = { canvas:    [1980, 1240],
                  molecules: [1520, 1020],
                  nuclides:  [1760, 1700],
-                 data:      [1760, 1000] };
+                 data:      [1760, 1000],
+                 logic:     [1980, 1120] };
 
   /* ================= build it and stand back ================= */
   (async function run(){

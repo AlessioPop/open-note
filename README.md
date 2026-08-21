@@ -2,7 +2,7 @@
 
 An endless canvas for notes, sketches, data and maths. No servers, no accounts, no telemetry — it runs entirely on your machine, and everything it needs to draw itself ships with it.
 
-A note is one sheet of paper that never runs out: pull an edge and there is more of it. Put text, tables, plots, charts, code, molecules, 3D models, slide decks and hand-drawn ink anywhere on it, tie them together with string, and draw over the lot with a stylus.
+A note is one sheet of paper that never runs out: pull an edge and there is more of it. Put text, tables, plots, charts, code, molecules, logic circuits, 3D models, slide decks and hand-drawn ink anywhere on it, tie them together with string, and draw over the lot with a stylus.
 
 ![One sheet, with a bit of everything on it](docs/img/canvas.png)
 
@@ -44,6 +44,16 @@ Then **pick columns of a binary table and drag them off the window**. The reader
 
 No library, nothing downloaded: a FITS file is 80-column ASCII cards in 2880-byte blocks, and the arithmetic that finds the next header is a handful of lines. `CONTINUE`d strings are joined back up, `HIERARCH` keywords keep their real names, and BZERO 32768 on BITPIX 16 is reported as the unsigned integer it means.
 
+### Logic gates you can flick
+
+Conventional ANSI gate symbols on the paper, wired port to port. Flick a switch and the ones run down the wires and light the lamps — there is no run button and no simulation step, because the whole sheet is worked out again every time anything changes.
+
+![A one-bit full adder, wired up on the sheet](docs/img/logic.png)
+
+Eight gates, a switch, two constants and a lamp, plus a **custom gate whose truth table you fill in yourself**. Every gate can show the table that *is* its behaviour, with the row it is standing on lit — and put that table on the sheet as an ordinary Open Note table if you want to keep it.
+
+Nothing is a picture of a gate: a gate is stored as `{gate:"nand"}` and drawn from shared SVG primitives, so NAND really is AND plus the one inversion bubble every inverting gate wears. Turn a gate to any angle and the wires stay on its ports, because where a port is is measured off the drawing rather than guessed from a bounding box. Wire a loop and it says so instead of hanging.
+
 ### And the rest
 
 **Write** — text in five styles, sticky notes, checklists, a terminal-style code cell syntax-coloured for twelve languages, flip cards you can study. **Media** — pictures, video, `.obj` models in their own little window, `.pptx` decks that draw themselves as SVG, file attachments and the folders they file into. **Shapes** — five wireframe solids to draw over. **Over the top of all of it** — a stylus, layers, and string tied between anything and anything.
@@ -81,7 +91,7 @@ Everything is saved automatically, on your machine, using IndexedDB. The desktop
 
 | Guide | What's in it |
 | --- | --- |
-| [Manual](docs/manual.md) | Everything you can put on the sheet — tables, nodes, equations, maths, charts, the stylus, shapes, `.obj` models, `.pptx` decks, attachments, folders, flip cards, layers. |
+| [Manual](docs/manual.md) | Everything you can put on the sheet — tables, nodes, logic gates, equations, maths, charts, the stylus, shapes, `.obj` models, `.pptx` decks, attachments, folders, flip cards, layers. |
 | [How it's built](docs/architecture.md) | The shape of it, the five rules, the platform seam, the module map, the registry, and how to add a feature without touching anything else. |
 | [The pictures](tools/shots/README.md) | How the screenshots on this page are rebuilt from the app, and the traps in adding a scene. |
 | [Verification](tools/verify/README.md) | Two harnesses: `run.sh` drives the app in headless Firefox, `desktop.sh` drives the Electron shell. Both print a pass/fail report; CI gates release builds on the second. |
@@ -95,12 +105,12 @@ js/core/          the engine — the note, the sheet, items, state, store, histo
 js/paper/         drawn on the sheet, belonging to no one item — ink, strings, layers
 js/chrome/        the tools around the sheet — palette, toolbars, shelf, map, export
 js/items/<shelf>/ one file per item type, foldered by its palette shelf
-                  write/ math/ science/ media/ shapes/ decor/
+                  write/ math/ logic/ science/ media/ shapes/ decor/
 js/lib/           algorithms that owe nothing to this app — latex, pptx, workbook, fits, chem, spring
 js/data/          tables the lib files read — the nuclides, the elements. Data, never code
 fonts/            the four families, carried locally so nothing needs the network
 desktop/          the Electron shell — main process and icon; wraps the app, never part of it
-tools/verify/     headless-Firefox verification harness — 988 assertions
+tools/verify/     headless-Firefox verification harness — 1120 assertions
 tools/shots/      rebuilds the pictures above from the real app
 docs/             manual, architecture, and those pictures
 ```
@@ -114,7 +124,7 @@ Only `index.html`, `js/`, `fonts/` and `desktop/` are packaged into a build — 
 There is no test runner — the app *is* the test.
 
 ```
-tools/verify/run.sh        # 988 assertions, in headless Firefox
+tools/verify/run.sh        # 1120 assertions, in headless Firefox
 tools/verify/desktop.sh    # 45 more, driving the real Electron shell
 tools/shots/run.sh         # rebuild the pictures in this README
 ```
