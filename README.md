@@ -132,11 +132,13 @@ tools/shots/run.sh         # rebuild the pictures in this README
 ## Cutting a release
 
 ```
-npm version 0.1.0-alpha.3 --no-git-tag-version   # edit the version
-git commit -am "Release 0.1.0-alpha.3"
-git tag v0.1.0-alpha.3
+npm version 0.1.0-alpha.4 --no-git-tag-version   # edit the version
+git commit -am "Release 0.1.0-alpha.4"
+git tag v0.1.0-alpha.4
 git push origin main --tags
 ```
+
+**Check `git diff package.json` before committing.** `npm version` rewrites the whole file with its own formatting, which turns a one-line version bump into thirty lines of churn through the `build` block. Either put the version back by hand afterwards, or just edit the one line and skip npm.
 
 `.github/workflows/release.yml` builds all three platforms on their own runners and collects them into one GitHub Release. A tag carrying `-alpha` or `-beta` is published as a pre-release. Nothing is signed and nothing auto-updates yet.
 
