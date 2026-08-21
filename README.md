@@ -9,7 +9,7 @@ An artistic, page-based sketchbook for game devlogs. No servers, no accounts, no
 | | File | First run |
 | --- | --- | --- |
 | Linux | `.AppImage` | `chmod +x` it, then open it. Nothing is installed. |
-| Windows | `.exe` — installer, or the `portable` one | SmartScreen will warn. **More info → Run anyway.** |
+| Windows | `-setup.exe` to install, or `-portable.exe` to just run it | SmartScreen will warn. **More info → Run anyway.** |
 | macOS | `.dmg` | Right-click the app → **Open**, once. Double-clicking shows a "damaged" error. |
 
 The alpha builds are **unsigned**, which is what those two warnings are about — a certificate costs money per year and buys nothing until the app is worth trusting. If that bothers you, build it yourself from source; it is the same code.

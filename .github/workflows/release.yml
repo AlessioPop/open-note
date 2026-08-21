@@ -95,6 +95,11 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          # name the binaries explicitly — a bare artifacts/**/* also sweeps up
+          # the verify-report artifact, which has no business on a release page
+          files: |
+            artifacts/**/*.AppImage
+            artifacts/**/*.exe
+            artifacts/**/*.dmg
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}
