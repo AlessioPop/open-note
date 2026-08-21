@@ -1,11 +1,11 @@
-# Checking the sketchbook still works
+# Checking Open Note still works
 
 There is no test runner and no unit test. The app *is* the test, and there are
 two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 924 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 912 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,17 +22,18 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 924 assertions, and they should
+It prints a pass/fail count and every failure. 912 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 64 script files load, in order;
-- the app boots, opens a book and draws a page;
+- nothing throws while the 68 script files load, in order;
+- the app boots, opens a note and draws its sheet — one sheet, 1980 × 1320,
+  four rails, and no page furniture of any kind;
 - every entry in the add menu adds the type it claims to;
 - every item type builds live, with a body and a toolbar;
-- and builds again through `buildPage(page, false)` — the path print, the
-  overview and exports all take;
+- and builds again through `buildPage(page, false)` — the path print and
+  exports both take;
 - `$$…$$` compiles to MathML, and a bad formula stays visible;
 - the table: that its formulas come out right, that inserting a row carries
   every reference with it and deleting a column leaves `#REF` behind, that a
@@ -119,18 +120,18 @@ all pass — if one doesn't, that is a real regression.
   back whole, that a real drag *and the throw at the end of it* take one
   `Ctrl`+`Z` between them while two strokes of real ink take one each, that a
   burst of typing is one step, that a deleted item's file is still in the store
-  while the delete can be taken back and comes back with it, that a page added
-  and a page removed both go back — the removed one carrying what was on it,
-  with the book turning to the page it put back — that turning a page is not a
-  step at all, that doing something new drops what was waiting to be put back,
+  while the delete can be taken back and comes back with it, that **growing the
+  sheet is one step that puts the paper *and* everything on it back**, that
+  doing something new drops what was waiting to be put back,
   that `Ctrl`+`Z`, `Ctrl`+`Y` and `Ctrl`+`Shift`+`Z` are wired to the right ends
   of it, and that an empty stack says so rather than throwing;
 - **a computed-style fingerprint of 61 selectors**, so a rule that moved file
   and lost the cascade is caught;
-- the page-unit helpers still come out as the numbers they replaced on a normal
-  page — if `pgK()` isn't 1 there, every default width and nib has moved;
-- a canvas: that it opens as one sheet with no page furniture, and that pulling
-  a rail leaves every item and every stroke exactly where it was;
+- the sheet-unit helpers are exact no-ops on a 660-unit sheet — if `pgK()` isn't
+  1 there, every default width and nib has moved — and scale by exactly a third
+  on the 1980-unit sheet a note really starts at;
+- growing the sheet: that a rail click, a rail drag and `growSheet()` all leave
+  every item and every stroke exactly where it was, and that there is a ceiling;
 - that a burst of pans writes the transform **once, on the next frame** — if
   `applyView()` ever goes back to writing per event, this catches it;
 - the paper-grain switch, both ways, down to the computed `display`;
@@ -176,13 +177,14 @@ all pass — if one doesn't, that is a real regression.
   number and half-life and the side counts name the elements, that ⇢ follows
   uranium-238 fourteen arrows down to lead, that the ⌕ box reads `Tc-99m` as it
   is typed and Enter goes there, and that it prints whole with no buttons;
-- **Export book for real** — the blob is intercepted and checked for every
-  feature's styles.
+- **Export for real** — a known handful of items is put on the sheet, the blob
+  is intercepted, and it is checked for every feature's styles and for the
+  absence of any flipbook chrome.
 
 ## The desktop shell — `desktop.sh`
 
 Five phases, each its own process and its own throwaway `userData`, so a run
-never touches the books in `~/.config/Open Note`. It requires the real
+never touches the notes in `~/.config/Open Note`. It requires the real
 `desktop/main.js` rather than reimplementing it, so a bug in the shell fails the
 run.
 

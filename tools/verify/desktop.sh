@@ -20,8 +20,10 @@ fi
 
 rm -rf "$WORK"; mkdir -p "$WORK"
 
-# A copy of the app with a resize fired in the gap between core/nav.js and
-# ui/bookmarks.js — the load-order race, made deterministic.
+# A copy of the app with a resize fired the instant core/keys.js has installed
+# its resize listener — while forty more scripts are still loading. That is the
+# load-order race made deterministic: refit() reaches for repaintModels(), which
+# items/media/model.js has not defined yet.
 mkdir -p "$WORK/race"
 cp "$SRC/index.html" "$WORK/race/"
 cp -r "$SRC/js" "$WORK/race/"
@@ -30,8 +32,8 @@ python3 - "$WORK/race/index.html" <<'PY'
 import sys, io
 p = sys.argv[1]
 s = io.open(p, encoding='utf-8').read()
-tag = '<script src="js/core/nav.js"></script>'
-assert tag in s, 'core/nav.js is no longer in index.html — fix desktop.sh'
+tag = '<script src="js/core/keys.js"></script>'
+assert tag in s, 'core/keys.js is no longer in index.html — fix desktop.sh'
 io.open(p, 'w', encoding='utf-8').write(
     s.replace(tag, tag + '\n<script>window.dispatchEvent(new Event("resize"));</script>'))
 PY
@@ -63,16 +65,16 @@ phase(){                        # phase <name> <profile> [extra env]
 
 phase boot    profile-a          # a fresh library
 phase boot    profile-a          # …and again, same profile: did it survive?
-phase book    profile-b
+phase note    profile-b
 phase offline profile-c
 phase race    profile-d
 
-# Two boots of one profile must report the same book. Different ids mean the
+# Two boots of one profile must report the same note. Different ids mean the
 # library was rebuilt from scratch, which is silent data loss.
 IDENTS="$(grep -c '^----  IDENT' "$REPORT" || true)"
 UNIQ="$(grep '^----  IDENT' "$REPORT" | sort -u | wc -l)"
 if [ "$IDENTS" -ge 2 ] && [ "$UNIQ" -eq 1 ]; then
-  echo "PASS  [persist] the same book came back after a full restart" >> "$REPORT"
+  echo "PASS  [persist] the same note came back after a full restart" >> "$REPORT"
 else
   echo "FAIL  [persist] the library did not survive a restart ($IDENTS boots, $UNIQ distinct)" >> "$REPORT"
 fi

@@ -9,7 +9,7 @@
 
    One phase per process, chosen with PHASE. tools/verify/desktop.sh runs them
    all and adds up the report. Every phase writes to a throwaway userData
-   directory, so a run never touches the books in ~/.config/Open Note. */
+   directory, so a run never touches the notes in ~/.config/Open Note. */
 
 const { app, BrowserWindow, session } = require('electron');
 const path = require('node:path');
@@ -39,10 +39,10 @@ function watch(win) {
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 /* boot.js is async, and waiting only for `lib` is not enough: it is set the
-   moment the library is read, while createBook() and openBook() are still in
+   moment the library is read, while createNote() and openNote() are still in
    flight. A probe that starts there races the app — it sees an empty library, and
-   opening a book on top of the one already opening leaves `pages` inconsistent.
-   Wait for a settled app instead: a book open, or the shelf showing. */
+   opening a note on top of the one already opening leaves `pages` inconsistent.
+   Wait for a settled app instead: a note open, or the shelf showing. */
 const booted = js => js(`new Promise(r=>{let n=0;(function p(){
   var ready = typeof lib!=='undefined' && lib &&
     ((typeof index!=='undefined' && index) ||
@@ -59,7 +59,7 @@ function finish() {
 /* ================= the phases ================= */
 const PHASES = {
 
-  /* the window, its origin, and the storage the books live in */
+  /* the window, its origin, and the storage the notes live in */
   async boot(win, js) {
     await booted(js);
     ok('origin is the app scheme', await js(`location.origin`) === 'opennote://app',
@@ -78,10 +78,15 @@ const PHASES = {
        removes a feature. This also catches the real failure: a file that loaded
        but never registered. */
     const declared = new Set();
-    for (const file of fs.readdirSync(path.join(ROOT, 'js', 'items'))) {
-      if (!file.endsWith('.js')) continue;
-      const src = fs.readFileSync(path.join(ROOT, 'js', 'items', file), 'utf8');
-      for (const m of src.matchAll(/defineItem\('([a-z0-9]+)'/g)) declared.add(m[1]);
+    const items = path.join(ROOT, 'js', 'items');
+    for (const shelf of fs.readdirSync(items)) {             // one folder per palette shelf
+      const dir = path.join(items, shelf);
+      if (!fs.statSync(dir).isDirectory()) continue;
+      for (const file of fs.readdirSync(dir)) {
+        if (!file.endsWith('.js')) continue;
+        const src = fs.readFileSync(path.join(dir, file), 'utf8');
+        for (const m of src.matchAll(/defineItem\('([a-z0-9]+)'/g)) declared.add(m[1]);
+      }
     }
     const registered = JSON.parse(await js(`JSON.stringify(Object.keys(ITEMS))`));
     const missing = [...declared].filter(t => !registered.includes(t));
@@ -91,32 +96,30 @@ const PHASES = {
        await js(`TOOLS.length`) + ' tools');
     ok('feature CSS installed',
        await js(`document.getElementById('appcss').textContent.length`) > 20000);
-    /* desktop.sh compares this across two runs — same id means the books survived
+    /* desktop.sh compares this across two runs — same id means the notes survived
        the process dying, which is the whole point of the custom origin */
     note('IDENT ' + await js(`lib.books[0].id + '@' + lib.books[0].created`));
     ok('no renderer errors', errs.length === 0, errs.join(' | ') || 'clean');
   },
 
-  /* a book on screen, zoomed and paged — where the load-order bug showed up */
-  async book(win, js) {
+  /* a note on screen, zoomed and grown — where the load-order bug showed up */
+  async note(win, js) {
     await booted(js);
-    await js(`lib.books.length ? openBook(lib.books[0].id) : createBook('verify').then(openBook)`);
+    await js(`lib.books.length ? openNote(lib.books[0].id) : createNote('verify').then(openNote)`);
     await wait(1200);
-    ok('a page rendered', await js(`!!document.querySelector('.page')`) === true);
-    await js(`zoomBy(1.15)`); await wait(300);      // core/zoom.js → syncBmScale()
-    await js(`go(1)`); await wait(500);             // core/nav.js  → gotoPage
+    ok('a sheet rendered', await js(`!!document.querySelector('.page')`) === true);
+    ok('the platform seam is filled in',
+       await js(`PLAT.name === 'electron' && typeof PLAT.saveFile === 'function'`) === true,
+       await js(`PLAT.name`));
+    await js(`zoomBy(1.15)`); await wait(300);
+    await js(`growSheet('r')`); await wait(600);
     await js(`window.dispatchEvent(new Event('resize'))`); await wait(400);
-    ok('zoom, page turn and resize leave no errors', errs.length === 0,
+    ok('zoom, growing the sheet and resize leave no errors', errs.length === 0,
        errs.join(' | ') || 'clean');
-    /* a bookmark makes syncBmScale actually do something rather than early-return */
-    await js(`index.bookmarks=[{id:uid(),pageId:index.pages[0].id,label:'v',c:0,edge:'top',pos:0.3}];
-              renderBookmarks();`);
-    await wait(400);
-    ok('bookmarks render', await js(`!!document.querySelector('#pageHost .bmarks')`) === true);
-    await js(`document.querySelector('#pageHost .bmarks').style.setProperty('--scale','0')`);
-    await js(`window.dispatchEvent(new Event('resize'))`); await wait(500);
-    const scale = await js(`document.querySelector('#pageHost .bmarks').style.getPropertyValue('--scale')`);
-    ok('syncBmScale restores the tab scale on resize', parseFloat(scale) > 0, '--scale ' + scale);
+    const w = await js(`pgW()`);
+    ok('the sheet really grew', w > 1980, 'width ' + w);
+    await js(`undo()`); await wait(600);
+    ok('and one undo puts it back', await js(`pgW()`) === 1980, await js(`pgW()`));
   },
 
   /* the network does not exist: type must still be set in the real faces */

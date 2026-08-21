@@ -91,10 +91,6 @@ const fileTakers = () => Object.keys(ITEMS).filter(t => ITEMS[t].takes)
 
 /* what core asks about an item it has been handed */
 const specOf   = it => ITEMS[it && it.type] || {};
-const askOf    = (it, hook, dflt) => {
-  const f = specOf(it)[hook];
-  return f === undefined ? dflt : f;
-};
 /* a card sizes itself from its own contents rather than from it.w */
 const autoWidth = it => !!specOf(it).autoWidth;
 /* the A− / A+ pair belongs to anything whose writing can be resized */
@@ -112,9 +108,9 @@ const drawPageOverlays = (wrap, page, idx) => PAGE_OVERLAYS.forEach(f => f(wrap,
 /* A feature may keep state that belongs to the open book rather than to any one
    item — which decks are being written, which plot the chip is on. Closing a
    book has to clear it, and core should not have to know what "it" is. */
-const BOOK_OPEN_HOOKS = [];
-const onBookOpen = fn => BOOK_OPEN_HOOKS.push(fn);
-const resetForNewBook = () => BOOK_OPEN_HOOKS.forEach(f => f());
+const NOTE_OPEN_HOOKS = [];
+const onNoteOpen = fn => NOTE_OPEN_HOOKS.push(fn);
+const resetForNewNote = () => NOTE_OPEN_HOOKS.forEach(f => f());
 
 /* Styles travel with their feature, but the export writes ONE stylesheet into
    the file it hands you, so everything lands in the single <style id="appcss">

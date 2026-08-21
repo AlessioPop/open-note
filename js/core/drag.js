@@ -46,7 +46,7 @@ function startDrag(e, it, el, page){
      may start — page units, so a big sheet doesn't swallow it whole */
   const offX = pctW(80), offY = pctH(35), inX = 100 - pctW(26), inY = 100 - pctH(26);
   const home = { x: it.x, y: it.y };
-  let moved = false, crossed = false, over = null;
+  let moved = false, over = null;
   const mark = t => {
     if((t && t.el) === (over && over.el)) return;
     if(over) over.el.classList.remove('dropinto');
@@ -70,31 +70,7 @@ function startDrag(e, it, el, page){
       if(wrapEl) wrapEl.classList.add('carry');            // unclip: the item may hang over the edge
     }
     moved = true; el.classList.add('dragging');
-    if(BOARD && BOARD.entries.length > 1){          // spread: hop onto the facing page
-      const er = el.getBoundingClientRect();
-      const cx = er.left + er.width / 2;            // hand over when the ITEM's centre crosses,
-      for(const en of BOARD.entries){               // not the pointer — no vanishing act
-        if(en.page === curPage) continue;
-        const ns = en.wrap.querySelector('.surface');
-        const nr = ns.getBoundingClientRect();
-        if(cx < nr.left || cx > nr.right) continue;
-        transferItem(it, el, curPage, en.page);
-        ox = ((r.left + it.x / 100 * r.width) - nr.left) / nr.width * 100;    // same spot, new page space
-        oy = ((r.top + it.y / 100 * r.height) - nr.top) / nr.height * 100;
-        sx = ev.clientX; sy = ev.clientY;
-        curPage = en.page; surf = ns; r = nr; crossed = true;
-        if(wrapEl) wrapEl.classList.remove('carry');
-        wrapEl = el.closest('.page');
-        if(wrapEl) wrapEl.classList.add('carry');
-        break;
-      }
-    }
-    /* when a facing page exists, let the item travel far enough for its centre to
-       actually cross the gutter — the resting clamp would wall it in */
-    const spread2 = BOARD && BOARD.entries.length > 1;
-    const hasLeft = spread2 && BOARD.entries[0].page !== curPage;
-    const hasRight = spread2 && BOARD.entries[BOARD.entries.length - 1].page !== curPage;
-    it.x = clamp(ox + (ev.clientX - sx) / r.width * 100, hasLeft ? -offX - it.w : -offX, hasRight ? inX + it.w : inX);
+    it.x = clamp(ox + (ev.clientX - sx) / r.width * 100, -offX, inX);
     it.y = clamp(oy + (ev.clientY - sy) / r.height * 100, -offY, inY);
     el.style.left = it.x + '%'; el.style.top = it.y + '%';
     if(canFile(it)) mark(dropTarget(ev, el));      // …and drop it on another to file them together
@@ -131,15 +107,13 @@ function startDrag(e, it, el, page){
       return;
     }
     if(moved){
-      it.x = clamp(it.x, -offX, inX);           // settle back inside the page it landed on
+      it.x = clamp(it.x, -offX, inX);           // settle back inside the sheet
       el.style.left = it.x + '%';
       queueSave(curPage.id); SND.plop();
       if(tsp) tsp.to(0);                        // the lean settles home to the item's own rotation
-      /* the release keeps the hand's momentum — a crossing re-renders instead */
-      if(!crossed) flingItem(el, it, curPage, fl.vel(), r,
+      flingItem(el, it, curPage, fl.vel(), r,   // the release keeps the hand's momentum
         { x0: -offX, x1: inX, y0: -offY, y1: inY });
     }
-    if(crossed) render();                            // rebind the item's editors to its new page
   };
   window.addEventListener('pointermove', mv);
   window.addEventListener('pointerup', up);

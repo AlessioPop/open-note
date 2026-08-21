@@ -45,19 +45,40 @@
       await waitFor(function () { return typeof index !== 'undefined' && index; }, 20000);
       ok('index exists', !!index);
       ok('library exists', typeof lib !== 'undefined' && !!lib && Array.isArray(lib.books));
-      /* a fresh profile has no books -> straight into the first book */
+      /* a fresh profile has no notes -> straight into the first one */
       await waitFor(function () { return Q('#pageHost .page'); }, 20000);
-      ok('a page rendered', !!Q('#pageHost .page'));
-      ok('page has a surface', !!Q('#pageHost .page .surface'));
-      ok('cover items rendered', QA('#pageHost .item').length > 0,
+      ok('a sheet rendered', !!Q('#pageHost .page'));
+      ok('sheet has a surface', !!Q('#pageHost .page .surface'));
+      ok('a fresh note is empty', QA('#pageHost .item').length === 0,
         'found ' + QA('#pageHost .item').length);
-      /* the page-unit helpers must be no-ops on a normal page, or every default
-         width, margin and nib in the app has quietly moved */
-      ok('page units: a normal page is the base', pgK() === 1, 'pgK=' + pgK());
+      ok('a fresh note is one sheet', index.pages.length === 1, index.pages.length);
+      ok('a fresh note is three pages across', pgW() === SHEET_W && pgH() === SHEET_H,
+        pgW() + ' x ' + pgH());
+      ok('no page furniture: no folio', !Q('#pageHost .folio'));
+      ok('no page furniture: no slug', !Q('#pageHost .slug'));
+      ok('no page furniture: no page nav', !Q('#prev') && !Q('#next') && !Q('#addPage'));
+      ok('four rails to pull', QA('#pageHost .prail').length === 4,
+        QA('#pageHost .prail').length + ' rails');
+      ok('it says how big it is', !!Q('#szTag') && /1980/.test(Q('#szTag').textContent),
+        Q('#szTag') && Q('#szTag').textContent);
+      /* The page-unit helpers must be no-ops on a sheet of the BASE size — that
+         is what "the same physical size on any paper" means, and every default
+         width, margin and nib in the app is written against it. On the real
+         sheet, three times as wide, they must scale by exactly a third. */
+      var sw = index.settings.pgw, sh = index.settings.pgh;
+      index.settings.pgw = PG_BASE; index.settings.pgh = 884;
+      ok('page units: a base sheet is the base', pgK() === 1, 'pgK=' + pgK());
       ok('page units: 92 units is the old 14%', Math.abs(pctW(92) - 14) < 0.1, pctW(92));
       ok('page units: 35 units is the old 4%', Math.abs(pctH(35) - 4) < 0.1, pctH(35));
       ok('page units: the smallest item is still 6%', minItemW() === 6, minItemW());
+      index.settings.pgw = sw; index.settings.pgh = sh;
+      ok('page units: a sheet three times as wide scales by a third',
+        Math.abs(pgK() - PG_BASE / SHEET_W) < 1e-9 &&
+        Math.abs(pctW(92) * 3 - 100 * 92 / PG_BASE) < 1e-9,
+        'pgK=' + pgK() + ' pctW(92)=' + pctW(92));
       ok('page units: zoom still stops at 0.4', zMin() === 0.4, zMin());
+      /* a note opens fitted to the desk; the zoom checks below want a known start */
+      setZoom(1);
 
       /* the view is written once a frame, not once an event */
       var t0 = book.style.transform;
@@ -108,20 +129,24 @@
         JSON.stringify(under()));
       panX = panY = 0; setZoom(1); await twoFrames();
 
-      /* a book keeps its grain; the switch takes it away */
-      ok('grain: a book has it', !document.body.classList.contains('nograin'));
-      Q('#grainSwitch').click();
-      ok('grain: the switch turns it off', document.body.classList.contains('nograin') &&
+      /* A note starts WITHOUT the grain — it is rasterised over the whole sheet,
+         and a sheet is far bigger than a page. The switch brings it back. */
+      ok('grain: a fresh note has none', document.body.classList.contains('nograin') &&
         index.settings.grain === false);
-      ok('grain: the grain layer is really gone',
+      ok('grain: the grain layer really is gone',
         getComputedStyle(Q('#pageHost .grain')).display === 'none');
       Q('#grainSwitch').click();
-      ok('grain: and back on', !document.body.classList.contains('nograin'));
+      ok('grain: the switch turns it on', !document.body.classList.contains('nograin') &&
+        index.settings.grain === true);
+      ok('grain: and it is really drawn',
+        getComputedStyle(Q('#pageHost .grain')).display !== 'none');
+      Q('#grainSwitch').click();
+      ok('grain: and off again', document.body.classList.contains('nograin'));
     });
 
     /* ---- every add-menu kind actually adds what it says ---- */
     await stage('addItem', async function () {
-      var page = activePage();
+      var page = sheet();
       page.items = [];
       await render();
       var kinds = [
@@ -158,7 +183,7 @@
 
     /* ---- the palette: drawn from the registry, searchable, and it adds ---- */
     await stage('palette', async function () {
-      var page = activePage();
+      var page = sheet();
       page.items = []; await render();
       /* the registry and the panel agree in both directions */
       var kinds = TOOLS.map(function (t) { return t.kind; });
@@ -190,9 +215,8 @@
       Q('#palSeek').value = 'zzzz';
       Q('#palSeek').dispatchEvent(new Event('input'));
       ok('palette: a miss says so', !!Q('#palGrid .pnone'));
-      /* the page actions live in its foot */
-      ok('palette: page actions in the foot', !!Q('#palette #bmarkBtn') &&
-        !!Q('#palette #clearPage') && !!Q('#palette #delPage'));
+      /* the one sheet action lives in its foot */
+      ok('palette: the sheet action is in the foot', !!Q('#palette #clearPage'));
       /* a real click on a tile adds the real thing, and the panel goes */
       setShelf('write');
       var before = page.items.length;
@@ -208,7 +232,7 @@
 
     /* ---- the code cell: tokens, languages, schemes, and the bar ---- */
     await stage('code cell', async function () {
-      var page = activePage();
+      var page = sheet();
       page.items = []; await render();
       addItem('code', { x: 8, y: 8 }, page);
       await sleep(120);
@@ -371,7 +395,7 @@
 
     /* ---- the shapes carry their measurements: radii, sides, sweep ---- */
     await stage('solid measurements', async function () {
-      var page = activePage();
+      var page = sheet();
       page.items = []; await render();
       /* a torus knows its two radii and how far round it goes */
       addItem('torus', { x: 12, y: 12 }, page); await sleep(90);
@@ -453,7 +477,7 @@
 
     /* ---- matrices of any size: reshape, invert, eigen, fold, detach ---- */
     await stage('nm cards', async function () {
-      var page = activePage();
+      var page = sheet();
       page.items = []; await render();
       var byTitle = function (id, re) {
         return QA('#pageHost .item[data-id="' + id + '"] .tools button').filter(function (b) {
@@ -698,7 +722,7 @@
 
     /* ---- charts: the pie and its family ---- */
     await stage('charts', async function () {
-      var page = activePage();
+      var page = sheet();
       page.items = [];
       var it = {
         id: uid(), x: 10, y: 10, w: 34, rot: 0, z: 1, lay: curLayerId(),
@@ -902,81 +926,12 @@
       page.items = []; await render();
     });
 
-    /* ---- bookmarks: straight tabs under the paper, and the atlas ---- */
-    await stage('bookmarks & atlas', async function () {
-      var page = activePage();
-      page.items = []; await render();
-      index.bookmarks = []; delete index.atlasSeeded;
-      /* a scratch page with a Heading on it, purely in memory */
-      var p2 = { id: uid(), title: 'Entry 2', date: '2026-08-15', paper: 'grid',
-        items: [{ id: uid(), type: 'text', st: 'title', x: 10, y: 10, w: 60, rot: 0, fs: 40,
-                  z: 1, html: 'Chapter Two' }] };
-      index.pages.push({ id: p2.id, title: p2.title, date: p2.date });
-      pages.set(p2.id, p2);
-      var pn = index.pages.length - 1;
-
-      /* the headings digest rides the save */
-      queueSave(p2.id); await flush();
-      ok('atlas: saving a page writes its headings on the index',
-        JSON.stringify(index.pages[pn].heads) === '["Chapter Two"]',
-        JSON.stringify(index.pages[pn].heads));
-
-      /* bookmark it: a straight fore-edge tab, and the atlas seeds itself */
-      gotoPage(pn); await sleep(150);
-      Q('#bmarkBtn').click(); await sleep(300);
-      ok('bookmarks: one made, on the fore-edge', index.bookmarks.length === 1 &&
-        index.bookmarks[0].edge === 'right', JSON.stringify(index.bookmarks));
-      var tab = Q('#pageHost .bmark');
-      ok('bookmarks: a tab is up', !!tab);
-      var tf = tab && getComputedStyle(tab.querySelector('.tabface'));
-      var m = tf && /matrix\(([^)]*)\)/.exec(tf.transform);
-      var mm = m ? m[1].split(',').map(parseFloat) : null;
-      ok('bookmarks: the tab is straight — no rotation in its transform',
-        !!mm && Math.abs(mm[1]) < 1e-6 && Math.abs(mm[2]) < 1e-6, tf && tf.transform);
-      ok('bookmarks: the notch flag is gone', tf && tf.clipPath === 'none', tf && tf.clipPath);
-      ok('bookmarks: the strip sits under the paper',
-        Q('#pageHost').firstElementChild.classList.contains('bmarks'));
-
-      /* the first bookmark brought the atlas — once */
-      var cover = pages.get(index.pages[0].id);
-      ok('atlas: seeded onto the starting page', index.atlasSeeded === 1 &&
-        cover.items.filter(function (x) { return x.type === 'atlas'; }).length === 1,
-        cover.items.map(function (x) { return x.type; }).join(','));
-      Q('#bmarkBtn').click(); await sleep(150);
-      Q('#bmarkBtn').click(); await sleep(300);
-      ok('atlas: never seeds twice',
-        cover.items.filter(function (x) { return x.type === 'atlas'; }).length === 1);
-
-      /* on the cover it lists the bookmark, the heading beneath it */
-      gotoPage(0); await sleep(150);
-      var ael = Q('#pageHost .item[data-type="atlas"]');
-      ok('atlas: drawn on the cover', !!ael);
-      ok('atlas: the bookmark is a chapter line', !!ael &&
-        ael.querySelectorAll('.abm').length === 1 &&
-        ael.querySelector('.abm .albl').textContent === 'Entry 2',
-        ael && ael.querySelector('.abm .albl') && ael.querySelector('.abm .albl').textContent);
-      ok('atlas: the page heading is a sub-header', !!ael &&
-        ael.querySelectorAll('.asub').length === 1 &&
-        ael.querySelector('.asub .albl').textContent === 'Chapter Two',
-        ael && ael.querySelectorAll('.asub').length + ' subs');
-      ok('atlas: with its page number', !!ael &&
-        ael.querySelector('.abm .apg').textContent === String(pn).padStart(2, '0'),
-        ael && ael.querySelector('.abm .apg').textContent);
-
-      /* clicking a line flips there */
-      ael.querySelector('.abm').click(); await sleep(200);
-      ok('atlas: clicking a chapter flips to its page', cur === pn, 'cur ' + cur);
-
-      /* removing the bookmark empties the atlas, live */
-      gotoPage(0); await sleep(150);
-      index.bookmarks = []; queueIndex(); renderBookmarks(); await sleep(60);
-      ael = Q('#pageHost .item[data-type="atlas"]');
-      ok('atlas: no bookmarks, no chapters', !!ael && !ael.querySelector('.abm') &&
-        !!ael.querySelector('.anone'));
-
-      /* nothing tilts on its way in any more */
-      var cpage = activePage(), tilted = '';
-      var kinds = ['note', 'washi', 'sticker', 'deck', 'body', 'table'];
+    /* ---- nothing tilts on its way onto the sheet ---- */
+    await stage('straight', async function () {
+      var cpage = sheet();
+      var keep = cpage.items.slice();
+      cpage.items = [];
+      var kinds = ['note', 'washi', 'sticker', 'deck', 'body', 'table'], tilted = '';
       for (var i = 0; i < kinds.length; i++) {
         addItem(kinds[i], { x: 30, y: 30 }, cpage); await sleep(70);
         var added = cpage.items[cpage.items.length - 1];
@@ -984,17 +939,13 @@
       }
       ok('straight: nothing tilts on its way in', tilted === '', tilted);
       setMath(false);
-
-      /* put the world back */
-      cover.items = [];
-      delete index.atlasSeeded;
-      index.pages.pop(); pages.delete(p2.id);
+      cpage.items = keep;
       await render();
     });
 
     /* ---- each type renders a live DOM node with its own body ---- */
     await stage('render live', async function () {
-      var page = activePage();
+      var page = sheet();
       page.items = [];
       var base = function (extra) {
         var b = { id: uid(), x: 8, y: 8, w: 30, rot: 0, z: 1, lay: curLayerId() };
@@ -1093,7 +1044,7 @@
         '.chfig', '.chbox', 'svg.chsvg', '.chleg', '.chrow', '.chsw', '.chpct',
         '.solid', '.sowrap', '.washi', '.stk', '.stk svg',
         '.mcard', '.mgrid', '.mcell', '.mlab',
-        '#stage', '#book', '.page', '.surface', '.slug', '.folio', '.grain'
+        '#stage', '#book', '.page', '.surface', '.grain', '.prail'
       ];
       var lines = [];
       SEL.forEach(function (s) {
@@ -1128,7 +1079,7 @@
 
     /* ---- the static path: print, thumbnails and export all use this ---- */
     await stage('static buildPage', async function () {
-      var page = activePage();
+      var page = sheet();
       var st = buildPage(page, false, {});
       ok('static: builds a page', !!st && st.className.indexOf('page') >= 0);
       var n = st.querySelectorAll('.item').length;
@@ -1146,7 +1097,7 @@
 
     /* ---- the table: cells, formulas, and rows and columns coming and going ---- */
     await stage('table', async function () {
-      var page = activePage();
+      var page = sheet();
       var keep = page.items.slice();          // handed back at the end, with a table on it
       page.items = [{
         id: uid(), x: 6, y: 6, w: 52, rot: 0, z: 1, lay: curLayerId(),
@@ -1272,7 +1223,7 @@
 
     /* ---- a long table: the band it shows, and folding it away ---- */
     await stage('table: big', async function () {
-      var page = activePage();
+      var page = sheet();
       var keep = page.items.slice();
       var rows = [['n', 'x', 'note']];
       for (var i = 1; i <= 60; i++) rows.push([String(i), String(i * 1.5), 'row ' + i]);
@@ -1493,7 +1444,7 @@
       ok('import: float noise is trimmed', sh.rows[1][1] === '2.7', sh.rows[1][1]);
 
       /* …and poured into a table */
-      var page = activePage(), keep = page.items.slice();
+      var page = sheet(), keep = page.items.slice();
       var t = { id: uid(), x: 5, y: 5, w: 50, rot: 0, z: 1, lay: curLayerId(),
         type: 'table', fs: 15, ts: 'lines', cap: '', rows: [['']], cw: [1], al: ['l'] };
       page.items = [t];
@@ -1853,7 +1804,7 @@
         png.slice(0, 24) + ' ' + png.length);
 
       /* ---- the card on the page ---- */
-      var page = activePage(), keep = page.items.slice();
+      var page = sheet(), keep = page.items.slice();
       page.items = [];
       await render();
       ok('drop: a deck is claimed by the slides feature',
@@ -1964,7 +1915,7 @@
 
     /* ---- a table plotted in a coordinate system ---- */
     await stage('table → plot', async function () {
-      var page = activePage();
+      var page = sheet();
       var keep = page.items.slice();
       var tab = {
         id: uid(), x: 4, y: 4, w: 40, rot: 0, z: 1, lay: curLayerId(),
@@ -2228,7 +2179,7 @@
 
     /* ---- nodes: the little dataflow graph wired up on the page ---- */
     await stage('nodes', async function () {
-      var page = activePage();
+      var page = sheet();
       var keep = page.items.slice();
       var lay = curLayerId();
       var mkNode = function (nk, extra) {
@@ -2587,9 +2538,14 @@
       pick.in = [null];
       math.in = [pick.id];
       await render();
+      /* The middle of a big item on a sheet three pages across can be off the
+         bottom of the window, and elementsFromPoint answers nothing there — so
+         aim at the middle of the part of it that is actually on screen. */
       var atCentre = function (el) {
         var r = el.getBoundingClientRect();
-        return { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true };
+        var l = Math.max(r.left, 1), t = Math.max(r.top, 1);
+        var rr = Math.min(r.right, innerWidth - 1), bb = Math.min(r.bottom, innerHeight - 1);
+        return { clientX: (l + rr) / 2, clientY: (t + bb) / 2, bubbles: true };
       };
       var pull = function (portEl, targetEl) {
         portEl.dispatchEvent(new PointerEvent('pointerdown', atCentre(portEl)));
@@ -2689,13 +2645,13 @@
     /* ---- ink, layers, pages ---- */
     await stage('ink & layers', async function () {
       ok('layers: at least one', layers(index).length >= 1);
-      var page = activePage();
+      var page = sheet();
       page.ink = [{ lay: curLayerId(), m: 'pen', c: '#000', w: 4,
                     pts: [[100, 100, .5], [200, 200, .5], [300, 150, .5]] }];
       await render();
       ok('ink: a stroke is drawn', !!Q('#pageHost svg.ink path'));
       page.ink = [];
-      ok('pages: more than one', index.pages.length >= 2);
+      ok('pages: exactly one, always', index.pages.length === 1, index.pages.length);
     });
 
     /* ---- taking it back ----
@@ -2704,7 +2660,7 @@
        checked here is that a step is the thing you did — no more of it and no
        less — and that putting it back puts back all of it. */
     await stage('undo', async function () {
-      var page = activePage(), homeId = page.id;
+      var page = sheet(), homeId = page.id;
       var items0 = page.items.slice(), ink0 = (page.ink || []).slice();
       page.items = []; page.ink = [];
       queueSave(page.id); histCommit();
@@ -2795,53 +2751,27 @@
       removeItem(home(), home().items.filter(function (x) { return x.media === mid; })[0]);
       await sleep(140); act(); histCommit();
 
-      /* --- turning a page is not something anybody means to undo --- */
-      var n1 = stack();
-      gotoPage(0); await sleep(220); histCommit();
-      ok('undo: turning a page is not a step', stack() === n1, n1 + ' -> ' + stack());
-      cur = index.pages.findIndex(function (m) { return m.id === homeId; });
-      await render();
-
-      /* --- a page, and everything that was on it --- */
-      var realConfirm = window.confirm;
-      window.confirm = function () { return true; };
-      try {
-        act();
-        Q('#addPage').click();
-        await sleep(240);
-        var addedId = index.pages[cur].id, np = index.pages.length;
-        act(); histCommit();
-        await undo();
-        ok('undo: the new page is out of the book', index.pages.length === np - 1 &&
-          !index.pages.some(function (m) { return m.id === addedId; }),
-          index.pages.length + ' pages');
-        await redo();
-        ok('redo: and back in it', index.pages.length === np &&
-          index.pages.some(function (m) { return m.id === addedId; }));
-        cur = index.pages.findIndex(function (m) { return m.id === addedId; });
-        await render();
-        var doomed = pages.get(addedId);
-        doomed.items.push({ id: uid(), type: 'note', x: 10, y: 10, w: 30, rot: 0, z: 1,
-                            lay: curLayerId(), html: 'on the doomed page' });
-        queueSave(addedId); histCommit();
-        act();
-        Q('#delPage').click();
-        await sleep(300);
-        histCommit();
-        ok('undo: the page went', !index.pages.some(function (m) { return m.id === addedId; }),
-          index.pages.length + ' pages');
-        await undo();
-        ok('undo: the page is back in the book',
-          index.pages.some(function (m) { return m.id === addedId; }));
-        ok('undo: with what was on it',
-          !!pages.get(addedId) && pages.get(addedId).items.length === 1,
-          pages.get(addedId) ? pages.get(addedId).items.length + ' items' : 'no page');
-        ok('undo: and the book turns to the page it put back',
-          index.pages[cur].id === addedId, 'on ' + cur);
-        await redo();                                  // leave the book as we found it
-        ok('redo: the page goes again', !index.pages.some(function (m) { return m.id === addedId; }));
-      } finally { window.confirm = realConfirm; }
-      cur = index.pages.findIndex(function (m) { return m.id === homeId; });
+      /* --- the sheet's own shape is a step, and what is on it moves with it --- */
+      var w0 = pgW();
+      home().items.push({ id: uid(), type: 'note', x: 40, y: 40, w: 10, rot: 0, z: 30,
+                          lay: curLayerId(), html: 'on the sheet' });
+      queueSave(homeId); histCommit(); await render();
+      var x0 = home().items[home().items.length - 1].x;
+      act();
+      growSheet('r');
+      await sleep(300); act(); histCommit();
+      ok('undo: growing the sheet really grew it', pgW() === w0 + SHEET_STEP, pgW());
+      ok('undo: and remapped what was on it', home().items[home().items.length - 1].x < x0,
+        x0 + ' -> ' + home().items[home().items.length - 1].x);
+      await undo();
+      ok('undo: the sheet is its old size again', pgW() === w0, pgW());
+      ok('undo: and everything on it is back where it was',
+        Math.abs(home().items[home().items.length - 1].x - x0) < 1e-6,
+        home().items[home().items.length - 1].x + ' wanted ' + x0);
+      await redo();
+      ok('redo: bigger again', pgW() === w0 + SHEET_STEP, pgW());
+      await undo(); await sleep(120);
+      home().items.pop(); queueSave(homeId); histCommit();
       await render();
 
       /* --- doing something new drops what was waiting to be put back --- */
@@ -2979,10 +2909,26 @@
         !Q('#undoBtn').classList.contains('off'), stack() + ' steps');
     });
 
-    /* ---- Export book, for real ----
+    /* ---- Export, for real ----
        The exported file carries ONE inlined stylesheet, so this is where a
        feature whose styles went missing would actually show up. */
-    await stage('export book', async function () {
+    await stage('export', async function () {
+      /* Self-contained: put a known handful of things on the sheet rather than
+         relying on whatever the stage before happened to leave there. */
+      var page = sheet(), keep = page.items.slice();
+      var mk = function (extra) {
+        var b = { id: uid(), x: 8, y: 8, w: 24, rot: 0, z: page.items.length + 1, lay: curLayerId() };
+        for (var k in extra) b[k] = extra[k];
+        page.items.push(b);
+      };
+      mk({ type: 'text', st: 'title', html: 'Export' });
+      mk({ type: 'note', html: 'a sticky' });
+      mk({ type: 'check', rows: [{ t: 'one', d: false }] });
+      mk({ type: 'table', cols: ['a', 'b'], rows: [['1', '2']] });
+      mk({ type: 'washi', pat: 0 });
+      mk({ type: 'sticker', k: 0 });
+      await render();
+
       /* export revokes the object URL the instant it has clicked the link, so
          hold on to the Blob itself rather than to the href */
       var blob = null;
@@ -3007,54 +2953,47 @@
          '.washi', '.stk', '.math'].forEach(function (k) {
           ok('export: carries ' + k + ' styles', html.indexOf(k) > 0);
         });
-        ok('export: has the pages in it', (html.match(/class="page"/g) || []).length >= 1);
+        ok('export: the sheet is in it', (html.match(/class="page"/g) || []).length === 1);
         ok('export: has items in it', (html.match(/class="item"/g) || []).length >= 5);
         ok('export: no live handles', html.indexOf('class="rot"') < 0);
+        ok('export: it is the sheet, not a flipbook', html.indexOf('class="viewnav"') < 0);
       } finally {
         HTMLAnchorElement.prototype.click = realClick;
         URL.createObjectURL = realCreate;
+        page.items = keep;
+        await render();
       }
     });
 
-    /* ---- the canvas ----
-       Last, because it opens a different book and never gives it back. */
-    await stage('canvas', async function () {
-      await openBook(await createCanvas('Probe canvas'));
+    /* ---- growing the sheet ----
+       Late, because it opens a note of its own and never gives it back. */
+    await stage('sheet', async function () {
+      await openNote(await createNote('Probe note'));
       await waitFor(function () { return Q('#pageHost .page'); }, 20000);
-      ok('canvas: it is one', isCanvas());
-      ok('canvas: one sheet, no cover', index.pages.length === 1, index.pages.length + ' pages');
-      ok('canvas: the body knows', document.body.classList.contains('canvas'));
-      ok('canvas: the wheel pans it', document.body.classList.contains('freepan'));
-      ok('canvas: starts three pages across', pgW() === CANVAS_W && pgH() === CANVAS_H,
+      ok('sheet: one sheet, no cover', index.pages.length === 1, index.pages.length + ' pages');
+      ok('sheet: starts three pages across', pgW() === SHEET_W && pgH() === SHEET_H,
         pgW() + ' x ' + pgH());
-      ok('canvas: four rails to pull', QA('#pageHost .prail').length === 4,
+      ok('sheet: four rails to pull', QA('#pageHost .prail').length === 4,
         QA('#pageHost .prail').length + ' rails');
-      ok('canvas: the resize grips are put away',
-        !!Q('.pgrip') && getComputedStyle(Q('.pgrip')).display === 'none');
-      ok('canvas: the page nav is put away',
-        getComputedStyle(Q('.tools-bar .nav')).display === 'none');
-      /* :has() does the drawer rows — if it ever stops working they come back */
-      ok('canvas: the page-shape row is put away',
-        getComputedStyle(Q('#aspectSel').closest('.row')).display === 'none');
-      ok('canvas: the paper row stays', getComputedStyle(Q('#paperSel').closest('.row')).display !== 'none');
-      ok('canvas: it says how big it is', !!Q('#szTag') && /1980/.test(Q('#szTag').textContent),
+      ok('sheet: no page-shape row in the drawer', !Q('#aspectSel'));
+      ok('sheet: the paper row stays', getComputedStyle(Q('#paperSel').closest('.row')).display !== 'none');
+      ok('sheet: it says how big it is', !!Q('#szTag') && /1980/.test(Q('#szTag').textContent),
         Q('#szTag') && Q('#szTag').textContent);
-      ok('canvas: a fresh one still stops at 0.4 zoom', zMin() === 0.4, zMin());
-      ok('canvas: it starts without the grain', document.body.classList.contains('nograin'));
-      ok('canvas: nothing eases or flips on it',
-        getComputedStyle(Q('#book')).perspective === 'none' &&
-        getComputedStyle(Q('#pageHost .page')).transitionDuration === '0s',
+      ok('sheet: a fresh one still stops at 0.4 zoom', zMin() === 0.4, zMin());
+      ok('sheet: it starts without the grain', document.body.classList.contains('nograin'));
+      ok('sheet: nothing eases or flips on it',
+        getComputedStyle(Q('#book')).perspective === 'none',
         getComputedStyle(Q('#book')).perspective);
 
       /* what growing has to leave alone: everything already on the sheet */
-      var page = activePage();
+      var page = sheet();
       page.items = []; page.ink = [];
       addItem('note', { x: 50, y: 40 }, page);
       await sleep(140);
-      page = activePage();
+      page = sheet();
       var it = page.items[0];
-      ok('canvas: a note lands on it', !!it && it.type === 'note', it && it.type);
-      ok('canvas: the note is page-sized, not sheet-sized', it && it.w < 15,
+      ok('sheet: a note lands on it', !!it && it.type === 'note', it && it.type);
+      ok('sheet: the note is page-sized, not sheet-sized', it && it.w < 15,
         'w=' + (it && it.w) + '%');
       page.ink = [{ lay: curLayerId(), m: 'pen', c: '#000', w: 4, pts: [[100, 100], [200, 200]] }];
       var w0 = pgW(), h0 = pgH(), s0 = page.ink[0];
@@ -3064,27 +3003,27 @@
 
       Q('#pageHost .prail.r').click();              // the rail itself, not the function behind it
       await sleep(200);
-      ok('canvas: a rail adds a page of paper', pgW() === w0 + CANVAS_STEP, 'now ' + pgW());
-      it = activePage().items[0];
-      var s = activePage().ink[0];
-      ok('canvas: the note stayed where it was',
+      ok('sheet: a rail adds a page of paper', pgW() === w0 + SHEET_STEP, 'now ' + pgW());
+      it = sheet().items[0];
+      var s = sheet().ink[0];
+      ok('sheet: the note stayed where it was',
         near(it.x / 100 * pgW(), was.x) && near(it.y / 100 * pgH(), was.y),
         it.x / 100 * pgW() + ',' + it.y / 100 * pgH() + ' was ' + was.x + ',' + was.y);
-      ok('canvas: the note kept its size', near(it.w / 100 * pgW(), was.w),
+      ok('sheet: the note kept its size', near(it.w / 100 * pgW(), was.w),
         it.w / 100 * pgW() + ' was ' + was.w);
-      ok('canvas: the ink stayed where it was',
+      ok('sheet: the ink stayed where it was',
         near(s.pts[0][0] * pgW() / 1000, was.ix) && near(s.pts[0][1] * pgW() / 1000, was.iy));
-      ok('canvas: the ink kept its weight', near(s.w * pgW() / 1000, was.iw));
+      ok('sheet: the ink kept its weight', near(s.w * pgW() / 1000, was.iw));
 
       /* growing from the left moves the whole sheet out from under it instead */
       var w1 = pgW(), x1 = it.x / 100 * w1;
-      growCanvas('l');
+      growSheet('l');
       await sleep(200);
-      it = activePage().items[0];
-      ok('canvas: growing leftwards keeps it still too',
-        near(it.x / 100 * pgW(), x1 + CANVAS_STEP),
-        it.x / 100 * pgW() + ' wanted ' + (x1 + CANVAS_STEP));
-      ok('canvas: it grew on the left', pgW() === w1 + CANVAS_STEP, 'now ' + pgW());
+      it = sheet().items[0];
+      ok('sheet: growing leftwards keeps it still too',
+        near(it.x / 100 * pgW(), x1 + SHEET_STEP),
+        it.x / 100 * pgW() + ' wanted ' + (x1 + SHEET_STEP));
+      ok('sheet: it grew on the left', pgW() === w1 + SHEET_STEP, 'now ' + pgW());
 
       /* zooming a sheet BIGGER than the desk — where the desk holds it changes
          with its size, so this is where a commit used to jump */
@@ -3099,18 +3038,18 @@
       };
       var wasc = underc();
       zoomBy(1.5, aimc.x, aimc.y); await f2();
-      ok('canvas zoom: the point under the pointer stays under it',
+      ok('sheet zoom: the point under the pointer stays under it',
         Math.abs(underc().x - wasc.x) < 0.004 && Math.abs(underc().y - wasc.y) < 0.004,
         JSON.stringify(wasc) + ' -> ' + JSON.stringify(underc()));
       commitZoom(); await f2();
-      ok('canvas zoom: and does not jump when the gesture is committed',
+      ok('sheet zoom: and does not jump when the gesture is committed',
         Math.abs(underc().x - wasc.x) < 0.004 && Math.abs(underc().y - wasc.y) < 0.004,
         JSON.stringify(wasc) + ' -> ' + JSON.stringify(underc()));
       /* growing the paper must not shove what is on it either */
       var beforeGrow = Q('#pageHost .item') && Q('#pageHost .item').getBoundingClientRect();
-      growCanvas('l'); await f2();
+      growSheet('l'); await f2();
       var afterGrow = Q('#pageHost .item') && Q('#pageHost .item').getBoundingClientRect();
-      ok('canvas: growing from the left leaves the paper where the eye had it',
+      ok('sheet: growing from the left leaves the paper where the eye had it',
         beforeGrow && afterGrow && Math.abs(beforeGrow.left - afterGrow.left) < 1.5 &&
         Math.abs(beforeGrow.top - afterGrow.top) < 1.5,
         beforeGrow && (beforeGrow.left.toFixed(1) + ' -> ' + afterGrow.left.toFixed(1)));
@@ -3165,28 +3104,28 @@
           pointerId: 7, isPrimary: true, bubbles: true }));
       };
       pev('pointerdown', 500, 400); pev('pointermove', 560, 430); pev('pointerup', 560, 430);
-      ok('canvas: the bare paper pans it', near(panX, px + 60), 'panX ' + px + ' -> ' + panX);
+      ok('sheet: the bare paper pans it', near(panX, px + 60), 'panX ' + px + ' -> ' + panX);
 
       /* and it does stop somewhere */
-      growCanvas('b', CANVAS_MAX * 2);
+      growSheet('b', SHEET_MAX * 2);
       await sleep(200);
-      ok('canvas: there is a ceiling', pgH() === CANVAS_MAX, 'height ' + pgH());
+      ok('sheet: there is a ceiling', pgH() === SHEET_MAX, 'height ' + pgH());
       /* a sheet far taller than the desk must not push the desk — and the
          toolbar under it — off the bottom of the screen */
       var tb = Q('.tools-bar').getBoundingClientRect();
-      ok('canvas: the toolbar stays on screen under a huge sheet',
+      ok('sheet: the toolbar stays on screen under a huge sheet',
         tb.top > 0 && tb.bottom <= innerHeight + 1,
         tb.top.toFixed(0) + '-' + tb.bottom.toFixed(0) + ' of ' + innerHeight);
-      ok('canvas: the desk does not grow to fit the sheet',
+      ok('sheet: the desk does not grow to fit the sheet',
         Q('#stage').offsetHeight < innerHeight,
         Q('#stage').offsetHeight + ' vs ' + innerHeight);
-      ok('canvas: a nib is still a nib on a huge sheet', pgK() < 0.3 && pgK() > 0, pgK());
-      ok('canvas: and you can pull back far enough to see it all', zMin() < 0.05, zMin());
+      ok('sheet: a nib is still a nib on a huge sheet', pgK() < 0.3 && pgK() > 0, pgK());
+      ok('sheet: and you can pull back far enough to see it all', zMin() < 0.05, zMin());
     });
 
     /* ---- chemistry: the library, the molecule and the periodic table ---- */
     await stage('chemistry', async function () {
-      var page = activePage();
+      var page = sheet();
       page.items = []; await render();
       /* the keys find the molecule under the pointer, so the whole sheet must be on screen */
       fitToDesk(true); await sleep(150);

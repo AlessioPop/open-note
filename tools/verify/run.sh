@@ -7,6 +7,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 RUN="$HERE/run"
 PORT="${PORT:-8731}"
 
+# the one list nobody can forget — see scripts.py
+python3 "$HERE/scripts.py" "$SRC" || exit 1
+
 rm -rf "$RUN"; mkdir -p "$RUN"
 cp -r "$SRC"/index.html "$RUN"/ 2>/dev/null
 [ -d "$SRC/js" ]  && cp -r "$SRC/js"  "$RUN"/

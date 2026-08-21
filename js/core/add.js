@@ -8,7 +8,7 @@
    for typing, a matrix puts the caret in its first cell, a plot switches maths
    mode on. See core/registry.js. */
 function addItem(kind, at, page){
-  page = page || activePage();
+  page = page || sheet();
   const entry = ADD_KINDS[kind];
   if(!entry) return;
   /* some things can't be made on the spot — they need a file off the disk, or a
@@ -39,8 +39,7 @@ function addItem(kind, at, page){
 /* nobody said where — the + button rather than the pointer. The middle of what
    is on screen, which on a sheet bigger than the desk is not the middle of it. */
 function viewCentre(page){
-  const wrap = BOARD && BOARD.wraps[page.id];
-  const surf = wrap && wrap.querySelector('.surface');
+  const surf = document.querySelector('#pageHost .surface');
   if(!surf) return { x: 16, y: 20 };
   const r = surf.getBoundingClientRect(), st = $('#stage').getBoundingClientRect();
   return pctFrom({ clientX: clamp((st.left + st.right) / 2, r.left, r.right),
@@ -55,6 +54,5 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-add]');
   if(!b) return;
   const at = qCtx && qCtx.at, pg = qCtx && qCtx.page;   // the palette remembers where it was opened
-  if(pg) activePageId = pg.id;
   addItem(b.dataset.add, at || undefined, pg || undefined);
 }, true);

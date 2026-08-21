@@ -16,7 +16,7 @@ function writeView(){
     shownZoom = z;
     $('#zoomTag').textContent = Math.round(z * 100) + '%';
   }
-  viewMoved();                                     // whatever follows the view — the map in ui/canvas.js
+  viewMoved();                                     // whatever follows the view — the map in chrome/map.js
 }
 function applyView(){
   if(!viewRaf) viewRaf = requestAnimationFrame(writeView);
@@ -108,7 +108,7 @@ function setZoom(z){
   /* layout zoom, not transform scale: pages really change size and re-render,
      so text, ink and paper patterns stay sharp at any magnification */
   document.body.style.setProperty('--zoom', zoom);
-  applyView(); refit(); syncBmScale();
+  applyView(); refit();
 }
 $('#zoomIn').addEventListener('click', () => zoomBy(1.2));
 $('#zoomOut').addEventListener('click', () => zoomBy(1 / 1.2));
@@ -134,14 +134,15 @@ stage.addEventListener('wheel', e => {
   if(e.ctrlKey || e.metaKey){
     e.preventDefault();
     zoomBy(Math.exp(-clamp(wheelPx(e), -120, 120) * 0.002), e.clientX, e.clientY);
-  } else if(liveZoom() > 1 || document.body.classList.contains('freepan')){
-    /* freepan: a sheet that is always bigger than the desk scrolls at any zoom */
+  } else {
+    /* the sheet is very often bigger than the desk, so the wheel scrolls it at
+       any zoom rather than only when zoomed in */
     e.preventDefault();
     panX -= e.deltaX; panY -= e.deltaY; panningNow(); applyView();
   }
 }, { passive: false });
 stage.addEventListener('pointerdown', e => {
-  if(e.target !== stage && e.target !== book && !e.target.classList.contains('edges')) return;
+  if(e.target !== stage && e.target !== book) return;
   stage.classList.add('panning');
   const sx = e.clientX - panX, sy = e.clientY - panY;
   stage.setPointerCapture(e.pointerId);

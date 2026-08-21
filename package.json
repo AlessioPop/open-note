@@ -2,7 +2,7 @@
   "name": "open-note",
   "productName": "Open Note",
   "version": "0.1.0-alpha.2",
-  "description": "An artistic, page-based sketchbook for game devlogs.",
+  "description": "An endless canvas for notes, sketches, data and maths.",
   "author": "Alessio Popovic <alessiopopovic@gmail.com>",
   "license": "PolyForm-Noncommercial-1.0.0",
   "private": true,
@@ -38,7 +38,7 @@
       "target": ["AppImage"],
       "icon": "desktop/icon.png",
       "category": "Office",
-      "synopsis": "A page-based sketchbook for game devlogs",
+      "synopsis": "An endless canvas for notes, sketches, data and maths",
       "executableName": "open-note",
       "syncDesktopName": true
     },

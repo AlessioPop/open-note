@@ -1,5 +1,5 @@
 /* Open Note — desktop/main.js
-   the Electron shell: one window, a real origin, and a saved book on the way out.
+   the Electron shell: one window, a real origin, and a saved note on the way out.
 
    This file is a wrapper around the app, never a part of it. Nothing in js/ knows
    it exists, and index.html still opens on its own in a browser exactly as before
@@ -21,12 +21,14 @@ const DEV = process.argv.includes('--dev') || !app.isPackaged;
 /* ================= a real origin =================
    The app is NOT loaded over file://. A file:// page has an opaque origin, and an
    opaque origin gets no IndexedDB — core/store.js would fall through to its
-   in-memory fallback and every book would die with the window. Registering our
+   in-memory fallback and every note would die with the window. Registering our
    own standard scheme gives the page a stable, secure origin (opennote://app), so
    IndexedDB, localStorage and blob URLs all behave like they do on a web server.
 
    Scheme and host are load-bearing for as long as the app ships: they ARE the
-   identity IndexedDB files the user's books under. Changing either orphans them. */
+   identity IndexedDB files the user's notes under. Changing either orphans them.
+   js/platform/platform.js states the same contract for the iOS and Android
+   shells: all three must serve the app from opennote://app. */
 protocol.registerSchemesAsPrivileged([{
   scheme: SCHEME,
   privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, codeCache: true }
@@ -44,7 +46,7 @@ function serve(req) {
 }
 
 /* ================= where the window was last =================
-   Remembered per install, next to the books rather than in the repo. */
+   Remembered per install, next to the notes rather than in the repo. */
 const stateFile = () => path.join(app.getPath('userData'), 'window.json');
 
 function lastBounds() {
@@ -67,7 +69,7 @@ function rememberBounds(win) {
    There isn't one on Windows or Linux. The app has its own toolbar, and every
    accelerator a default menu installs is one the page already wants: Ctrl+Z and
    Ctrl+Shift+Z are core/nav.js's undo/redo, Ctrl+A/C/X belong to the table, and
-   Ctrl+R would reload a notebook out from under someone mid-sentence.
+   Ctrl+R would reload a note out from under someone mid-sentence.
 
    macOS is the exception — with no menu at all, Cmd+C and Cmd+V stop working
    there. So it gets the smallest menu that keeps the clipboard alive, and
@@ -140,12 +142,13 @@ function createWindow() {
 
   ['resize', 'move'].forEach(ev => win.on(ev, () => rememberBounds(win)));
 
-  /* ================= the book goes down with the window =================
-     core/save.js debounces its writes by 600ms and hangs the last one on
-     `beforeunload` — but beforeunload cannot await, so closing within that window
-     could tear the renderer down mid-transaction and lose the last edit. Here we
-     can do better than a browser: hold the close, run flush() to completion, then
-     go. flush is a top-level function in a classic script, so it is reachable. */
+  /* ================= the note goes down with the window =================
+     core/save.js debounces its writes by 600ms and hangs the last one on the
+     suspend hooks in platform/web.js — but none of those can await, so closing
+     within that window could tear the renderer down mid-transaction and lose the
+     last edit. Here we can do better than a browser: hold the close, run flush()
+     to completion, then go. flush is a top-level function in a classic script,
+     so it is reachable. */
   let flushed = false;
   win.on('close', e => {
     rememberBounds(win);

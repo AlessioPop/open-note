@@ -32,16 +32,14 @@ const histSnap = p => JSON.stringify(p);
 const histSize = s => s.changes.reduce((n, c) =>
   n + (c.before ? c.before.length : 0) + (c.after ? c.after.length : 0), 0);
 
-/* The book's own copy, less where you happen to be standing and the tools you
-   happen to be holding: nobody means to undo a page turn, a pen colour or the
-   volume. The headings digest goes too — the atlas works it out from the pages
-   themselves, so it is never a change of its own. */
+/* The note's own copy, less the tools you happen to be holding: nobody means to
+   undo a pen colour, the map or the volume. */
 const HIST_SKIP = { cur: 1, curLayer: 1 };
 const HIST_SKIP_SET = ['stylus', 'map', 'sound', 'vol', 'fade'];
 function histIdxSnap(){
   const o = {};
   for(const k in index) if(!HIST_SKIP[k]) o[k] = index[k];
-  o.pages = index.pages.map(m => { const c = { ...m }; delete c.heads; return c; });
+  o.pages = index.pages.map(m => ({ ...m }));
   o.settings = { ...(index.settings || {}) };
   HIST_SKIP_SET.forEach(k => delete o.settings[k]);
   return JSON.stringify(o);
@@ -59,15 +57,13 @@ function histPutPage(id, json){
   queueSave(id);                                 // history is busy: this writes without recording
 }
 function histPutIdx(json){
-  const src = JSON.parse(json), heads = {}, s = index.settings || {}, held = {};
-  index.pages.forEach(m => { if(m.heads) heads[m.id] = m.heads; });
+  const src = JSON.parse(json), s = index.settings || {}, held = {};
   HIST_SKIP_SET.forEach(k => { if(k in s) held[k] = s[k]; });
-  const where = index.cur, lay = index.curLayer;
+  const lay = index.curLayer;
   for(const k in index) if(!(k in src) && !HIST_SKIP[k]) delete index[k];
   Object.assign(index, src);
-  index.cur = where; index.curLayer = lay;
+  index.curLayer = lay;
   Object.assign(index.settings, held);
-  index.pages.forEach(m => { if(heads[m.id]) m.heads = heads[m.id]; });
   queueIndex();
 }
 
@@ -189,22 +185,15 @@ async function redo(){
 async function histApply(step, side){
   HIST.busy = true;
   try{
-    let land = null;
     for(const c of step.changes){
       histPutPage(c.id, c[side]);
       c[side] == null ? HIST.shadow.delete(c.id) : HIST.shadow.set(c.id, c[side]);
-      if(land == null && c[side] != null) land = c.id;
     }
     if(step.index){ histPutIdx(step.index[side]); HIST.idx = step.index[side]; }
-    selected = null; activePageId = null;
+    selected = null;
     selectMath(null, null);                      // a chip may be pointing at something no longer there
-    cur = clamp(cur, 0, index.pages.length - 1);
-    /* show what moved: a change on a page that is not open turns to it first */
-    const n = land == null ? -1 : index.pages.findIndex(m => m.id === land);
-    if(n >= 0 && !viewIdx().includes(n)) cur = n;
-    if(step.index){                              // the book itself may have changed shape
-      applyTheme();
-      $('#spreadBtn').textContent = index.spread ? '▢▢ Spread' : '▢ Single';
+    if(step.index){                              // the sheet itself may have changed shape
+      applyTheme(); sizeTag();
       renderLayers(); syncInkBar();
     }
     await render();
@@ -218,7 +207,7 @@ async function histApply(step, side){
 
 /* ---- what it says for itself ---- */
 let histTagTimer = 0;
-function histTag(msg){                           // the corner the book already talks in
+function histTag(msg){                           // the corner the app already talks in
   const t = $('#saveTag');
   t.textContent = msg; t.classList.add('show');
   clearTimeout(histTagTimer);
@@ -231,11 +220,11 @@ function histSync(){
 $('#undoBtn').addEventListener('click', undo);
 $('#redoBtn').addEventListener('click', redo);
 
-/* A different book is a different history. What the past was holding on to can
-   go — the pages it would put back are not in this book — but what the FUTURE
+/* A different note is a different history. What the past was holding on to can
+   go — the sheet it would put back is not in this note — but what the FUTURE
    holds must stay: those blobs were handed back to a page when the step was
    undone, and that page is still carrying them. */
-onBookOpen(() => {
+onNoteOpen(() => {
   clearTimeout(HIST.timer); HIST.timer = 0;
   HIST.past.forEach(s => s.drops.forEach(binMedia));
   HIST.drops.forEach(binMedia);
@@ -248,7 +237,7 @@ onBookOpen(() => {
 });
 /* on the way out, whatever is only being kept for an undo that can no longer
    happen is let go of — best effort, the same as the last save */
-window.addEventListener('beforeunload', () => {
+plOnSuspend(() => {
   HIST.past.forEach(s => s.drops.forEach(binMedia));
   HIST.drops.forEach(binMedia);
 });

@@ -1,6 +1,8 @@
 # Open Note
 
-An artistic, page-based sketchbook for game devlogs. No servers, no accounts, no telemetry — it runs entirely on your machine, and everything it needs to draw itself ships with it.
+An endless canvas for notes, sketches, data and maths. No servers, no accounts, no telemetry — it runs entirely on your machine, and everything it needs to draw itself ships with it.
+
+A note is one sheet of paper that never runs out: pull an edge and there is more of it. Put text, tables, plots, charts, code, molecules, 3D models, slide decks and hand-drawn ink anywhere on it, tie them together with string, and draw over the lot with a stylus.
 
 ## Run it
 
@@ -27,28 +29,32 @@ npm start
 python3 -m http.server 8000     # then open http://localhost:8000
 ```
 
-Everything is saved automatically, on your machine, using IndexedDB. The desktop app and the browser keep **separate** libraries — they are different origins, so a book made in one does not appear in the other. Move one across with **Back up** on one side and **Restore** on the other, and back up regularly either way if the book matters to you.
+Everything is saved automatically, on your machine, using IndexedDB. The desktop app and the browser keep **separate** libraries — they are different origins, so a note made in one does not appear in the other. Move one across with **Back up** on one side and **Restore** on the other, and back up regularly either way if the note matters to you.
 
 ## Documentation
 
 | Guide | What's in it |
 | --- | --- |
-| [Manual](docs/manual.md) | Everything you can put on a page — tables, nodes, equations, maths, charts, the stylus, shapes, `.obj` models, `.pptx` decks, attachments, folders, flip cards, layers, pages. |
-| [How it's built](docs/architecture.md) | The shape of it, the four rules, the module map, the registry, and how to add a feature without touching anything else. |
+| [Manual](docs/manual.md) | Everything you can put on the sheet — tables, nodes, equations, maths, charts, the stylus, shapes, `.obj` models, `.pptx` decks, attachments, folders, flip cards, layers. |
+| [How it's built](docs/architecture.md) | The shape of it, the five rules, the platform seam, the module map, the registry, and how to add a feature without touching anything else. |
 | [Apple design notes](.claude/skills/apple-design/SKILL.md) | The fluid-interface playbook the motion follows — springs, velocity handover, momentum, interruptibility, reduced-motion. Governs `js/core/drag.js`, `js/core/zoom.js` and `js/lib/spring.js`. |
 | [Verification](tools/verify/README.md) | Two harnesses: `run.sh` drives the app in headless Firefox, `desktop.sh` drives the Electron shell. Both print a pass/fail report; CI gates release builds on the second. |
 
 ## Layout
 
 ```
-index.html        the app shell — markup and base stylesheet, not the features
-js/core/          book, page, item, state, store, history, drag, zoom, save
-js/items/         one file per item type — note, table, chart, code, model, deck…
-js/ui/            palette, toolbars, menus
-js/lib/           self-contained libraries — latex, pptx, sheet, spring, sound
+index.html        the app shell — markup, base stylesheet and the script list
+js/platform/      the seam between the app and its host — browser, Electron, later a phone
+js/core/          the engine — the note, the sheet, items, state, store, history, drag, zoom, save
+js/paper/         drawn on the sheet, belonging to no one item — ink, strings, layers
+js/chrome/        the tools around the sheet — palette, toolbars, shelf, map, export
+js/items/<shelf>/ one file per item type, foldered by its palette shelf
+                  write/ math/ science/ media/ shapes/ decor/
+js/lib/           algorithms that owe nothing to this app — latex, pptx, workbook, chem, spring
+js/data/          tables the lib files read — the nuclides, the elements. Data, never code
 fonts/            the four families, carried locally so nothing needs the network
 desktop/          the Electron shell — main process and icon; wraps the app, never part of it
-tools/verify/     headless-Firefox verification harness
+tools/verify/     headless-Firefox verification harness — 912 assertions
 docs/             manual and architecture
 ```
 

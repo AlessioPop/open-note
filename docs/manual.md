@@ -1,38 +1,37 @@
 # Open Note — Manual
 
-Everything you can put on a page. For running the app see the [README](../README.md); for working on the code see [How it's built](architecture.md).
+Everything you can put on the sheet. For running the app see the [README](../README.md); for working on the code see [How it's built](architecture.md).
 
-## Your sketchbooks
+## Your notes
 
-The app opens on the **shelf** — every sketchbook shown as a mini cover in its own colours (a fresh install skips the shelf and drops you straight into your first book).
+The app opens on the note you had open last. **☰ Notes** in the top bar (or the wordmark) takes you to the **shelf**, where every note is shown as a small picture of its own sheet in its own colours; `Esc` goes back to the note.
 
-- Click a cover to open it; hover to lift it off the shelf.
-- The dashed **+** card starts a new sketchbook; the dashed **∞** card next to it starts a **canvas** instead — see below.
-- Click a book's name to rename it; the **✕** in its corner (appears on hover) deletes the whole book after a confirmation.
-- **☰ Books** in the top bar (or the wordmark) takes you back to the shelf any time; `Esc` returns to the open book.
+- Click a note to open it; hover to lift it off the shelf.
+- The dashed **∞** card starts a new one.
+- Click a note's name to rename it; the **✕** in its corner deletes the whole note after a confirmation.
 
-## The canvas
+## The sheet
 
-A canvas is the other thing on the shelf: **one endless sheet instead of a book of pages**. No cover, no page numbers, no flipping — just paper that keeps going, with everything else exactly as it is in a book. Every tool, the stylus, layers, maths, strings, folders, export and backup all work on it unchanged.
+A note is **one endless sheet of paper**. There are no pages, no cover and nothing to flip — just paper that keeps going, and everything in the app works on it.
 
 - It opens showing all of itself. Drag the bare paper to move around, scroll to pan, `Ctrl`+scroll or `+` / `−` to zoom, and click the percentage to fit the whole sheet on screen again.
-- When you run out of room, **click the hatched rail along that edge** — the sheet grows by a page's worth on that side and everything already on it stays exactly where it was. It starts three pages wide by two deep and grows to about twenty-four.
+- When you run out of room, **click the hatched rail along that edge** — the sheet grows by a page's worth on that side and everything already on it stays exactly where it was. **Or drag the rail** to pull out however much you want, watching the size as you go. It starts three pages wide by two deep and grows to about twenty-four; one `Ctrl`+`Z` puts the paper *and* everything on it back.
 - **▦ Map** in the toolbar puts the whole sheet in the corner: everything on it, and a bright rectangle showing where you are. Drag inside it to go somewhere — quicker than panning once the sheet is bigger than a screenful.
-- The toolbar shows how big the sheet is instead of a page count, and the shelf shows it under the name: `∞ 1980 × 1320`.
-- It takes the same theme, colours and paper as a book, from the same **⚙ Menu**.
+- The toolbar says how big the sheet is; so does the shelf, under the name.
+- The paper itself — grid / ruled / dots / isometric / blank — is the button in the toolbar, or **⚙ Menu**.
 
-Things scale to the paper they are on: a sticky note dropped on a canvas is the size it would be on a page, not three times the size, and so is a pen stroke.
+Things scale to the paper they are on: a sticky note is the size it would be on a normal page, not three times the size, and so is a pen stroke.
 
-**On smoothness:** nothing in the app limits the frame rate — it draws when the screen does. Zooming used to be the exception: zoom here is a real layout change (that is what keeps text and ink sharp instead of blowing up a bitmap), and on a big sheet one wheel notch cost ~78 ms, worse the further in you were. Now a turning wheel only scales the sheet on the compositor — 17 ms a notch, vsync — and the sharp version is committed 180 ms after you stop, so it goes very slightly soft mid-gesture and lands crisp. A canvas also never eases or flips, and starts without the **paper grain** (⚙ Menu), the one thing on a sheet whose cost grows with the sheet. Turn the grain back on if you want the texture and don't mind the paint.
+**On smoothness:** nothing in the app limits the frame rate — it draws when the screen does. Zooming used to be the exception: zoom here is a real layout change (that is what keeps text and ink sharp instead of blowing up a bitmap), and on a big sheet one wheel notch cost ~78 ms, worse the further in you were. Now a turning wheel only scales the sheet on the compositor — 17 ms a notch, vsync — and the sharp version is committed 180 ms after you stop, so it goes very slightly soft mid-gesture and lands crisp. A note also starts without the **paper grain** (⚙ Menu), the one thing on a sheet whose cost grows with the sheet. Turn it on if you want the texture and don't mind the paint.
 
-## What you can put on a page
+## What you can put on the sheet
 
 | Tool | What it does |
 |---|---|
 | Heading / Text / Handwriting | Poster type, serif body text, marker-pen handwriting — `$$…$$` compiles to a typeset equation |
 | Marker | Highlighted handwriting — cycle highlight colour with ◑ |
 | Checklist | Obsidian-style `- [ ]` tasks — click boxes to tick, double-click to edit; Enter adds a new task |
-| Code | A terminal-style code cell, syntax-coloured the way VS Code does it — display only, nothing runs. Python by default, or JavaScript, TypeScript, C, C++, C#, Rust, Go, Java, GDScript, Shell and SQL from the picker in its title bar, which also holds the copy button. ◑ cycles six colour schemes — Dark, Light, Monokai, Dracula, Solarized, and a Theme scheme whose terminal is mixed from the book's own ink and paper, going deeper than the paper when the paper itself is dark. Double-click to type: it recolours under the caret as you go, Tab indents, Enter keeps the line's indent, brackets and quotes close themselves the way the editor's do (type the close and it steps over, backspace an empty pair and both go, Enter between braces opens the block out), and pasting strips any formatting. ⏎ wraps long lines or lets them run; a cell past ~16 lines shows a band of itself with its own scrollbar, and ⊞ shows the whole thing. Drop one on another icon and it files into a folder, wearing a little terminal with its language on the tag — click it in there and it opens highlighted, with copy in the title bar |
+| Code | A terminal-style code cell, syntax-coloured the way VS Code does it — display only, nothing runs. Python by default, or JavaScript, TypeScript, C, C++, C#, Rust, Go, Java, GDScript, Shell and SQL from the picker in its title bar, which also holds the copy button. ◑ cycles six colour schemes — Dark, Light, Monokai, Dracula, Solarized, and a Theme scheme whose terminal is mixed from the note's own ink and paper, going deeper than the paper when the paper itself is dark. Double-click to type: it recolours under the caret as you go, Tab indents, Enter keeps the line's indent, brackets and quotes close themselves the way the editor's do (type the close and it steps over, backspace an empty pair and both go, Enter between braces opens the block out), and pasting strips any formatting. ⏎ wraps long lines or lets them run; a cell past ~16 lines shows a band of itself with its own scrollbar, and ⊞ shows the whole thing. Drop one on another icon and it files into a folder, wearing a little terminal with its language on the tag — click it in there and it opens highlighted, with copy in the title bar |
 | Table | A spreadsheet on the page — cells, four styles, `=SUM(A2:B4)` formulas, sorting, a live readout of what you have picked, and drag it onto a coordinate system to plot it; see **Tables** below |
 | Spreadsheet | The same table, read straight out of an `.xlsx`, `.ods` or `.csv` — or just drop the file on the page. A long one shows a band of itself and folds down to an icon; see **Tables** below |
 | Sticky | Sticky notes in 5 colours, with a folded corner |
@@ -41,16 +40,15 @@ Things scale to the paper they are on: a sticky note dropped on a canvas is the 
 | Node | A small card you wire between a table and a plot: keep some columns, do arithmetic on whole columns, put every number through a formula, or hand in a number on a slider or a colour — see **Nodes** below |
 | Matrix / Vector | Cards you fill in and throw at each other — any size, ✎ reshapes them; multiply, invert, take powers, eigen-decompose, fold a product down to its answer, drop them into a plot |
 | Pie chart / Donut / Bar chart / Stacked bar | Charts of named shares, typed straight into their own legend — a pie in four looks (flat, donut, 3D, hand-sketched), up to ten slices in six colour palettes, labels you can flip between four placements or simply drag where you want them; see **Charts** below |
-| Atlas | A contents block that draws itself from your bookmarks — every bookmark a chapter, every Heading under it a sub-header; click a line to flip there. The first bookmark you make puts one on the starting page |
 | Cube / Sphere / Torus / Square / Circle | Wireframe shapes to draw over — turn them, size them, set their measurements (a torus's radii, a sweep down to a part shape), fade them back under your pen; the square and circle lie flat and reshape by their corners; see **Shapes to draw over** below |
 | Molecule | A molecule drawn the way a chemist draws one — skeletal, condensed or Lewis — with its formula, mass and name under it, a periodic table a click away, a name-or-SMILES box, and a 3D view you can turn and measure; see **Chemistry** below |
 | Periodic table | The table on the page as a reference card — tap an element for its number, mass, electronegativity and configuration |
 | Chart of nuclides | The whole nuclear chart — 3558 nuclides and 2088 metastable states on the neutron–proton plane, coloured by how they come apart; zoom in, press one for its half-life, branches and Q values, and follow its decay chain to whatever it ends on |
 | Picture | Taped-in photos with captions. Also: drag-and-drop or just **paste** a screenshot (Ctrl+V) |
-| Video | YouTube / Vimeo links, or a video file from disk (stored inside the book) |
+| Video | YouTube / Vimeo links, or a video file from disk (stored inside the note) |
 | 3D model | A `.obj` out of Blender — mesh, materials and textures — in a little window you can turn it in |
 | Slide deck | A `.pptx`, drawn rather than described — walk it on the page, or click it for the reader: all the slides at once, one at a time, zoomable, with the notes and any slide liftable out as a picture |
-| Attachment | A PDF (or any file) kept inside the book as a clickable shortcut — see below |
+| Attachment | A PDF (or any file) kept inside the note as a clickable shortcut — see below |
 | Folder | A tray for files, pictures, video and models — or drag two things together to make one |
 | Tape | Decorative washi strips, 6 patterns |
 | Sticker | Arrow, star, warning, check, bug, heart — recolourable |
@@ -63,26 +61,26 @@ A table works the way a spreadsheet does. Click it once to pick it up like anyth
 
 - **Cells.** Click one to put the cursor on it, drag across to take a range, or `Shift`-click the far corner. Arrow keys walk it, `Shift`+arrows extend the range, `Tab` and `Enter` step across and down. **Just start typing** and what you type goes into the cell — `Enter` or `Tab` keeps it, `Esc` throws it away, `F2` or a double-click opens a cell to edit what is already there. `Delete` clears the cells you have picked rather than the table.
 - **Rows and columns.** When the table is selected it grows a strip of column letters along the top and row numbers down the side. Hover one and it offers **✕** to remove that row or column and **+** to insert another next to it; click it to select the whole row or column. The two faint **+** rails down the right edge and along the bottom add one on the end, and `Tab` off the last cell adds a row the way a spreadsheet does. Drag the line between two column letters to set the column widths — they share the table's width between them, so the table itself stays as wide as you made it. The corner box is what you drag the whole table around by.
-- **Formulas.** A cell that starts with `=` is worked out: `=A2+B2`, `=SUM(A2:B4)`, `=ROUND(AVG(B2:B4),1)`. There is `SUM` `AVG` `MIN` `MAX` `COUNT` `MEDIAN` `STDEV` `STDEVP` `VAR` `VARP` `ABS` `SQRT` `ROUND`, the usual `+ − × ÷ ^` and brackets, single cells like `B3` and blocks like `A2:C9`. `STDEV` and `VAR` divide by *n−1* — a sample of a thing rather than the whole of it, the way a spreadsheet means the name; `STDEVP` and `VARP` are there for when it really is the whole. Rows and columns are numbered the way they are labelled, so `A1` is the top-left cell whether or not the first row is a header. Editing a cell shows the formula; leaving it shows the answer, and so do print, the overview and an exported book. Insert or remove a row and every formula follows the cells it was pointing at; delete a row something depended on and it says `#REF` rather than quietly meaning something else. A formula that ends up depending on itself says `#CYCLE`.
+- **Formulas.** A cell that starts with `=` is worked out: `=A2+B2`, `=SUM(A2:B4)`, `=ROUND(AVG(B2:B4),1)`. There is `SUM` `AVG` `MIN` `MAX` `COUNT` `MEDIAN` `STDEV` `STDEVP` `VAR` `VARP` `ABS` `SQRT` `ROUND`, the usual `+ − × ÷ ^` and brackets, single cells like `B3` and blocks like `A2:C9`. `STDEV` and `VAR` divide by *n−1* — a sample of a thing rather than the whole of it, the way a spreadsheet means the name; `STDEVP` and `VARP` are there for when it really is the whole. Rows and columns are numbered the way they are labelled, so `A1` is the top-left cell whether or not the first row is a header. Editing a cell shows the formula; leaving it shows the answer, and so do print, the overview and an export. Insert or remove a row and every formula follows the cells it was pointing at; delete a row something depended on and it says `#REF` rather than quietly meaning something else. A formula that ends up depending on itself says `#CYCLE`.
 - **What the cells you have picked come to.** Take a range and the strip under the table says `n 24 · Σ 318.4 · x̄ 13.3 · s 2.37 · 8.97…15.98` — how many numbers, their total, their mean, the sample standard deviation and the two ends of the range. Pick a single cell and it just says where you are (`C14`). It is the line every spreadsheet keeps along the bottom of its window, because it is the quickest question anyone asks of a column of readings. The readout belongs to whoever is working in the table, so like the row numbers it only appears while the table is selected.
 - **Sorting.** **⇅** sorts every row by the column the cursor is in — smallest first, press it again for largest first. Whole rows move, marks and all, so a row stays the reading it was; numbers come before words and blank cells stay at the bottom either way. A table with formulas in it **refuses to sort** and says why: a reference here is an address, so a `=B4` carried three rows down would still be asking about row 4, which after a sort is somebody else's reading. Take the formulas out (or paste their answers back in) and sort then.
-- **How it looks.** ▦ cycles four styles — ruled lines, a full grid, zebra stripes, or nothing at all. **Hdr** makes (or unmakes) the first row a header, ≡ aligns the column left / centre / right, and **B**, *I* and ◑ set the cells you have picked in bold, italic or a highlight. A–/A+ size the type. Everything takes its colours from the book's theme.
+- **How it looks.** ▦ cycles four styles — ruled lines, a full grid, zebra stripes, or nothing at all. **Hdr** makes (or unmakes) the first row a header, ≡ aligns the column left / centre / right, and **B**, *I* and ◑ set the cells you have picked in bold, italic or a highlight. A–/A+ size the type. Everything takes its colours from the note's theme.
 - **Paste a block.** Copy cells out of a real spreadsheet and paste them in — tabs and newlines are laid out across the cells, growing the table if it needs the room. `Ctrl+C` copies the range you have picked back out the same way.
 
 ### Reading a spreadsheet in
 
 **Drop an `.xlsx`, `.ods`, `.csv` or `.tsv` onto the page** and it arrives as a table, sized and aligned to what is in it. **Spreadsheet** in the add menu does the same through a file dialog, and **Load** on a table already on the page pours a file into that one. A workbook with several sheets asks which one you want.
 
-Nothing is downloaded and no library is vendored in to do it: an `.xlsx` and an `.ods` are both a zip of XML, and the browser already has an unzipper and an XML parser. `js/lib/sheet.js` is the whole of it.
+Nothing is downloaded and no library is vendored in to do it: an `.xlsx` and an `.ods` are both a zip of XML, and the browser already has an unzipper and an XML parser. `js/lib/workbook.js` is the whole of it.
 
 - **Dates come out written down.** A date in a workbook is a *number* — `45352` — and only the format attached to the cell says it is the 1st of March. Those cells are read as `2024-03-01` (or `2024-03-01 15:30:00`, or `15:30:00`), which sorts and reads the same everywhere.
 - **Everything else comes out as the number it is.** A cell shown as `15%` holds `0.15` and arrives as `0.15`; one shown to two decimals arrives with all of them. The file's numbers are the data, and rounding them on the way in would be inventing readings that were never taken. Float noise from the spreadsheet (`1.2999999999999998`) is trimmed to the fifteen digits a workbook actually keeps, and a long whole number is left exactly as written — that is an id, not a measurement.
 - **A formula in the workbook comes in as its answer.** The value the spreadsheet last worked out is what lands in the cell, since Excel's function library is not this one's.
 - **What it can't do it says.** An old binary `.xls` asks to be saved as `.xlsx` or `.csv`. A hidden sheet is skipped — it is usually a workbook's own scaffolding.
 - **`.csv` works out its own separator** — comma, semicolon, tab or pipe — and handles quoted fields, including the ones with a comma or a newline inside them. A semicolon file whose numbers are written `1,5` is read as European and comes out `1.5`.
-- **An extract says so.** A table holds up to 50,000 rows and 256 columns. Read a bigger sheet than that and the strip under the table carries `first 50,000 of 812,000 rows` for as long as the table exists — on the page, in print, and in an exported book.
+- **An extract says so.** A table holds up to 50,000 rows and 256 columns. Read a bigger sheet than that and the strip under the table carries `first 50,000 of 812,000 rows` for as long as the table exists — on the page, in print, and in an export.
 
-### A big table on a small page
+### A big table in a small space
 
 Fifty thousand rows is a fine thing to keep and an impossible thing to draw, so **a table longer than about twenty-five rows shows a band of itself** and the strip underneath says which rows you are looking at: `rows 431–445 of 4,812 · 6 columns`. The header row is pinned above the band, so what you are reading always has its names on it.
 
@@ -93,7 +91,7 @@ Fifty thousand rows is a fine thing to keep and an impossible thing to draw, so 
 
 **⊟ folds the whole table down to an icon** — the same document icon an attachment wears, with the file's name under it and its type on the tag. That is where a 40,000-row table belongs on a page of notes: out of the way, and one click from being read. `Ctrl`+hover peeks at the top corner of the sheet.
 
-**Click the icon and the whole sheet opens in a window** over the book — the letters and numbers always out, a cell to a line, click a column letter to sort by it, ⤓ to save it as a `.csv`, and ⊞ to put it back on the page at the size it was. The window keeps its own place in the table, so scrolling in there does not move what is on the paper. Everything else is unchanged: a folded table still travels in a backup, still plots into a coordinate system, and still shows as its icon in print and in an exported book.
+**Click the icon and the whole sheet opens in a window** over the sheet — the letters and numbers always out, a cell to a line, click a column letter to sort by it, ⤓ to save it as a `.csv`, and ⊞ to put it back on the page at the size it was. The window keeps its own place in the table, so scrolling in there does not move what is on the paper. Everything else is unchanged: a folded table still travels in a backup, still plots into a coordinate system, and still shows as its icon in print and in an export.
 
 ### Plotting a table
 
@@ -116,7 +114,7 @@ Rows that aren't points are skipped: the header row, and any row whose x or y is
 
 A chart is also **drawn inside a margin**, and everything written on it goes out there: the numbers under the frame and beside it, the ticks pointing outward, the axis names centred outside those. Nothing is ever written over the readings, and nothing has to dodge anything — which is what the old arrangement spent its effort on, with the numbers turned inwards and the corner one left out because there was nowhere else for them to go. The plotting area keeps its 1000 units and the picture grows around it, so the readings sit in the middle of it where they belong. A chart draws its zero lines but no arrowheads: those say *this carries on off the edge of the paper*, which is true of a plane and not of a measured box.
 
-**A coordinate system with no data in it is unchanged**: no margin, axes through the origin with their arrows, numbers written along them, a square of it still square. That is what the vectors and the basis need, and it is the look the sketchbook is for.
+**A coordinate system with no data in it is unchanged**: no margin, axes through the origin with their arrows, numbers written along them, a square of it still square. That is what the vectors and the basis need, and it is the look this is for.
 
 **A spreadsheet's worth of points** is drawn as one shape rather than one element per point, so a chart of tens of thousands of readings still opens. Below about a thousand points each one is a mark of its own that you can put the pointer on.
 
@@ -161,7 +159,7 @@ Drop a node on a coordinate system — or pull its output socket onto one — an
 
 **Edit a cell at the top of the chain and the far end moves**, through however many nodes are in between, exactly as a plotted table already did. So does dragging a Number node's slider. Only the plots that actually read through what changed are redrawn.
 
-Nodes save, print, export and back up like anything else on the page, wires and all. A card that cannot work anything out at that moment — in a print, in an exported book — shows the last thing it was worth, the same way a plotted series carries its points.
+Nodes save, print, export and back up like anything else on the page, wires and all. A card that cannot work anything out at that moment — in a print, in an export — shows the last thing it was worth, the same way a plotted series carries its points.
 
 Not yet: nodes cannot be filed into a folder. A graph shut inside one would go dark, because a node can only read what is out on the page.
 
@@ -172,13 +170,13 @@ Write LaTeX between `$$…$$` in any text box, sticky note, checklist task or pi
 - `$$…$$` (or `\[…\]`) puts the equation on its own centred line; `\(…\)` keeps it running inside the sentence. A bare `$…$` is inline maths too, but only when it holds a TeX signal — a `\`, `^`, `_`, `{` or `}` — so "costs $5 to $10" stays a price while `$v^2$` becomes maths.
 - Understood: fractions and `\binom`, roots, sub- and superscripts, primes, Greek and the usual symbols, `\sum \prod \int \lim` (limits go above and below in display maths, beside it inline), `\left(…\right)` brackets that grow with what they hold, `\begin{pmatrix}` / `bmatrix` / `vmatrix` / `cases` / `aligned` / `array`, `\text{…}`, `\mathrm \mathbf \mathbb \mathcal \mathfrak \mathsf \mathtt`, accents (`\hat \bar \vec \tilde \dot \overline`), spacing (`\, \; \quad`), and `\\` to stack several lines.
 - A formula that doesn't compile stays on the page in red with the reason in its tooltip — hover it to see *"\\wat is not one I know"* and fix it. Nothing is ever swallowed.
-- Equations are **stored as LaTeX**, so they travel in backups and stay editable forever. They are **drawn as MathML**, so the overview, print and exported books show them with no library, no script and nothing to download — your system's maths font does the typesetting.
+- Equations are **stored as LaTeX**, so they travel in backups and stay editable forever. They are **drawn as MathML**, so print and exports show them with no library, no script and nothing to download — your system's maths font does the typesetting.
 
 This is maths *set on the page*. For maths you can pull about — axes, plotted functions, vectors and matrices — see **Maths** below.
 
 ## Maths
 
-**∑ Math** in the bottom bar (or `M`) puts a maths toolbar under the book and hands the mouse to the coordinate systems on the page — until you turn it off, dragging inside one moves the *plane* rather than the item. The same bar carries the wireframe shapes to draw over (**Shapes to draw over**, below), and in maths mode dragging one of those turns it. `Esc` steps back out.
+**∑ Math** in the bottom bar (or `M`) puts a maths toolbar under the sheet and hands the mouse to the coordinate systems on the page — until you turn it off, dragging inside one moves the *plane* rather than the item. The same bar carries the wireframe shapes to draw over (**Shapes to draw over**, below), and in maths mode dragging one of those turns it. `Esc` steps back out.
 
 ### The coordinate system
 
@@ -235,16 +233,16 @@ Applying a matrix **walks it in from the identity**, so you watch the vector tur
 
 **î ĵ** draws the basis vectors at the origin and shades the unit square they span — the area you see *is* the determinant. **Drag their tips** and the paper bends under everything on it, with the toolbar reading the basis out as you go.
 
-A coordinate system is nothing but numbers and SVG, so it costs no library, travels in **backups**, and comes out in the overview, in print and in an **exported book** exactly as you left it — the picture, the key underneath, the caption, and every card of working beside it.
+A coordinate system is nothing but numbers and SVG, so it costs no library, travels in **backups**, and comes out in print and in an **export** exactly as you left it — the picture, the key underneath, the caption, and every card of working beside it.
 
 ## Charts
 
 For numbers you want to *show* rather than plot — what the month went on, what the build is made of. **Pie chart**, **Donut**, **Bar chart** and **Stacked bar** sit on the palette's Math shelf, all of them the same thing underneath: rows of a name and a number. **The legend under the picture is the editor** — click a name or a number and type, `Enter` on the last number starts the next row, ✕ takes one off — and the picture follows every keystroke. The bar and stacked charts are deliberately plain first versions; the family will grow.
 
 - **The labels place themselves.** A slice with room carries its share, written in white or near-ink by the slice's own measured lightness. One too small gets a thin line that runs out of it, **turns a corner, and says its name out in the margin** — and when several crowd one side they stack apart rather than pile up. **⌖ cycles where they sit**: automatic, **beside the slices** (each name just off the rim, the share still inside; anything that would pile up or overflow the margin lines out instead), everything on stalks, or everything inside. **％** cycles what they say — share, value, or nothing — and every slice explains itself under the pointer. On the plain charts ⌖ still means something: bars put their values inside the bar, the stacked bar lifts its names above it on little stems.
-- **Or just drag a label.** Every label on the picture is a thing you can pick up and put where you want — out of the pie, into it, anywhere. It remembers its offset from where it *would* have sat (so it stays near its slice as the numbers change), **grows a leader line the moment it leaves its slice and sheds it when dragged back in**, swaps its ink to stay readable either way, and a **double-click sends it home**. ✎ holds the label knobs: a size slider (75–200%), the face they are set in — mono, serif or the book's handwriting — and *Labels back to automatic* to forget every drag at once.
-- **◈ cycles the pie's look**: flat, donut (the total sits in the hole), 3D, or a hand-hatched **sketchbook** face that belongs on this paper. **✎** holds its measurements — where the first slice starts, the size of the hole, the depth of the rim — and *Sort by size*. **◇** turns the same rows into the next kind of chart.
-- **◑ cycles six palettes.** Crisp, Vivid, Soft and Warm are fixed sets, **validated for colour-blind and normal-vision separation, lightness and chroma against all four stock papers** (`tools/verify/`'s dataviz checks were run on every set, light and dark steppings separately — the slot *order* is part of what passed, so don't reshuffle it by eye). Tonal and Ink are stepped live from the book's own accent and ink, so they follow any recolouring. A dark paper takes the dark stepping, and the charts repaint themselves when the theme changes.
+- **Or just drag a label.** Every label on the picture is a thing you can pick up and put where you want — out of the pie, into it, anywhere. It remembers its offset from where it *would* have sat (so it stays near its slice as the numbers change), **grows a leader line the moment it leaves its slice and sheds it when dragged back in**, swaps its ink to stay readable either way, and a **double-click sends it home**. ✎ holds the label knobs: a size slider (75–200%), the face they are set in — mono, serif or the note's handwriting — and *Labels back to automatic* to forget every drag at once.
+- **◈ cycles the pie's look**: flat, donut (the total sits in the hole), 3D, or a hand-hatched **sketch** face that belongs on this paper. **✎** holds its measurements — where the first slice starts, the size of the hole, the depth of the rim — and *Sort by size*. **◇** turns the same rows into the next kind of chart.
+- **◑ cycles six palettes.** Crisp, Vivid, Soft and Warm are fixed sets, **validated for colour-blind and normal-vision separation, lightness and chroma against all four stock papers** (`tools/verify/`'s dataviz checks were run on every set, light and dark steppings separately — the slot *order* is part of what passed, so don't reshuffle it by eye). Tonal and Ink are stepped live from the note's own accent and ink, so they follow any recolouring. A dark paper takes the dark stepping, and the charts repaint themselves when the theme changes.
 - **A palette only offers what it can honestly tell apart** — ten slices on Crisp, Vivid and Soft (the ninth and tenth slots were appended through the same validator search, so the first eight kept their exact colours), six on Warm and the ramps — so the legend stops offering new rows at the palette's own cap, and switching palettes skips any too small for the rows you have. Fold a long tail into an "Other" row; slices are parted by a seam of the paper rather than drawn borders.
 
 Like the plots it is arithmetic and SVG — no library, nothing to download — so a chart prints, exports and backs up exactly as it stands, legend and caption included.
@@ -254,8 +252,8 @@ Like the plots it is arithmetic and SVG — no library, nothing to download — 
 **✎ Draw** in the bottom bar (or `D`) turns the whole page into paper you can draw on — circle something on a screenshot, arrow at a bug, scribble in the margin. Ink is not a box you place: it goes wherever you drag the mouse, **straight over pictures, videos, notes and everything else** on its layer.
 
 - **Pen** thickens where you slow down and thins where you speed up, like a real nib. **Marker** lays a translucent band, **Eraser** rubs out ink on the layer you're working on. One nib size (FINE / THIN / BOLD) drives all three.
-- `Ctrl+Z` takes back the last stroke — it is the same undo the rest of the book has, so it carries on back through whatever you did before you picked the pen up. **↶ Undo** in the ink bar is the narrower one: the last stroke *on this layer*, wherever it came in the order. **Clear ink** wipes the current layer's ink off the page.
-- Strokes are vectors measured against the page width, so they stay crisp at any zoom and follow the page into spreads, thumbnails, print and exports. In spread view each page draws on its own.
+- `Ctrl+Z` takes back the last stroke — it is the same undo the rest of the app has, so it carries on back through whatever you did before you picked the pen up. **↶ Undo** in the ink bar is the narrower one: the last stroke *on this layer*, wherever it came in the order. **Clear ink** wipes the current layer's ink off the page.
+- Strokes are vectors measured against the sheet's width, so they stay crisp at any zoom, they are remapped when the sheet grows, and they follow the paper into print and exports.
 - `Esc` (or **✕ Done**) puts the mouse back to moving things.
 
 ## Shapes to draw over
@@ -279,11 +277,11 @@ They are drawn as construction lines and nothing else: **no frame, no background
 - **◇** steps to the next shape without losing the pose you found — useful for checking a form against a simpler one. **⌂** goes back to the opening three-quarter view. **✥** (or a double-click) hands it back to the page so you can move it about.
 - **Every line** (◈) adds the box around the circle and the diagonals across the square — the lines a rectangle or an ellipse gets built from.
 - The stylus draws over them the way it draws over photos — ink is caught by a sheet above the whole page — so a guide never takes the pen off you.
-- It is arithmetic and SVG, with no mesh and no WebGL behind it, so a guide costs nothing, travels in **backups**, and comes out in print, the overview and exported books exactly as you left it.
+- It is arithmetic and SVG, with no mesh and no WebGL behind it, so a guide costs nothing, travels in **backups**, and comes out in print and exports exactly as you left it.
 
 ## Chemistry
 
-A **Molecule** goes on the page the way a chemist draws one: skeletal, the carbons implied at the corners, heteroatoms written out with their hydrogens, and nothing behind it but the paper. Under the drawing a small line says what you have — **formula, molar mass, and the name** when the book knows it (about two hundred common molecules, from water to caffeine; two things drawn apart read `ethanol + water`). Add one from the palette's **Science** shelf, or press Space and type `mol`.
+A **Molecule** goes on the page the way a chemist draws one: skeletal, the carbons implied at the corners, heteroatoms written out with their hydrogens, and nothing behind it but the paper. Under the drawing a small line says what you have — **formula, molar mass, and the name** when the app knows it (about two hundred common molecules, from water to caffeine; two things drawn apart read `ethanol + water`). Add one from the palette's **Science** shelf, or press Space and type `mol`.
 
 **Drawing.** Click the molecule once to pick it up; click again and the pen is yours, with a glass rail down its left edge:
 
@@ -316,21 +314,21 @@ The **Periodic table** is the second tool on the shelf: the table on the page as
 
 **The colouring is a toolbar button.** **Decay** is the classic one above; **T½** shades by half-life on a log scale, which lights up the long-lived spine and the shell closures around it; **B/A** is binding energy per nucleon and draws the iron peak — the maximum is really ⁶²Ni at 8.7945 MeV — and **Sn** is the neutron separation energy, which goes to nothing exactly at the neutron drip line. **⌕** goes to a nuclide by name: `U238`, `238U`, `Tc-99m`, `14C`, `uranium-238`.
 
-Everything here is arithmetic and SVG — no library, no server, nothing downloaded — so molecules travel in backups, print, the overview and exported books exactly as drawn.
+Everything here is arithmetic and SVG — no library, no server, nothing downloaded — so molecules travel in backups, print and exports exactly as drawn.
 
 ## Blender models (.obj)
 
-Pick **3D model** in the add menu, or just **drag a `.obj` onto the page**. A model doesn't get taped in like a photo — it arrives in **its own little application window**: title bar with the file name and triangle count, chunky bevelled edges, the viewport sunk into the frame, and the caption running along the bottom as a status bar. The title bar lights up when the window is the one you're working on, exactly like a desktop that has been running since 1997. Every colour in it is mixed from the book's own theme, so it turns tan on Kraft and charcoal on Darkroom along with everything else. **▣** takes the frame off if you want the bare viewport.
+Pick **3D model** in the add menu, or just **drag a `.obj` onto the page**. A model doesn't get taped in like a photo — it arrives in **its own little application window**: title bar with the file name and triangle count, chunky bevelled edges, the viewport sunk into the frame, and the caption running along the bottom as a status bar. The title bar lights up when the window is the one you're working on, exactly like a desktop that has been running since 1997. Every colour in it is mixed from the note's own theme, so it turns tan on Kraft and charcoal on Darkroom along with everything else. **▣** takes the frame off if you want the bare viewport.
 
 To look around, hit **⟳** in its toolbar and drag inside the frame to spin it, wheel to zoom, double-click to re-frame. **⟳** again (or clicking anything else) goes back to moving the item around the page.
 
 **Bring the materials too.** Select the `.obj`, its `.mtl` and the texture pictures together in the file dialog — or drag the whole lot onto the page at once — and the model shows up with its own colours and textures on it. In Blender that means *File → Export → Wavefront (.obj)* with **Export Materials** left on, and copying the texture files out of your project folder if they aren't beside the `.obj` already.
 
 - Read from the `.mtl`: one material per `usemtl` run, its diffuse colour (`Kd`) and its diffuse texture (`map_Kd`) — with any path or option flags in front of the file name ignored, so Blender's `//textures/hull.png` still finds `hull.png`. `.png .jpg .gif .webp .bmp` decode; anything else falls back to the flat colour.
-- **◑** now starts on the model's own materials and then cycles through the book's palette — a clay render in one of your accents, and back again. **◈** switches shaded / shaded + wireframe / pure wireframe (wireframe is skipped past ~120k triangles).
+- **◑** now starts on the model's own materials and then cycles through the note's palette — a clay render in one of your accents, and back again. **◈** switches shaded / shaded + wireframe / pure wireframe (wireframe is skipped past ~120k triangles).
 - Without a `.mtl` nothing changes from before: quads and n-gons, normals, negative indices and multi-object files all read, and a model with no normals gets flat-shaded faces. The title bar says `no ship.mtl` when the `.obj` asked for materials that never arrived.
-- The `.obj`, the `.mtl` and every texture are stored inside the book, so they travel in your **backups** and come back together on restore. Deleting the model deletes its textures with it.
-- Every model keeps a **still of its last pose** — textures and all — and that is what the overview, the shelf, print and the exported book show. An exported `.html` stays small and readable anywhere instead of shipping megabytes of mesh.
+- The `.obj`, the `.mtl` and every texture are stored inside the note, so they travel in your **backups** and come back together on restore. Deleting the model deletes its textures with it.
+- Every model keeps a **still of its last pose** — textures and all — and that is what the shelf, print and the export show. An exported `.html` stays small and readable anywhere instead of shipping megabytes of mesh.
 - The stylus draws over models like it draws over photos — ink already sits above the items on its layer — so you can circle a bad silhouette right on the render.
 - One shared WebGL canvas draws every model on the page, so a page full of them costs one context. Without WebGL the frame just says so and the poster still prints.
 
@@ -340,7 +338,7 @@ To look around, hit **⟳** in its toolbar and drag inside the frame to spin it,
 
 - **‹ ›** on the slide (or the ones on the toolbar) step a slide at a time. The **wheel** over it does the same, one slide a notch, so you can read a deck without picking it up. `Ctrl`+wheel is left alone, since everywhere else in the app that is the desk's own zoom.
 - **Click the slide and the reader takes the screen.** Dark, quiet, the slide as large as it will go, and the deck laid along the bottom as a filmstrip you can scroll and click.
-- The deck is kept whole inside the book, so it travels in **backups** and comes back on restore. **⤓** on the toolbar saves the original file back out.
+- The deck is kept whole inside the note, so it travels in **backups** and comes back on restore. **⤓** on the toolbar saves the original file back out.
 
 ### The reader
 
@@ -362,20 +360,20 @@ Nothing is downloaded and no library is vendored in for this either. A `.pptx` i
 - **Symbol and Wingdings are alphabets in disguise**: a β is stored as the letter `b`, an arrow as `à`, to be read through a font this machine very likely hasn't got. They are translated into the Unicode that means the same thing and set in the ordinary face, rather than coming out as a row of tofu.
 - **The master's furniture is drawn; its placeholders are not.** A footer written on the master is a *default*, not something on your slides — PowerPoint only shows one where the slide itself carries one, so this does too.
 - What it cannot draw it says rather than fakes: an `.emf` pasted out of Word is a vector format no browser reads, and gets a quiet dashed frame with `EMF` in it. An old binary `.ppt` asks to be saved as `.pptx`.
-- The card on the page keeps a **still of the slide it is showing**, and that is what the overview, the shelf, print and the exported book use — an exported `.html` stays readable instead of shipping the whole deck.
+- The card on the page keeps a **still of the slide it is showing**, and that is what the shelf, print and the export use — an exported `.html` stays readable instead of shipping the whole deck.
 
 ## Attachments (PDFs and other files)
 
 Pick **Attachment** in the add menu, or **drop any file onto the page** that isn't a picture, a video, an `.obj` or a spreadsheet. You don't get the document sprawled across the page — you get a **shortcut to it**: a small document icon with the classic little arrow badge in the corner, and **the file's name written underneath**, so a page of them reads at a glance.
 
-- **Click the icon and the PDF opens**, in a reader that comes up over the book (drop the shortcut onto another one and they become a **folder** instead — see below): the browser's own PDF viewer with its page controls, in a window with the file's name and length in the title bar. `Esc`, **✕** or a click outside closes it. **↗** in that title bar hands the file to a new browser tab and **⤓** saves a copy. There's an **↗** button on the item's toolbar too, and dragging the shortcut around never opens anything — only a real click does.
-- The reader exists because a book opened straight off the disk (`file://`) *cannot* hand a stored file to a new tab — Firefox and Chrome refuse to navigate to a blob from a page with no origin. Opening it inside the book works everywhere; the tab button is there for when the browser allows it, and quietly saves the file instead when it doesn't. Attachments that aren't PDFs go straight to a tab or a download, since the browser can't display them anyway.
+- **Click the icon and the PDF opens**, in a reader that comes up over the sheet (drop the shortcut onto another one and they become a **folder** instead — see below): the browser's own PDF viewer with its page controls, in a window with the file's name and length in the title bar. `Esc`, **✕** or a click outside closes it. **↗** in that title bar hands the file to a new browser tab and **⤓** saves a copy. There's an **↗** button on the item's toolbar too, and dragging the shortcut around never opens anything — only a real click does.
+- The reader exists because a note opened straight off the disk (`file://`) *cannot* hand a stored file to a new tab — Firefox and Chrome refuse to navigate to a blob from a page with no origin. Opening it inside the note works everywhere; the tab button is there for when the browser allows it, and quietly saves the file instead when it doesn't. Attachments that aren't PDFs go straight to a tab or a download, since the browser can't display them anyway.
 - **Hold `Ctrl` and put the mouse on an icon** and a small card peeks at the first page of the PDF, next to the file name, its page count and its size. The card is the real document rendered by the browser, cropped down to a thumbnail — nothing is decoded until you actually ask for it, so a page full of attachments costs nothing to open. Hovering on its own does nothing, so the mouse can cross a shelf of icons in peace.
 - The icon carries the **file type** on a coloured tag (`PDF`, `BLEND`, `CSV`…), so a page of attachments doesn't turn into a row of identical squares.
-- The file lives inside the book like a video does: it travels in **backups**, comes back on restore, and is deleted when you delete the shortcut. Rename the label under the icon like any other caption.
-- In the **exported book** the file rides along inside the `.html` and the shortcut downloads it (anything over 15 MB stays behind, and the shortcut is then just a label). Print and the overview show the icon and its name.
+- The file lives inside the note like a video does: it travels in **backups**, comes back on restore, and is deleted when you delete the shortcut. Rename the label under the icon like any other caption.
+- In the **export** the file rides along inside the `.html` and the shortcut downloads it (anything over 15 MB stays behind, and the shortcut is then just a label). Print shows the icon and its name.
 
-The preview is the live document rather than a saved picture, so it shows up in the app but not in print or in an exported book; making it appear there too would mean vendoring a PDF renderer into the folder to bake a thumbnail at import.
+The preview is the live document rather than a saved picture, so it shows up in the app but not in print or in an export; making it appear there too would mean vendoring a PDF renderer into the folder to bake a thumbnail at import.
 
 ## Folders
 
@@ -385,11 +383,11 @@ A page full of loose shortcuts is still a mess. **Drag one thing on top of anoth
 
 - **Everything in there is an icon**, and every kind gets its own: a document sheet with its file type on a tag, **a picture showing the actual picture**, a strip of film for a video (badged `YT`, `VIMEO` or `MP4`), and **a model showing the pose it last struck**. A model filed away before it ever sat on a page poses for its still the moment you open the folder.
 - **Click one to open it.** A PDF comes up in the reader, a picture and a video get a window of their own, a code cell opens syntax-coloured with a copy button in its title bar, and a model opens **live and full size** — drag inside it to turn it, wheel to zoom, **⌂** to re-frame. Wherever you leave it is where it sits when you put it back on the page.
-- **↥ on an icon puts it back on the page** as the real thing again — the picture is taped in, the model gets its window, the video its player, all at the size they were. **✕** deletes it from the book, its file with it.
+- **↥ on an icon puts it back on the sheet** as the real thing again — the picture is taped in, the model gets its window, the video its player, all at the size they were. **✕** deletes it from the note, its file with it.
 - **`Ctrl` + hover works in here too**: the first page of a PDF, the picture, the first frame of a video, the model's pose. On a folder it lists what's inside.
 - **Drop files straight into the open window**, or use **+** in its title bar. They arrive as themselves — a `.png` is a picture, an `.obj` and its `.mtl` are a model, everything else is an attachment.
 - Folders stay **one level deep** on purpose: a folder is a tray, not a tree. Drop a folder onto something and that thing goes *into* the folder, keeping the name you gave it. Rename a folder by editing the label under it, like any other caption.
-- What a folder holds is part of the book: it's saved with the page, travels in **backups**, comes back on restore, and deleting the folder deletes every file it was holding (after asking). In print and in an exported book a folder shows as its icon and name, with its contents listed in the tooltip — nothing over there opens.
+- What a folder holds is part of the note: it's saved with the sheet, travels in **backups**, comes back on restore, and deleting the folder deletes every file it was holding (after asking). In print and in an export a folder shows as its icon and name, with its contents listed in the tooltip — nothing over there opens.
 
 ## Flip cards
 
@@ -402,7 +400,7 @@ Pick **Flip cards** in the add menu and a deck of index cards lands on the page 
 A new deck arrives with one blank card and the pen already in your hand; **✎** on the item's toolbar switches between writing and studying. While you are writing, the row under the card is the tool tray:
 
 - **Type straight onto the card.** `$$…$$` compiles into a typeset equation when you leave the box, exactly as it does everywhere else, and **∑** wraps whatever you've selected in the dollars for you.
-- **＋ Text** adds another line. **Picture · Video · Model · File** put the real thing on the side you are looking at: a photo, a YouTube / Vimeo link or a video off your disk, a `.obj` out of Blender with its `.mtl` and textures, a PDF you can click open. **Or drop the files straight onto the card.** They live inside the book like everything else — they travel in backups, come back on restore, and go when the card goes.
+- **＋ Text** adds another line. **Picture · Video · Model · File** put the real thing on the side you are looking at: a photo, a YouTube / Vimeo link or a video off your disk, a `.obj` out of Blender with its `.mtl` and textures, a PDF you can click open. **Or drop the files straight onto the card.** They live inside the note like everything else — they travel in backups, come back on restore, and go when the card goes.
 - **Drag anything on the card to move it; the dot on its corner sizes it** — that is how a picture is scaled to the size you actually want it. Tap a block and its own row appears under the card: **A− / A+** for the writing, **L C R** to line it up, **◧− / ◧+** for the width, **⌖ middle** to plant it dead centre, **✕** to take it off.
 - **It lines things up for you.** Drag something near the middle of the card, or level with anything else on it, and a thin red guide appears where it has snapped — middles to middles, edges to edges, and a comfortable margin down each side. Dead centre wins over the rest, so a wide block settles in the middle instead of catching a margin. **Hold `Shift` to put the guides away** and place it by hand.
 - **A/B** turns the card into a **multiple choice question**: options with A, B, C down the side, a tick on the ones that are right. One right answer means a single tap answers the card; tick two or more and the reader gets a *Check my answer* button instead. The options are a block like any other — move them where you want them.
@@ -412,7 +410,7 @@ A new deck arrives with one blank card and the pen already in your hand; **✎**
 
 Turn the card, decide how you did, and hit **✓** or **✗** — the deck moves on to the next card by itself. In the scope you can also **throw the card**: drag it right for ✓, left for ✗ — it follows your hand, and on release the speed of the throw decides, or it springs back to the middle for another look. A multiple choice card marks itself the moment you pick, showing the right answer in green and your mistake in red, then turns over to the explanation if there is one. The score sits in the corner of the deck (`8✓ 2✗`), with a line under the title bar filling up as you get through the run.
 
-- **⌖ gives the card the whole screen.** The book, the desk and everything else fade out behind it and the card comes up big, on its own. Because everything on a card is measured in the card itself, the same card is simply *bigger* in here — nothing reflows, nothing has to be laid out twice. The keys do the work: **space** turns the card, **← →** walk the deck, **1–9** pick an answer, **r** and **w** mark it right or wrong, **esc** puts the book back. A model on a card is live in here — drag inside it to turn it around, wheel to zoom.
+- **⌖ gives the card the whole screen.** The sheet, the desk and everything else fade out behind it and the card comes up big, on its own. Because everything on a card is measured in the card itself, the same card is simply *bigger* in here — nothing reflows, nothing has to be laid out twice. The keys do the work: **space** turns the card, **← →** walk the deck, **1–9** pick an answer, **r** and **w** mark it right or wrong, **esc** puts the sheet back. A model on a card is live in here — drag inside it to turn it around, wheel to zoom.
 - **Σ shows the scoreboard**: how many out of how many, the percentage, a green-and-red bar, and every card in the run listed with how it went. Click any line to jump straight to that card. It comes up on its own when you finish the last card.
 - **↻ replays the deck** from the first card with every mark cleared. **↻✗ replays only the ones you got wrong** — the deck then holds just those, says `3 / 7 · missed` where the count goes, and is scored on its own. Replay all afterwards to get the whole deck back. Both are on the item's toolbar and in the scope, and both sit on the scoreboard where you actually want them.
 
@@ -420,70 +418,55 @@ A deck keeps a running tally per card, so you can tell an old friend from one yo
 
 **Decks file away like anything else.** Drop a deck onto another item and they go into a folder together, with the deck showing as its own icon — a stack of cards with the count on the front. `Ctrl` + hover lists what is on them; clicking one opens it straight into the scope to study, and `Esc` puts you back in the folder.
 
-In **print and in the overview** a deck shows the card it is on, question side up. In an **exported book the cards still turn** — click one and it flips, with the arrows walking the deck, all of it done with no script at all.
+In **print** a deck shows the card it is on, question side up. In an **export the cards still turn** — click one and it flips, with the arrows walking the deck, all of it done with no script at all.
 
 ## Layers
 
-**▤ Layers** in the top bar (or `L`) opens the stack — layers belong to the book, so every page shares them. Ink and items on a higher layer cover everything below; within a layer, ⤒ / ⤓ order things front to back.
+**▤ Layers** in the top bar (or `L`) opens the stack — layers belong to the note. Ink and items on a higher layer cover everything below; within a layer, ⤒ / ⤓ order things front to back.
 
 - **Click a layer to work on it**: new items and new ink land there, and *everything on the other layers goes faint and stops taking clicks* so you can work without hitting anything else. **Show all** (or `Esc`) brings them back, and the **Fade other layers** switch turns the fading off if you'd rather keep the page as it is.
 - The **▤n** button on an item's toolbar moves it to the next layer.
 - ◉ hides a layer, ▲ ▼ restack, ✕ removes one — anything on it moves onto the neighbouring layer rather than being thrown away. The number beside a layer counts what it holds on the pages you're looking at.
 - Old boxed sketches from earlier versions are converted into page ink the first time a page is opened; a pre-vector bitmap sketch stays as a picture.
 
-**Arrows (connectors):** the **→** button in any item's toolbar draws an arrow to another item — click the target and the arrow snaps between the two, attached to their edges like a PowerPoint connector, following them when they move (across the spread too). Click an arrow to select it: **↝** cycles the shape (straight / curved / bézier — the last used becomes the default for new arrows), **⇄** flips the direction, **◑** recolours, **✕** removes.
+**Arrows (connectors):** the **→** button in any item's toolbar draws an arrow to another item — click the target and the arrow snaps between the two, attached to their edges like a PowerPoint connector, following them when they move. Click an arrow to select it: **↝** cycles the shape (straight / curved / bézier — the last used becomes the default for new arrows), **⇄** flips the direction, **◑** recolours, **✕** removes.
 
-**Pins & strings (detective board):** the 📌 button in any item's toolbar pins the item and lets you tie a string to another item — click the second item to knot it (Esc cancels). In **spread view the string can cross to the facing page**, sagging over the gutter like real yarn (cross-page strings only show while both pages are visible). Strings are simulated: they drape under gravity and swing when you drag whatever they're pinned to. Click a string to select it — ◑ recolours it, ✕ (or `Delete`) cuts it. Same-page strings also show up in the overview, on the shelf, in print and in exported books. Double-click any text to edit it. **Select words with your mouse, then tap a coloured dot in the item's toolbar to highlight them** (⌫H removes a highlight). Videos have a ▶ toggle that switches between *move* mode and *play* mode.
+**Pins & strings (detective board):** the 📌 button in any item's toolbar pins the item and lets you tie a string to another item — click the second item to knot it (Esc cancels). Strings are simulated: they drape under gravity and swing when you drag whatever they're pinned to. Click a string to select it — ◑ recolours it, ✕ (or `Delete`) cuts it. Strings also show up on the shelf, in print and in exports. Double-click any text to edit it. **Select words with your mouse, then tap a coloured dot in the item's toolbar to highlight them** (⌫H removes a highlight). Videos have a ▶ toggle that switches between *move* mode and *play* mode.
 
 ## Adding things — the palette
 
 Press **Space** (or **Shift+A**, or right-click the paper) and the palette warps out of your cursor, Blender-style — pick a tile and the item lands right where you invoked it. The same panel sits behind the **+ Add…** button in the toolbar.
 
-Everything that can go on a page is in it, sorted onto six shelves — **Write · Math · Science · Media · Shapes · Decor** — each tool an icon with its name under it and a fuller sentence in its tooltip. The panel remembers the shelf you left it on, and the page actions (Bookmark / Clear page / Remove page) sit along its foot. `Esc` closes it.
+Everything that can go on the sheet is in it, sorted onto six shelves — **Write · Math · Science · Media · Shapes · Decor** — each tool an icon with its name under it and a fuller sentence in its tooltip. The panel remembers the shelf you left it on, and **Clear canvas** — which wipes everything off, items and ink, after a confirmation — sits along its foot. `Esc` closes it.
 
 **Or just type.** The search field has focus from the moment the panel opens, so hitting Space and typing `ma` finds Matrix, Marker and 3D model whatever shelf they live on — each wearing a small tag saying which. `Enter` takes the best match, and the arrow keys walk the grid.
-
-## Pages
-
-- `+ Page` inserts after the current page; each page has its own paper — grid / ruled / dots / isometric / blank — via the paper button in the toolbar or **⚙ Menu**, where you can also set the default paper for new pages.
-- **Clear page** (in the palette's foot) wipes everything off the current page — items and ink — after a confirmation but keeps the page; **Remove page** deletes the page itself.
-- **Spread view** (▢▢) shows two facing pages at once; both are fully editable, and you can **drag an item from one page straight onto the other** — any strings tied to it come along, switching between same-page and cross-page automatically.
-- **Page size — drag the paper bigger.** Three handles sit just off the open page: the hatched **corner** takes both directions at once, the **tick on the right edge** widens it, the one **along the bottom** lengthens it. A readout shows the size while you drag. This is not zoom: type, ink and the paper grid stay exactly the size they were, so a bigger page is *more room*, not bigger writing — the same paragraph simply wraps into fewer lines. Everything already on the page keeps its position and its share of the width. **Double-click any handle** to go back to the shape's own size, or pick a shape in **⚙ Menu** (the menu shows *Custom* once you've dragged one).
-- **Zoom** with the −/+ buttons, `Ctrl`+scroll, or `+`/`-`/`0` keys; drag the desk around the book to pan. Zoom is true layout zoom — the page really re-renders, so text, sketches and paper patterns stay sharp at any level. Clicking the percentage fits the whole page on the desk when it's bigger than the screen, and takes you back to 100% otherwise.
-- Page title and date at the top-left are editable.
-- **Bookmarks**: *Bookmark page* in the palette's foot slips a **divider tab onto the fore-edge** — a straight, rounded index tab that really comes out from between the pages: its buried end simply disappears under the paper (the tab strip is drawn beneath the sheet), the page's own shadow falls across the seam, and only the part poking out takes the mouse. Visible from every page; click it to flip straight there. It slides out further on hover and stays pulled out on its own page. Drag a tab along the fore-edge or around onto the top edge, double-click to rename it (it shows the page's name otherwise), right-click for colour (◑, five sticky colours) or remove (✕).
-- **The atlas**: your **first bookmark quietly puts a Contents block on the starting page** (after that it's an ordinary item — move it, resize it, delete it, or add another from the palette's Write shelf). Every bookmark is a chapter line wearing its tab's colour swatch, and **every Heading on the pages under that bookmark** (up to the next one) is listed beneath it as a sub-header, dotted leaders out to the page numbers. **Click any line and the book flips there.** It keeps no content of its own — bookmarks and headings are the content — so it can never go stale, and it comes out in print and exports as a proper table of contents (each page's headings ride the book's index as a digest, so even pages not yet loaded list correctly).
-- **Page shape**: pick Portrait / A4 / Square / Landscape / Widescreen per book in **⚙ Menu** — that sets the size the handles then start from. Whatever size you land on is carried into print, exports, backups and the shelf covers.
-- **All pages** shows a thumbnail overview.
-- Arrow keys flip pages.
 
 ## Taking it back
 
 - **`Ctrl`+`Z` undoes the last thing you did; `Ctrl`+`Y` — or `Ctrl`+`Shift`+`Z` — undoes the undo.** The ↶ ↷ pair in the bottom bar does the same with the mouse, and goes dim when there is nothing either way. Sixty steps are kept, and the tape runs backwards to say so.
 - **A step is one thing done**, not one write to the store: a whole drag counts once, the throw at the end of it included; a burst of typing counts once and closes when you pause; every stroke of ink is its own.
-- It reaches everything the paper is made of, because everything on the paper is saved the same way — a thing placed, deleted, moved, resized, recoloured, filed into a folder or tied to another; ink; a cleared page; and a page added or removed, which comes back with everything that was on it, pictures and attachments included.
-- It deliberately leaves alone the things that are *where you are standing* rather than what is on the paper: turning a page, zoom and pan, the layer and the pen you are holding, and the sound. A `Ctrl`+`Z` that took back a page turn instead of the change you meant would be worse than no undo at all.
-- Undo turns to the page the change happened on, so you always see what came back.
+- It reaches everything the paper is made of, because everything on the paper is saved the same way — a thing placed, deleted, moved, resized, recoloured, filed into a folder or tied to another; ink; a cleared canvas; and the size of the sheet itself, which comes back with every item and every stroke exactly where it was.
+- It deliberately leaves alone the things you are *holding* rather than what is on the paper: zoom and pan, the layer, the pen, the map and the sound.
 - Inside a text box the keys belong to the box — that is the browser's own undo, letter by letter. Step out of it and `Ctrl`+`Z` takes back the whole burst.
-- The stack is per book and per session: opening another sketchbook starts a fresh one.
+- The stack is per note and per session: opening another note starts a fresh one.
 
 ## Menu (⚙)
 
-The drawer holds the book actions (Export / Print / Back up / Restore) plus all customization: theme presets (Graph, Darkroom, Blueprint, Kraft) and full colour overrides — paper, ink, grid lines, both accents, and the desk behind the book. Your palette is saved with the book and carried into exports.
+The drawer holds the note actions (Export / Print / Back up / Restore) plus all customization: theme presets (Graph, Darkroom, Blueprint, Kraft) and full colour overrides — paper, ink, grid lines, both accents, and the desk behind the sheet. Your palette is saved with the note and carried into exports.
 
-**Paper grain** switches the speckle over the paper on and off. It is the one part of a sheet that costs real drawing work — it is a filter blended over the whole surface — so on a canvas grown to several thousand pixels, turning it off is what buys you the smoothest panning and zooming. New canvases start without it; books keep it.
+**Paper grain** switches the speckle over the paper on and off. It is the one part of a sheet that costs real drawing work — it is a filter blended over the whole surface — so on a sheet grown to several thousand pixels, turning it off is what buys you the smoothest panning and zooming. New notes start without it.
 
-There's also a **studio sounds** toggle with a volume slider — soft pencil scratches while you write and draw, gentle plops when placing things, a layered papery page-turn (swish, slide, and a few fibre crackles — slightly different every time), ticks for checkboxes, and a tape run backwards for an undo — the same sound the other way up for a redo. All generated live with WebAudio; no audio files, and off means off.
+There's also a **studio sounds** toggle with a volume slider — soft pencil scratches while you write and draw, gentle plops when placing things, a layered papery swish when a note opens (slide, and a few fibre crackles — slightly different every time), ticks for checkboxes, and a tape run backwards for an undo — the same sound the other way up for a redo. All generated live with WebAudio; no audio files, and off means off.
 
 ## Getting it out (all in ⚙ Menu)
 
-- **Export book** — a single self-contained `.html` flipbook (read-only) you can send to anyone or publish. Local videos are embedded inside it.
-- **Print / PDF** — every page as A4 via the browser's print dialog.
-- **Back up / Restore** — full `.json` snapshot of the open book, including videos; restore it on any machine (it replaces the book you have open).
+- **Export** — a single self-contained `.html` (read-only) you can send to anyone or publish: the whole sheet as it stands, with local videos embedded inside it. Flip cards still turn over there.
+- **Print / PDF** — the sheet via the browser's print dialog.
+- **Back up / Restore** — full `.json` snapshot of the open note, including videos; restore it on any machine (it replaces the note you have open).
 
 ## Notes
 
-- Images are downscaled to ≤2000 px on import to keep the book light while still holding up under zoom.
+- Images are downscaled to ≤2000 px on import to keep the note light while still holding up under zoom.
 - Fonts load from Google Fonts; offline you get clean system fallbacks.
 - Data lives in the browser profile that opened the file. Moving the folder is fine; switching browsers means restoring from a backup.
 

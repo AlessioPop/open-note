@@ -24,8 +24,6 @@ function applyTheme(){
      the desk it should be painting is handed to it here */
   document.documentElement.style.setProperty('--desk', deskOf(s));
   applyPageSize();
-  $('#aspectSel').value = s.pgw || s.pgh ? 'custom' : (s.aspect || 'tall');
-  $('#defPaperSel').value = s.defPaper || 'grid';
   syncGrain();
   syncPickers();
 }
@@ -57,28 +55,23 @@ document.querySelectorAll('.drawer input[type=color]').forEach(inp =>
     document.body.style.setProperty('--' + inp.dataset.var, inp.value);
     queueIndex();
   }));
-/* colours only: the paper's size, its grain and the sound are not colours, and a
-   canvas that lost its size here would fold every item on it back into a page */
+/* colours only: the sheet's size, its grain, the map and the sound are not
+   colours, and a sheet that lost its size here would fold everything on it back
+   into a page */
+const NOT_A_COLOUR = ['sound', 'vol', 'grain', 'map', 'pgw', 'pgh', 'stylus', 'arrowStyle', 'fade'];
 $('#resetColors').addEventListener('click', () => {
-  const keep = { defPaper: index.settings.defPaper, sound: index.settings.sound, vol: index.settings.vol,
-                 aspect: index.settings.aspect, grain: index.settings.grain, pgw: index.settings.pgw, pgh: index.settings.pgh };
+  const keep = {};
+  NOT_A_COLOUR.forEach(k => { if(index.settings[k] !== undefined) keep[k] = index.settings[k]; });
   index.settings = keep; applyTheme(); queueIndex();
 });
-$('#setBtn').addEventListener('click', () => { $('#drawer').classList.toggle('open'); syncPickers(); $('#paperSel').value = activePage().paper || 'grid'; });
+$('#setBtn').addEventListener('click', () => { $('#drawer').classList.toggle('open'); syncPickers(); $('#paperSel').value = sheet().paper || 'grid'; });
 $('#closeDrawer').addEventListener('click', () => $('#drawer').classList.remove('open'));
-$('#paperSel').addEventListener('change', e => { const p = activePage(); p.paper = e.target.value; queueSave(p.id); render(); });
-$('#defPaperSel').addEventListener('change', e => { index.settings.defPaper = e.target.value; queueIndex(); });
+$('#paperSel').addEventListener('change', e => { const p = sheet(); p.paper = e.target.value; queueSave(p.id); render(); });
 function applyPageSize(){
   const p = pgSize(index);
   document.body.style.setProperty('--pw', p.w);
   document.body.style.setProperty('--ph', p.h);
 }
-$('#aspectSel').addEventListener('change', e => {
-  if(e.target.value === 'custom'){ e.target.value = index.settings.aspect || 'tall'; return; }
-  index.settings.aspect = e.target.value;
-  delete index.settings.pgw; delete index.settings.pgh;   // a shape wins over an old drag
-  applyTheme(); queueIndex(); render();
-});
 
 /* sound settings */
 function syncSound(){

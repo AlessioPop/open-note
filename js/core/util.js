@@ -7,29 +7,20 @@ const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-const K_INDEX = 'index';                 // legacy single-book key, migrated into the library
-const K_LIB = 'library';
+const K_LIB = 'library';                 // the stored name stays: see core/state.js
 const kPage = id => 'page:' + id;
 const kBook = id => 'book:' + id;
 const fmtDate = ts => ts ? new Date(ts).toISOString().slice(0, 10) : '';
-/* page shapes, in page units — the size you get before you drag it yourself */
-const ASPECTS = {
-  tall:   { w: 660,  h: 884 },
-  a4:     { w: 660,  h: 933 },
-  square: { w: 760,  h: 760 },
-  land:   { w: 880,  h: 660 },
-  wide:   { w: 1000, h: 563 }
-};
-const PG_MIN = 360, PG_MAX = 2600;                 // how far the page can be dragged
+const PG_MIN = 360, PG_MAX = 2600;                 // how small a sheet may be, and the plain ceiling
 const PG_BASE = 660;                               // the width every default below was drawn against
-/* a book's page size: what it was dragged to, else the shape it picked.
-   A book may raise the ceiling on itself — an endless canvas does, see ui/canvas.js */
+const PG_DEF_W = 1980, PG_DEF_H = 1320;            // a note that has never said how big it is
+/* how big this note's sheet is, in sheet units. A note raises the ceiling on
+   itself with `pgmax` — core/doc.js sets it to SHEET_MAX. */
 function pgSize(idx){
   const b = (idx || index) || {};
   const s = b.settings || {};
-  const a = ASPECTS[s.aspect] || ASPECTS.tall;
   const hi = Math.max(PG_MAX, +b.pgmax || 0);
-  return { w: clamp(+s.pgw || a.w, PG_MIN, hi), h: clamp(+s.pgh || a.h, PG_MIN, hi) };
+  return { w: clamp(+s.pgw || PG_DEF_W, PG_MIN, hi), h: clamp(+s.pgh || PG_DEF_H, PG_MIN, hi) };
 }
 const pgW = idx => pgSize(idx).w;
 const pgH = idx => pgSize(idx).h;
