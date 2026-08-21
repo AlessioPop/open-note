@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 912 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 961 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,7 +22,7 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 912 assertions, and they should
+It prints a pass/fail count and every failure. 961 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
@@ -60,6 +60,21 @@ all pass — if one doesn't, that is a real regression.
   checksum — and read back: shared strings, a date serial written out as a date,
   float noise trimmed, and the table sized and aligned around it. Plus the `.csv`
   path both ways, delimiter sniffing included;
+- **reading a FITS file**: a real `.fits` is built inside the harness the same
+  way — 80-column cards padded out to whole 2880-byte blocks — with three HDUs,
+  a `CONTINUE`d long string, a `HIERARCH` keyword, a Fortran `D` exponent, an
+  unsigned image and a binary table. Read back: that it walks to three HDUs and
+  each one's header starts exactly where the last one's data ended, that the
+  chain adds up to the whole file, that `info()` names and shapes them the way
+  astropy prints them (numpy order, so NAXIS backwards), that a repeat count is
+  the shape of one *cell* and not a row count, that BZERO 32768 on BITPIX 16
+  means unsigned, and that the search looks in the value and the comment as well
+  as the keyword. Then the reader: that the info table is what opens, that a run
+  of `COMMENT` folds itself away, that picking a table row lists its columns
+  with a cell shape each, that typing narrows the header and lights the match,
+  that searching every HDU crosses from a table into the primary — and that what
+  lands on the page is a **digest**, with no card text in it at all, because a
+  note is rewritten on every keystroke and headers are long;
 - **reading a slide deck**: a real `.pptx` is built inside the harness the same
   way the workbook is — a zip written byte by byte, stored rather than deflated,
   carrying a master, a layout, a theme, two slides, a picture drawn onto a

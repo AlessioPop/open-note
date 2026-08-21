@@ -1473,8 +1473,8 @@
       ok('import: a tab file sniffs itself', tsv.delim === '\t' && tsv.rows[1][0] === '1', tsv.delim);
 
       /* ---- the drop chain: who claims a file dropped on the page ---- */
-      ok('drop: the model is asked first, before the picture feature sees its textures',
-        fileTakers()[0] === 'model', fileTakers().join(','));
+      ok('drop: the model is asked before the picture feature sees its textures',
+        fileTakers().indexOf('model') < fileTakers().indexOf('image'), fileTakers().join(','));
       var png = new File([new Blob([new Uint8Array([137, 80, 78, 71])])], 'x.png', { type: 'image/png' });
       ok('drop: a picture is not a spreadsheet', !ITEMS.table.takes([png], { x: 1, y: 1 }, page));
       ok('drop: nor is a pdf', !ITEMS.table.takes([new File([new Blob([''])], 'p.pdf')], { x: 1, y: 1 }, page));
@@ -1504,6 +1504,201 @@
       ok('csv out: the answers, not the formulas', out[1] === '1,2', out[1]);
       ok('csv out: commas and quotes are wrapped', out[2] === '"x,y","""q"""', out[2]);
 
+      page.items = keep;
+      await render();
+    });
+
+    /* ---- a FITS file: its HDUs, its headers, and the data it never reads ---- */
+    await stage('fits', async function () {
+      /* a real FITS written here, so the harness needs no fixture on disk: 80-column
+         cards padded out to whole 2880-byte blocks, exactly as the format says */
+      function card(s) { return (String(s) + '                                                                                ').slice(0, 80); }
+      function pad20(s) { return ('                    ' + String(s)).slice(-20); }
+      function kv(k, v, c) { return (String(k) + '        ').slice(0, 8) + '= ' + pad20(v) + (c ? ' / ' + c : ''); }
+      function kvs(k, v, c) { var s = "'" + v + "'"; return (String(k) + '        ').slice(0, 8) + '= ' + (s + '                    ').slice(0, Math.max(20, s.length)) + (c ? ' / ' + c : ''); }
+      function fitsBuild(hdus) {
+        var enc = new TextEncoder(), parts = [];
+        hdus.forEach(function (h) {
+          var txt = h.cards.map(card).join('') + card('END');
+          while (txt.length % 2880) txt += ' ';
+          parts.push(enc.encode(txt));
+          if (h.data && h.data.length) {
+            var m = Math.ceil(h.data.length / 2880) * 2880, out = new Uint8Array(m);
+            out.set(h.data);
+            parts.push(out);
+          }
+        });
+        return new Blob(parts);
+      }
+      var comment = [], history = [];
+      for (var q = 0; q < 6; q++) comment.push('COMMENT   pipeline note ' + q);
+      for (var q2 = 0; q2 < 5; q2++) history.push('HISTORY   ran step ' + q2);
+      var blob = fitsBuild([
+        { cards: [kv('SIMPLE', 'T', 'conforms to FITS standard'),
+                  kv('BITPIX', -32), kv('NAXIS', 2), kv('NAXIS1', 4), kv('NAXIS2', 3),
+                  kv('EXTEND', 'T'),
+                  kvs('OBJECT', 'NGC 6357', 'what was pointed at'),
+                  kv('EXPTIME', '1.2D3', 'seconds'),
+                  kvs('LONGSTR', 'the first half of a very long value &'),
+                  "CONTINUE  'and the second half' / carried on",
+                  'HIERARCH ESO DET CHIP1 NAME = ' + "'CCD-44'" + ' / the detector',
+                  kv('CRPIX1', 512.5)].concat(comment, history),
+          data: new Uint8Array(48) },
+        { cards: [kvs('XTENSION', 'IMAGE'), kv('BITPIX', 16), kv('NAXIS', 2),
+                  kv('NAXIS1', 2), kv('NAXIS2', 2), kv('PCOUNT', 0), kv('GCOUNT', 1),
+                  kv('BZERO', 32768), kv('BSCALE', 1),
+                  kvs('EXTNAME', 'SCI'), kv('EXTVER', 2)],
+          data: new Uint8Array(8) },
+        { cards: [kvs('XTENSION', 'BINTABLE'), kv('BITPIX', 8), kv('NAXIS', 2),
+                  kv('NAXIS1', 32), kv('NAXIS2', 3), kv('PCOUNT', 0), kv('GCOUNT', 1),
+                  kv('TFIELDS', 3), kvs('EXTNAME', 'EVENTS'),
+                  kvs('TTYPE1', 'TIME'), kvs('TFORM1', '1D'), kvs('TUNIT1', 's'),
+                  kvs('TTYPE2', 'FLUX'), kvs('TFORM2', '4E'), kvs('TUNIT2', 'e-/s'),
+                  kvs('TTYPE3', 'NAME'), kvs('TFORM3', '8A')],
+          data: new Uint8Array(96) }
+      ]);
+      var file = new File([blob], 'obs.fits');
+
+      /* ---- the walk ---- */
+      var f = await fitsOpen(file);
+      ok('fits: three HDUs came back', f.hdus.length === 3, f.hdus.length);
+      var inf = fitsInfo(f);
+      ok('fits: info() names them the way astropy does',
+        inf.map(function (r) { return r.klass; }).join(',') === 'PrimaryHDU,ImageHDU,BinTableHDU',
+        inf.map(function (r) { return r.klass; }).join(','));
+      ok('fits: an extension carries its EXTNAME and EXTVER',
+        inf[1].name === 'SCI' && inf[1].ver === 2, inf[1].name + '/' + inf[1].ver);
+      ok('fits: a shape is written the way numpy writes it — NAXIS backwards',
+        inf[0].dim === '(3, 4)', inf[0].dim);
+      ok('fits: a table is R x C', inf[2].dim === '3R x 3C', inf[2].dim);
+      ok('fits: and its format is the TFORMs', inf[2].format === '[1D, 4E, 8A]', inf[2].format);
+      ok('fits: the card count leaves out END, and the CONTINUE it folded in',
+        inf[0].cards === 22, inf[0].cards);
+
+      /* ---- the data is stepped over, never read ---- */
+      ok('fits: the primary data unit is 4x3 float32', f.hdus[0].dataLen === 48, f.hdus[0].dataLen);
+      ok('fits: every header begins on a block boundary',
+        f.hdus.every(function (h) { return h.dataOff % 2880 === 0; }),
+        f.hdus.map(function (h) { return h.dataOff; }).join(','));
+      ok('fits: one HDU\'s header starts where the last one\'s data ended',
+        f.hdus[0].hdrOff === 0 && f.hdus[1].hdrOff === f.hdus[0].dataEnd &&
+        f.hdus[2].hdrOff === f.hdus[1].dataEnd,
+        f.hdus.map(function (h) { return h.hdrOff + '/' + h.dataOff + '-' + h.dataEnd; }).join(' '));
+      ok('fits: the chain adds up to the whole file', f.hdus[2].dataEnd === file.size,
+        f.hdus[2].dataEnd + ' vs ' + file.size);
+      ok('fits: a table row is NAXIS1 bytes and there are NAXIS2 of them',
+        f.hdus[2].rows === 3 && f.hdus[2].rowBytes === 32, f.hdus[2].rows + 'x' + f.hdus[2].rowBytes);
+
+      /* ---- what the values came out as ---- */
+      var h0 = f.hdus[0].keys;
+      ok('fits: a string is unquoted and trimmed', h0.OBJECT === 'NGC 6357', JSON.stringify(h0.OBJECT));
+      ok('fits: T is true, not the letter T', h0.SIMPLE === true, JSON.stringify(h0.SIMPLE));
+      ok('fits: a Fortran D exponent is still a number', h0.EXPTIME === 1200, JSON.stringify(h0.EXPTIME));
+      ok('fits: a float is a float', h0.CRPIX1 === 512.5, JSON.stringify(h0.CRPIX1));
+      ok('fits: CONTINUE joins a long string back together',
+        h0.LONGSTR === 'the first half of a very long value and the second half', JSON.stringify(h0.LONGSTR));
+      ok('fits: a HIERARCH keyword keeps its real name',
+        h0['ESO DET CHIP1 NAME'] === 'CCD-44', JSON.stringify(h0['ESO DET CHIP1 NAME']));
+      ok('fits: BZERO 32768 on BITPIX 16 means unsigned',
+        f.hdus[1].dtype === 'uint16' && f.hdus[1].stored === 'int16', f.hdus[1].dtype + '/' + f.hdus[1].stored);
+
+      /* ---- the columns, described and not read ---- */
+      var cols = f.hdus[2].cols;
+      ok('fits: the columns come out named and measured',
+        cols.map(function (c) { return c.name + ':' + c.type + ':' + c.bytes; }).join(',') ===
+        'TIME:float64:8,FLUX:float32:16,NAME:char:8',
+        cols.map(function (c) { return c.name + ':' + c.type + ':' + c.bytes; }).join(','));
+      ok('fits: their offsets down a row are cumulative',
+        cols.map(function (c) { return c.off; }).join(',') === '0,8,24',
+        cols.map(function (c) { return c.off; }).join(','));
+      ok('fits: a repeat count is the shape of one cell, not a row count',
+        fitsCellShape(cols[1]) === '(4,)' && fitsCellShape(cols[0]) === 'scalar',
+        fitsCellShape(cols[1]) + ' / ' + fitsCellShape(cols[0]));
+      ok('fits: a character column counts characters', fitsCellShape(cols[2]) === '8 chars', fitsCellShape(cols[2]));
+      ok('fits: a unit is carried', cols[1].unit === 'e-/s', cols[1].unit);
+
+      /* ---- searching ---- */
+      ok('fits: the search looks in the value field, not just the keyword',
+        (fitsFind(f.hdus, 'ngc 6357') || []).length === 1, (fitsFind(f.hdus, 'ngc 6357') || []).length);
+      ok('fits: …and in the comment', (fitsFind(f.hdus, 'detector') || []).length === 1);
+      ok('fits: …and across every HDU', (fitsFind(f.hdus, 'naxis') || []).length >= 9,
+        (fitsFind(f.hdus, 'naxis') || []).length);
+      ok('fits: the header comes back in the 80 columns it arrived in',
+        fitsHeaderText(f.hdus[1]).split('\n').every(function (l, i, a) { return i === a.length - 1 || l.length === 80; }));
+
+      /* ---- gzipped, which has to come out whole before any of it can be read ---- */
+      if (typeof CompressionStream === 'function') {
+        var gz = await new Response(file.stream().pipeThrough(new CompressionStream('gzip'))).blob();
+        var gf = await fitsOpen(new File([gz], 'obs.fits.gz'));
+        ok('fits: a .fits.gz is unpacked on the way in',
+          gf.hdus.length === 3 && gf.hdus[2].rows === 3, gf.hdus.length);
+        ok('fits: …and the name it is opened under loses the .gz',
+          gf.blob.name === 'obs.fits', gf.blob.name);
+      }
+
+      /* ---- a file that is not one ---- */
+      var bad = false;
+      try { await fitsOpen(new File([new Blob(['not a fits file at all'])], 'x.fits')); }
+      catch (e) { bad = true; }
+      ok('fits: something that is not a FITS file says so', bad);
+
+      /* ---- onto the page ---- */
+      var page = sheet(), keep = page.items.slice();
+      page.items = [];
+      await render();
+      ok('fits: a .fits is claimed before anything else could take it',
+        fileTakers().indexOf('fits') < fileTakers().indexOf('model'), fileTakers().join(','));
+      var took = ITEMS.fits.takes([file], { x: 10, y: 10 }, page);
+      ok('fits: the feature takes it', took === true, took);
+      await waitFor(function () { return page.items.length === 1; }, 8000);
+      var it = page.items[0];
+      ok('fits: and it lands as a fits item', it.type === 'fits' && it.name === 'obs.fits', it.type);
+      ok('fits: the item keeps a digest, not the headers — a note is rewritten on every keystroke',
+        Array.isArray(it.hdus) && it.hdus.length === 3 && it.hdus[0].cards === 22 &&
+        !/OBJECT|NGC 6357|pipeline note/.test(JSON.stringify(it)) && JSON.stringify(it).length < 2500,
+        JSON.stringify(it).length + ' bytes');
+      ok('fits: the card says what is in it', /3 HDUs/.test(ftMeta(it)) && /3 rows/.test(ftMeta(it)), ftMeta(it));
+      await render();
+      ok('fits: it draws as a shortcut', !!byType('fits') && !!byType('fits').querySelector('.ficon'));
+
+      /* ---- the reader ---- */
+      await ftOpen(it);
+      await waitFor(function () { return Q('#fview .ftrow'); }, 8000);
+      ok('fits: the reader opens', Q('#fview').classList.contains('on'));
+      ok('fits: on hdu.info()', QA('#fview .ftrow').length === 3, QA('#fview .ftrow').length);
+      ok('fits: with the first HDU picked', Q('#fview .ftrow.on').dataset.i === '0');
+      ok('fits: a run of COMMENT folds itself away',
+        QA('#fview .ftfold').length === 2, QA('#fview .ftfold').length);
+      ok('fits: a folded run is out of the way but still there',
+        QA('#fview .ftfold .ftc').length === 11 && QA('#fview .ftcards > .ftc').length === 11,
+        QA('#fview .ftfold .ftc').length + ' folded, ' + QA('#fview .ftcards > .ftc').length + ' loose');
+      var chips = QA('#fview .ftchip').map(function (c) { return c.textContent; }).join(' | ');
+      ok('fits: the data unit is a shape and a size, not numbers',
+        /\(3, 4\)/.test(chips) && /float32/.test(chips) && /12/.test(chips), chips);
+
+      QA('#fview .ftrow')[2].click();
+      ok('fits: picking a table row shows its columns',
+        QA('#fview .ftcols tbody tr').length === 3, QA('#fview .ftcols tbody tr').length);
+      ok('fits: …with the cell shape of each',
+        /\(4,\)/.test(Q('#fview .ftcols').textContent), Q('#fview .ftcols').textContent.slice(0, 120));
+
+      var seek = Q('#fview .ftq');
+      seek.value = 'tform2';
+      seek.dispatchEvent(new Event('input', { bubbles: true }));
+      ok('fits: the search narrows the header to what matched',
+        QA('#fview .ftcards .ftc').length === 1, QA('#fview .ftcards .ftc').length);
+      ok('fits: and lights the match up', !!Q('#fview .ftcards mark'),
+        Q('#fview .ftcards').innerHTML.slice(0, 160));
+      Q('#fview .ftall').checked = true;
+      Q('#fview .ftall').dispatchEvent(new Event('change', { bubbles: true }));
+      seek.value = 'ngc';
+      seek.dispatchEvent(new Event('input', { bubbles: true }));
+      ok('fits: searching every HDU crosses into the primary from a table',
+        QA('#fview .ftcards .ftc').length === 1 && !!Q('#fview .fthit'),
+        QA('#fview .ftcards .ftc').length);
+
+      closeViewer();
+      ok('fits: and it closes', !Q('#fview').classList.contains('on') && ftWin === null);
       page.items = keep;
       await render();
     });
@@ -3129,8 +3324,9 @@
       page.items = []; await render();
       /* the keys find the molecule under the pointer, so the whole sheet must be on screen */
       fitToDesk(true); await sleep(150);
-      ok('chem: a science shelf with three tiles', !!TOOL_CATS.science && palTools('science').length === 3,
-        palTools('science').length + ' tiles');
+      ok('chem: a science shelf, with the molecule on it', !!TOOL_CATS.science &&
+        palTools('science').length === 4 && palTools('science').some(function (t) { return t.kind === 'molecule'; }),
+        palTools('science').map(function (t) { return t.kind; }).join(','));
       /* the library, in brief — its own battery is longer */
       ok('chem: 118 elements', CHEM_EL.length === 119);
       ok('chem: iron is [Ar] 3d⁶ 4s²', chemConf(26).text === '[Ar] 3d⁶ 4s²', chemConf(26).text);

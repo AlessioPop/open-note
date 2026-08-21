@@ -44,6 +44,7 @@ Things scale to the paper they are on: a sticky note is the size it would be on 
 | Molecule | A molecule drawn the way a chemist draws one — skeletal, condensed or Lewis — with its formula, mass and name under it, a periodic table a click away, a name-or-SMILES box, and a 3D view you can turn and measure; see **Chemistry** below |
 | Periodic table | The table on the page as a reference card — tap an element for its number, mass, electronegativity and configuration |
 | Chart of nuclides | The whole nuclear chart — 3558 nuclides and 2088 metastable states on the neutron–proton plane, coloured by how they come apart; zoom in, press one for its half-life, branches and Q values, and follow its decay chain to whatever it ends on |
+| FITS file | An astronomy `.fits` — or just drop one on the page. Click it and the reader opens on `hdu.info()`; pick an HDU for its header, search the keywords, and see the shape and type of every data unit without a single number of it being loaded; see **FITS files** below |
 | Picture | Taped-in photos with captions. Also: drag-and-drop or just **paste** a screenshot (Ctrl+V) |
 | Video | YouTube / Vimeo links, or a video file from disk (stored inside the note) |
 | 3D model | A `.obj` out of Blender — mesh, materials and textures — in a little window you can turn it in |
@@ -315,6 +316,32 @@ The **Periodic table** is the second tool on the shelf: the table on the page as
 **The colouring is a toolbar button.** **Decay** is the classic one above; **T½** shades by half-life on a log scale, which lights up the long-lived spine and the shell closures around it; **B/A** is binding energy per nucleon and draws the iron peak — the maximum is really ⁶²Ni at 8.7945 MeV — and **Sn** is the neutron separation energy, which goes to nothing exactly at the neutron drip line. **⌕** goes to a nuclide by name: `U238`, `238U`, `Tc-99m`, `14C`, `uranium-238`.
 
 Everything here is arithmetic and SVG — no library, no server, nothing downloaded — so molecules travel in backups, print and exports exactly as drawn.
+
+## FITS files (.fits)
+
+Pick **FITS file** in the add menu, or just **drop a `.fits` on the page**. It sits there as a shortcut, like any attachment. **Click it and the reader opens.**
+
+What opens first is **`hdu.info()`** — the same seven columns astropy prints, because that is the table everyone already reads: number, name, version, type, how many cards its header has, its dimensions and its format. Shapes are written the way numpy writes them, outermost axis first, which is `NAXIS` backwards.
+
+**Pick a row** and that HDU comes up underneath it. First what its data *is* — and only what it is:
+
+- an image gives you its **shape, its type, how many values that is and what it weighs in the file** — `(2048, 2048) · uint16 · 4,194,304 values · 8.0 MB`. If it is stored one way and read another (BITPIX 16 with a BZERO of 32768 is how FITS spells *unsigned*), it says so;
+- a **binary table** gives you its rows, its columns, how many bytes a row is and how much of the file it takes — then lists every column: name, `TFORM`, type, **the shape of one cell**, unit, and how many values that comes to. A `4E` column is four floats per row, and a `TDIM` of `(2,2)` is a little 2×2 array in every row; both are shown as such;
+- an HDU with no data at all — a primary header, which is what most modern files start with — simply says so.
+
+**None of the numbers are ever read.** This is deliberate, and it is what makes the thing usable: a data unit can be four gigabytes, and the file is walked by adding up what each header says its data weighs and stepping over it. Opening a huge file costs the same as opening a small one, and nothing ever tries to draw a million values onto a page.
+
+Then the **header** itself: keyword, value and comment in three columns that line up down the page, values coloured by what they are — strings, numbers, `T`/`F`. Long values broken across `CONTINUE` cards are joined back into the one value they always were, and a `HIERARCH` keyword keeps its real dotted name rather than the word HIERARCH.
+
+**Runs of `COMMENT` and `HISTORY` fold themselves away** where they sit, so the order of the header is still the order of the header — a pipeline that logged two hundred lines into the middle of one is one line until you open it.
+
+**The search box looks in the keyword, the value *and* the comment**, which is the half of it people usually want: half of what anyone hunts for in a header is a filter name or a date sitting in a value field, not a keyword. The first match in each card is lit up. Tick **all HDUs** and it searches the whole file at once, grouped by HDU — click a group's bar to jump to it.
+
+**⧉** copies the whole header of the picked HDU, in the 80 columns it is written in. **⤓** saves a copy of the file. `Esc` closes the reader.
+
+The file itself is kept inside the note like any attachment. What the note stores *about* it is a small digest — the info table, and nothing else — because a note is rewritten every time you type, and a header can be a megabyte of `HISTORY`. So the card on the paper still says what the file is in a print, an export or a backup opened somewhere else; the headers themselves are read back out of the file when you open it.
+
+`.fits`, `.fit`, `.fts` and `.fz` are recognised, and a gzipped one (`.fits.gz`) is unpacked on the way in. A tile-compressed image is named as such rather than pretended about.
 
 ## Blender models (.obj)
 

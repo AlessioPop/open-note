@@ -34,6 +34,14 @@ Every nuclide that has ever been made or found: 3558 ground states and 2088 meta
 
 The Q values, separation energies and binding energy per nucleon are not stored — they are arithmetic done on the mass excesses as you press. The harness checks the binding-energy curve peaks on ⁶²Ni and that the four natural series walk to lead, lead, lead and thallium.
 
+### FITS files, read without a Python prompt
+
+Drop an astronomy `.fits` on the sheet and click it. The reader opens on the same table `hdu.info()` prints — number, name, version, type, cards, dimensions, format — and picking a row brings its header up underneath: keyword, value and comment in three columns that line up down the page, with a search box that looks in all three. Runs of `COMMENT` and `HISTORY` fold themselves away, which is most of what makes a real header unreadable.
+
+**None of the data is ever read.** A data unit is shown as a shape, a type and a size — `(2048, 2048) uint16`, `4,204,881 rows × 5 columns · 192 MB` — and a binary table's columns are listed with what one cell of each holds. `js/lib/fits.js` walks the file header by header and steps over every data unit without touching it, so a four-gigabyte cube opens as fast as a small one, and nothing tries to put a million numbers on a page.
+
+No library, nothing downloaded: a FITS file is 80-column ASCII cards in 2880-byte blocks, and the arithmetic that finds the next header is a handful of lines. `CONTINUE`d strings are joined back up, `HIERARCH` keywords keep their real names, and BZERO 32768 on BITPIX 16 is reported as the unsigned integer it means.
+
 ### And the rest
 
 **Write** — text in five styles, sticky notes, checklists, a terminal-style code cell syntax-coloured for twelve languages, flip cards you can study. **Media** — pictures, video, `.obj` models in their own little window, `.pptx` decks that draw themselves as SVG, file attachments and the folders they file into. **Shapes** — five wireframe solids to draw over. **Over the top of all of it** — a stylus, layers, and string tied between anything and anything.
@@ -86,11 +94,11 @@ js/paper/         drawn on the sheet, belonging to no one item — ink, strings,
 js/chrome/        the tools around the sheet — palette, toolbars, shelf, map, export
 js/items/<shelf>/ one file per item type, foldered by its palette shelf
                   write/ math/ science/ media/ shapes/ decor/
-js/lib/           algorithms that owe nothing to this app — latex, pptx, workbook, chem, spring
+js/lib/           algorithms that owe nothing to this app — latex, pptx, workbook, fits, chem, spring
 js/data/          tables the lib files read — the nuclides, the elements. Data, never code
 fonts/            the four families, carried locally so nothing needs the network
 desktop/          the Electron shell — main process and icon; wraps the app, never part of it
-tools/verify/     headless-Firefox verification harness — 912 assertions
+tools/verify/     headless-Firefox verification harness — 961 assertions
 tools/shots/      rebuilds the pictures above from the real app
 docs/             manual, architecture, and those pictures
 ```
@@ -104,7 +112,7 @@ Only `index.html`, `js/`, `fonts/` and `desktop/` are packaged into a build — 
 There is no test runner — the app *is* the test.
 
 ```
-tools/verify/run.sh        # 912 assertions, in headless Firefox
+tools/verify/run.sh        # 961 assertions, in headless Firefox
 tools/verify/desktop.sh    # 45 more, driving the real Electron shell
 tools/shots/run.sh         # rebuild the pictures in this README
 ```
