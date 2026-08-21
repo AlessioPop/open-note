@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 888 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 924 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,12 +22,12 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 888 assertions, and they should
+It prints a pass/fail count and every failure. 924 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 62 script files load, in order;
+- nothing throws while the 64 script files load, in order;
 - the app boots, opens a book and draws a page;
 - every entry in the add menu adds the type it claims to;
 - every item type builds live, with a body and a toolbar;
@@ -156,6 +156,26 @@ all pass — if one doesn't, that is a real regression.
   statically, that the periodic table has 118 cells with rows no taller than
   its cells, taps neon and puts cerium on the f-block row, and that the picker opens, takes a click on Cl
   and `b` `r` `Enter` as bromine;
+- **the chart of the nuclides**: the table first — that NUBASE parses to 5646
+  nuclides with numbers that are numbers, that every element in nature adds up
+  to 100 %, that half-lives read back as seconds with their limits kept, that
+  the Q values and separation energies subtracted out of the mass excesses come
+  out right for ²³⁸U, ¹⁴C and ²²⁶Ra, that the binding-energy peak is ⁶²Ni at
+  8.7945 MeV/A, that every decay mode in the data is a step across the chart bar
+  the four that fission, that every beta minus lands on a nuclide that is really
+  there, and that the four natural series run to ²⁰⁶Pb, ²⁰⁷Pb, ²⁰⁸Pb and ²⁰⁵Tl
+  in fourteen, eleven, ten and twelve steps. Then the card — that it lands
+  straight showing the whole chart, that its 3558 ground states and 756
+  metastable slices are drawn as ten paths and not four thousand rectangles,
+  that the magic numbers are ruled across it, that all four colourings draw with
+  no `NaN` and a key that matches, that the foot writes uranium-238 out in full
+  with an arrow to each daughter, that a press picks the square under it and the
+  top slice of a split square is the metastable state, that the wheel zooms
+  about the pointer and leaves the spot under it, that a three-nuclide drag
+  moves it three nuclides, that zoomed in the squares carry their symbol, mass
+  number and half-life and the side counts name the elements, that ⇢ follows
+  uranium-238 fourteen arrows down to lead, that the ⌕ box reads `Tc-99m` as it
+  is typed and Enter goes there, and that it prints whole with no buttons;
 - **Export book for real** — the blob is intercepted and checked for every
   feature's styles.
 

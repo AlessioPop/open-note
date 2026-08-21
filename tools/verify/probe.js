@@ -131,7 +131,7 @@
         ['cube', 'solid'], ['sphere', 'solid'], ['torus', 'solid'],
         ['square', 'solid'], ['circle', 'solid'],
         ['pie', 'chart'], ['donut', 'chart'], ['bars', 'chart'], ['stack', 'chart'],
-        ['washi', 'washi'], ['sticker', 'sticker'], ['molecule', 'molecule'], ['ptable', 'ptable']
+        ['washi', 'washi'], ['sticker', 'sticker'], ['molecule', 'molecule'], ['ptable', 'ptable'], ['nuchart', 'nuchart']
       ];
       for (var i = 0; i < kinds.length; i++) {
         var kind = kinds[i][0], want = kinds[i][1];
@@ -2683,6 +2683,7 @@
       ok('appcss: knows the table', !!s && s.textContent.indexOf('.tgrid') >= 0);
       ok('appcss: knows the nodes', !!s && s.textContent.indexOf('svg.nwires') >= 0);
       ok('appcss: knows the molecule', !!s && s.textContent.indexOf('.molsvg') >= 0);
+      ok('appcss: knows the chart of the nuclides', !!s && s.textContent.indexOf('.nusvg') >= 0);
     });
 
     /* ---- ink, layers, pages ---- */
@@ -3189,7 +3190,7 @@
       page.items = []; await render();
       /* the keys find the molecule under the pointer, so the whole sheet must be on screen */
       fitToDesk(true); await sleep(150);
-      ok('chem: a science shelf with two tiles', !!TOOL_CATS.science && palTools('science').length === 2,
+      ok('chem: a science shelf with three tiles', !!TOOL_CATS.science && palTools('science').length === 3,
         palTools('science').length + ' tiles');
       /* the library, in brief — its own battery is longer */
       ok('chem: 118 elements', CHEM_EL.length === 119);
@@ -3328,6 +3329,53 @@
         el.querySelectorAll('.molsvg.m3d circle.ball').length);
       ok('mol: 3D bonds as half-sticks', el.querySelectorAll('.molsvg.m3d line.stick').length >= 50);
       ok('mol: no NaN in 3D', svg().innerHTML.indexOf('NaN') < 0);
+      /* space-filling: every gradient and mask an svg refers to has to live inside that
+         same svg. The ids carry a counter that climbs with every repaint, so two
+         molecules on one sheet will collide the moment one is dragged unless the
+         counter is kept apart from the atom index — and a ball then wears its
+         neighbour's mask for a frame, which reads as the model wobbling. */
+      /* two molecules on one sheet is where the counter bites: drag one and its ids
+         climb past the other's */
+      addItem('molecule', { x: 60, y: 60 }, page); await sleep(140);
+      var it2 = page.items[page.items.length - 1];
+      var mels = QA('#pageHost .item[data-type=molecule]');
+      el = mels[0];                                   /* render() swapped the nodes */
+      var m2 = chemLayout(chemParse('C1CCCCC1'));
+      it2.atoms = m2.atoms; it2.bonds = m2.bonds; it2.box = molBox(it2);
+      it2.view = '3d'; it2.s3 = 'fill'; it2.pitch = 1; molRepaint(mels[1], it2);
+      it.s3 = 'fill'; molRepaint(el, it); await sleep(20);
+      var stray = 0, twice = 0, ids = {};
+      for (var sp = 0; sp < 40; sp++) {
+        it.yaw = sp * 0.31; molRepaint(el, it);
+        ids = {};
+        QA('#pageHost [id]').forEach(function (n) { if (ids[n.id]) twice++; else ids[n.id] = 1; });
+        QA('#pageHost svg.molsvg').forEach(function (sv) {
+          [].slice.call(sv.querySelectorAll('[mask],[fill^="url"]')).forEach(function (n) {
+            var m = /url\(#([^)]+)\)/.exec(n.getAttribute('mask') || n.getAttribute('fill') || '');
+            if (!m) return;
+            var t = document.getElementById(m[1]);
+            if (!t || !sv.contains(t)) stray++;
+          });
+        });
+      }
+      ok('mol: space-filling refers to no gradient or mask outside its own svg', stray === 0 && twice === 0,
+        stray + ' stray, ' + twice + ' claimed twice');
+      ok('mol: space-filling masks every ball that a neighbour cuts into',
+        el.querySelectorAll('.molsvg.m3d circle.rim').length === el.querySelectorAll('.molsvg.m3d circle.ball').length &&
+        el.querySelectorAll('.molsvg.m3d mask').length > 0,
+        el.querySelectorAll('.molsvg.m3d circle.rim').length + ' rims, ' +
+        el.querySelectorAll('.molsvg.m3d circle.ball').length + ' balls, ' +
+        el.querySelectorAll('.molsvg.m3d mask').length + ' masks');
+      ok('mol: nothing is outlined ball by ball in space-filling',
+        el.querySelectorAll('.molsvg.m3d circle.ball[stroke="none"]').length ===
+        el.querySelectorAll('.molsvg.m3d circle.ball').length);
+      it.s3 = 'ball'; it.yaw = 0; molRepaint(el, it); await sleep(20);
+      ok('mol: ball-and-stick keeps its outlines and grows no rim',
+        el.querySelectorAll('.molsvg.m3d circle.rim').length === 0 &&
+        el.querySelectorAll('.molsvg.m3d circle.ball[stroke="none"]').length === 0);
+      /* put the sheet back the way the rest of the stage expects it */
+      page.items = page.items.filter(function (x) { return x !== it2; });
+      await render(); el = byType('molecule'); select(it.id); await sleep(30);
       ok('mol: the rail steps aside in 3D', getComputedStyle(el.querySelector('.molrail')).display === 'none');
       var emb = molEmb(it), worst = 0;
       emb.bonds.forEach(function (b, k) {
@@ -3403,6 +3451,192 @@
       ok('picker: typing b r walks to bromine', !!Q('#ptpick .ptc.hot[data-z="35"]'));
       key('Enter'); await sleep(30);
       ok('picker: Enter takes it', got === 'Br', got);
+
+      /* ---- the chart of the nuclides ---- */
+      /* the table first. A chart of nuclides is arithmetic on 5646 mass
+         excesses, so a wrong line in the data is a wrong picture with nothing
+         obviously wrong about it — these check the numbers rather than the
+         drawing, and the four natural decay series are the strongest check
+         there is: they have to end where the ore does. */
+      ok('nuc: NUBASE parses whole', NUC.length === 5646 && NUC_GS.length === 3558 && NUC_MAP.size === 3558,
+        NUC.length + ' entries, ' + NUC_GS.length + ' ground states');
+      var nbad = [];
+      NUC.forEach(function (e) {
+        if (!isFinite(e.z) || !isFinite(e.n) || !isFinite(e.a) || e.n < 0 || e.z + e.n !== e.a) nbad.push(nucPlain(e) + ' bad numbers');
+        if (e.me != null && !isFinite(e.me)) nbad.push(nucPlain(e) + ' bad mass');
+        if (e.t != null && e.t !== Infinity && !(e.t >= 0)) nbad.push(nucPlain(e) + ' bad half-life "' + e.hl + '"');
+        if (!e.gs && !e.parent) nbad.push(nucPlain(e) + ' is a state of nothing');
+      });
+      ok('nuc: every nuclide has numbers that are numbers', nbad.length === 0, nbad.slice(0, 4).join(' | '));
+      var abad = [];
+      for (var az = 1; az <= 118; az++) {
+        var ael = NUC_GS.filter(function (e) { return e.z === az && e.ab != null; });
+        if (!ael.length) continue;
+        var asum = ael.reduce(function (s, e) { return s + e.ab; }, 0);
+        if (Math.abs(asum - 100) > .02) abad.push(CHEM_EL[az].sym + '=' + asum.toFixed(3));
+      }
+      ok('nuc: every element in nature adds up to 100 %', abad.length === 0, abad.join(' '));
+      ok('nuc: half-lives read back as seconds', Math.abs(nucTime('12.32y').t - 388789632) < 1 &&
+        nucTime('stbl').t === Infinity && nucTime('-').t === null && nucTime('>300ns').lim === '>' &&
+        Math.abs(nucTime('>300ns').t - 3e-7) < 1e-12, nucTime('12.32y').t);
+      ok('nuc: 253 stable nuclides, and uranium is not one of them',
+        NUC_GS.filter(function (e) { return e.t === Infinity; }).length === 253 && nucAt(92, 146).cls === 'a');
+      /* the Q values are not in the file: they are these masses, subtracted */
+      var qU = nucQ(nucAt(92, 146)), qC = nucQ(nucAt(6, 8)), qR = nucQ(nucAt(88, 138));
+      ok('nuc: Q values come out of the mass excesses',
+        Math.abs(qU.a - 4270) < 2 && Math.abs(qC.bm - 156.5) < 1.5 && Math.abs(qR.a - 4871) < 2 &&
+        Math.abs(qU.sn - 6153) < 2, [qU.a, qC.bm, qR.a, qU.sn].join(' '));
+      /* the binding energy curve has to peak on nickel-62, not on iron */
+      var bmax = null;
+      NUC_GS.forEach(function (e) { var v = nucBA(e); if (v != null && (!bmax || v > bmax.v)) bmax = { e: e, v: v }; });
+      ok('nuc: the binding energy peak is ⁶²Ni at 8.7945 MeV/A',
+        nucName(bmax.e) === '⁶²Ni' && Math.abs(bmax.v / 1000 - 8.7945) < .001, nucName(bmax.e) + ' ' + bmax.v);
+      /* every mode has to be a step across the chart, or say plainly that it is
+         not one — a mode nobody taught nucStep about would draw no arrow and
+         nothing would complain */
+      var modes = {}, nostep = [];
+      NUC.forEach(function (e) { e.dec.forEach(function (d) { modes[d.m] = 1; }); });
+      Object.keys(modes).forEach(function (m) { if (nucStep(m) === null) nostep.push(m); });
+      ok('nuc: every decay mode is a step, bar the ones that fission',
+        nostep.sort().join(' ') === 'B B+SF B-SF SF', nostep.join(' '));
+      var missd = NUC_GS.filter(function (e) {
+        return e.dec[0] && e.dec[0].m === 'B-' && !nucDaughter(e, 'B-').e; }).length;
+      ok('nuc: every beta minus lands on a nuclide that is in the table', missd === 0, missd + ' missing');
+      /* the four series, each ending where the ore does */
+      var ser = [['U238', 14, '²⁰⁶Pb'], ['U235', 11, '²⁰⁷Pb'], ['Th232', 10, '²⁰⁸Pb'], ['Np237', 12, '²⁰⁵Tl']];
+      var sbad = ser.filter(function (s) {
+        var c = nucChain(nucFind(s[0]));
+        return c.length !== s[1] || nucName(c[c.length - 1].to) !== s[2];
+      }).map(function (s) { var c = nucChain(nucFind(s[0])); return s[0] + '→' + (c.length ? nucName(c[c.length - 1].to) : '?') + ' in ' + c.length; });
+      ok('nuc: the four decay series end on lead, lead, lead and thallium', sbad.length === 0, sbad.join(' | '));
+      ok('nuc: a nuclide is found however it is typed',
+        ['U238', 'u-238', '238U', 'uranium-238'].every(function (s) { return nucFind(s) === nucAt(92, 146); }) &&
+        nucFind('Tc-99m') === nucFind('99mTc') && nucName(nucFind('Tc-99m')) === '⁹⁹ᵐTc' &&
+        nucFind('n') === nucAt(0, 1) && nucFind('nonsense-9') === null);
+
+      /* ---- the card ---- */
+      page.items = []; await render();
+      addItem('nuchart', { x: 4, y: 4 }, page); await sleep(160);
+      var np = page.items[page.items.length - 1], nel = byType('nuchart');
+      ok('nuchart: lands straight, whole chart, uranium-238 chosen',
+        np && np.type === 'nuchart' && np.rot === 0 && np.view === 'decay' && np.sel === '92:146' &&
+        np.zw === NU_NW && !np.chain);
+      var cellPaths = nel.querySelectorAll('.nucells path');
+      var squares = 0;
+      [].slice.call(cellPaths).forEach(function (p) { squares += (p.getAttribute('d').match(/M/g) || []).length; });
+      ok('nuchart: 3558 ground states and 756 metastable slices, in ten paths not four thousand rects',
+        squares === 4314 && cellPaths.length <= 10, squares + ' squares in ' + cellPaths.length + ' paths');
+      /* six across the protons (126 is past the last element) and seven up the
+         neutrons, each a pair of rules either side of the closed shell */
+      ok('nuchart: the magic numbers are ruled across it',
+        nel.querySelectorAll('.nusvg .numag').length === 13 && !!nel.querySelector('.nusvg .nudiag'),
+        nel.querySelectorAll('.nusvg .numag').length);
+      /* no NaN in any of the four views — the wireframe lesson, on a bigger picture */
+      var vbad = [];
+      ['decay', 'half', 'ba', 'sn'].forEach(function (v) {
+        np.view = v; nuRecolour(nel, np);
+        var m = nel.querySelector('.nusvg').outerHTML;
+        if (/NaN|undefined|Infinity/.test(m)) vbad.push(v);
+        if (nel.querySelectorAll('.nukey span').length !== NU_VIEWS[v].keys.length) vbad.push(v + ' key');
+      });
+      np.view = 'decay'; nuRecolour(nel, np);
+      ok('nuchart: all four colourings draw with no NaN and a key that matches', vbad.length === 0, vbad.join(' '));
+      var foot = function () { return nel.querySelector('.nufacts').textContent; };
+      ok('nuchart: the foot writes uranium-238 out in full',
+        foot().indexOf('Uranium-238') >= 0 && foot().indexOf('4.463 × 10⁹ y') >= 0 &&
+        foot().indexOf('99.2742 % of natural uranium') >= 0 && foot().indexOf('α 100 %') >= 0 &&
+        foot().indexOf('→ ²³⁴Th') >= 0 && foot().indexOf('4.270 MeV') >= 0, foot().slice(0, 120));
+      ok('nuchart: an arrow is drawn to every daughter it has',
+        nel.querySelectorAll('.nusvg .nuhead').length === 2 && !!nel.querySelector('.nusvg .nuring'),
+        nel.querySelectorAll('.nusvg .nuhead').length + ' arrows');
+
+      /* Everything with a pointer in it is measured at the width the card has
+         on paper. At the harness's zoom the whole chart is a few dozen pixels
+         across and a nuclide is a fifth of one, where a click lands three
+         elements away from where it was aimed. */
+      var nfig = nel.querySelector('.nuc');
+      nfig.style.width = '820px'; await sleep(40);
+      /* where a nuclide is on the screen — the inverse of what nuHit does */
+      function nuSpot(z, n, fy) {
+        var svg = nel.querySelector('.nusvg'), r = svg.getBoundingClientRect(), w = nuWin(np);
+        var sc = Math.min(r.width / w.w, r.height / w.h);
+        var ox = r.left + (r.width - w.w * sc) / 2, oy = r.top + (r.height - w.h * sc) / 2;
+        return { x: ox + (n + .5 - (w.n0 - w.mx)) * sc, y: oy + ((w.z0 + w.zh) - (z + (fy == null ? .5 : fy))) * sc, sc: sc };
+      }
+      function nuTap(spot, id) {
+        var svg = nel.querySelector('.nusvg');
+        svg.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: id, clientX: spot.x, clientY: spot.y, bubbles: true }));
+        svg.dispatchEvent(new PointerEvent('pointerup', { button: 0, pointerId: id, clientX: spot.x, clientY: spot.y, bubbles: true }));
+      }
+      nuTap(nuSpot(26, 30), 71); await sleep(40);
+      ok('nuchart: a press picks the square under it', np.sel === '26:30' && foot().indexOf('Iron-56') >= 0,
+        np.sel + ' / ' + foot().slice(0, 40));
+      /* a square with a long-lived metastable state is split, and the top slice
+         is that state — pressing it has to choose the state and not the ground */
+      nuTap(nuSpot(43, 56, .8), 72); await sleep(40);
+      ok('nuchart: the top slice of a split square is the metastable state',
+        np.sel === '43:56:m' && foot().indexOf('⁹⁹ᵐTc') >= 0 && foot().indexOf('6.0066 h') >= 0, np.sel);
+      nuTap(nuSpot(43, 56, .2), 73); await sleep(40);
+      ok('nuchart: and the bottom slice is the ground state',
+        np.sel === '43:56' && foot().indexOf('2.111 × 10⁵ y') >= 0, np.sel + ' / ' + foot().slice(0, 60));
+      /* the wheel zooms about the pointer: the nuclide under it stays under it */
+      var spot = nuSpot(50, 70), before = nuHit(nel, np, { clientX: spot.x, clientY: spot.y });
+      nel.querySelector('.nusvg').dispatchEvent(new WheelEvent('wheel', { deltaY: -240, clientX: spot.x, clientY: spot.y, bubbles: true, cancelable: true }));
+      await sleep(40);
+      var after = nuHit(nel, np, { clientX: spot.x, clientY: spot.y });
+      ok('nuchart: the wheel zooms about the pointer and leaves the spot under it',
+        np.zw < NU_NW && Math.abs(after.ux - before.ux) < .12 && Math.abs(after.uy - before.uy) < .12,
+        np.zw.toFixed(1) + ' wide, moved ' + (after.ux - before.ux).toFixed(3) + ',' + (after.uy - before.uy).toFixed(3));
+      /* in far enough that the squares are written in */
+      np.zw = 18; np.cn = 56.5; np.cz = 43.5; nuPaint(nel, np); await sleep(40);
+      var labs = [].slice.call(nel.querySelectorAll('.nusvg .nun')).map(function (t) { return t.textContent; });
+      ok('nuchart: zoomed in, the squares carry their symbol, mass number and half-life',
+        labs.indexOf('Tc 99') >= 0 && labs.indexOf('Mo 98') >= 0 && labs.indexOf('6.0066 h') < 0 &&
+        labs.filter(function (s) { return s === '211.1 ky'; }).length === 1,
+        labs.slice(0, 6).join(' | '));
+      ok('nuchart: and the side counts name the elements',
+        [].slice.call(nel.querySelectorAll('.nusvg .nut.r')).some(function (t) { return t.textContent === 'Tc 43'; }));
+      /* dragging moves the window by whole nuclides, not by pixels */
+      var svg2 = nel.querySelector('.nusvg'), sc2 = nuSpot(43, 56).sc, cn0 = np.cn;
+      svg2.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 74, clientX: 400, clientY: 300, bubbles: true }));
+      svg2.dispatchEvent(new PointerEvent('pointermove', { pointerId: 74, clientX: 400 - 3 * sc2, clientY: 300, bubbles: true }));
+      svg2.dispatchEvent(new PointerEvent('pointerup', { button: 0, pointerId: 74, clientX: 400 - 3 * sc2, clientY: 300, bubbles: true }));
+      await sleep(60);
+      ok('nuchart: a drag moves the chart three nuclides, not three pixels',
+        Math.abs(np.cn - (cn0 + 3)) < .15 && np.sel === '43:56', (np.cn - cn0).toFixed(3));
+      /* the chain */
+      np.sel = '92:146'; np.cn = NU_NW / 2; np.cz = NU_ZH / 2; np.zw = NU_NW;
+      var cbtn = QA('#pageHost .item[data-type=nuchart] .tools button').filter(function (b) { return b.textContent === '⇢'; })[0];
+      ok('nuchart: the toolbar offers the chain', !!cbtn);
+      cbtn.click(); await sleep(60);
+      ok('nuchart: it follows uranium-238 the fourteen steps down to lead',
+        np.chain === 1 && nel.querySelectorAll('.nusvg .nuhead').length === 14 &&
+        nel.querySelectorAll('.nusvg .nuchain').length === 14 && foot().indexOf('²⁰⁶Pb') >= 0 &&
+        foot().indexOf('14 steps, stable') >= 0,
+        nel.querySelectorAll('.nusvg .nuhead').length + ' arrows');
+      cbtn.click(); await sleep(40);
+      /* the ⌕ box */
+      var fbtn = QA('#pageHost .item[data-type=nuchart] .tools button').filter(function (b) { return b.textContent === '⌕'; })[0];
+      fbtn.click(); await sleep(60);
+      var finp = Q('#nuask input');
+      finp.value = 'Tc-99m'; finp.dispatchEvent(new Event('input', { bubbles: true }));
+      ok('nuchart: the ⌕ box reads a nuclide as it is typed',
+        Q('#nuask .nufound').textContent.indexOf('⁹⁹ᵐTc') >= 0 && Q('#nuask .nufound').textContent.indexOf('6.0066 h') >= 0,
+        Q('#nuask .nufound').textContent);
+      finp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await sleep(60);
+      ok('nuchart: Enter goes there and zooms in on it',
+        np.sel === '43:56:m' && Math.abs(np.cn - 56.5) < .01 && np.zw <= 26 && NU_ASK === null,
+        np.sel + ' @ ' + np.cn + ' w' + np.zw);
+      nfig.style.width = '';
+      np.zw = NU_NW; np.cn = NU_NW / 2; np.cz = NU_ZH / 2; np.sel = '92:146'; nuPaint(nel, np);
+      var nps = buildPage(page, false, {});
+      var pSquares = 0;
+      [].slice.call(nps.querySelectorAll('.nucells path')).forEach(function (p) { pSquares += (p.getAttribute('d').match(/M/g) || []).length; });
+      ok('nuchart: it prints whole — every square, its key and its foot, and no buttons',
+        pSquares === 4314 && nps.querySelector('.nufacts').textContent.indexOf('Uranium-238') >= 0 &&
+        nps.querySelectorAll('.nukey span').length === NU_CLS.length && !nps.querySelector('button'),
+        pSquares + ' squares');
       page.items = []; await render();
     });
 
