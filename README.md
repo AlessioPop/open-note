@@ -40,6 +40,8 @@ Drop an astronomy `.fits` on the sheet and click it. The reader opens on the sam
 
 **None of the data is ever read.** A data unit is shown as a shape, a type and a size — `(2048, 2048) uint16`, `4,204,881 rows × 5 columns · 192 MB` — and a binary table's columns are listed with what one cell of each holds. `js/lib/fits.js` walks the file header by header and steps over every data unit without touching it, so a four-gigabyte cube opens as fast as a small one, and nothing tries to put a million numbers on a page.
 
+Then **pick columns of a binary table and drag them off the window**. The reader steps out of the way while you aim, and what lands on the sheet is an ordinary table — so it sorts, exports, feeds a node graph and drops onto a coordinate system to be plotted. How much of a four-million-row column comes over is decided before a byte is read and said out loud in the table's foot: whole if it fits, otherwise spread across the whole of it every nth row so the shape of a light curve survives, and only failing that its first rows.
+
 No library, nothing downloaded: a FITS file is 80-column ASCII cards in 2880-byte blocks, and the arithmetic that finds the next header is a handful of lines. `CONTINUE`d strings are joined back up, `HIERARCH` keywords keep their real names, and BZERO 32768 on BITPIX 16 is reported as the unsigned integer it means.
 
 ### And the rest
@@ -98,7 +100,7 @@ js/lib/           algorithms that owe nothing to this app — latex, pptx, workb
 js/data/          tables the lib files read — the nuclides, the elements. Data, never code
 fonts/            the four families, carried locally so nothing needs the network
 desktop/          the Electron shell — main process and icon; wraps the app, never part of it
-tools/verify/     headless-Firefox verification harness — 961 assertions
+tools/verify/     headless-Firefox verification harness — 988 assertions
 tools/shots/      rebuilds the pictures above from the real app
 docs/             manual, architecture, and those pictures
 ```
@@ -112,7 +114,7 @@ Only `index.html`, `js/`, `fonts/` and `desktop/` are packaged into a build — 
 There is no test runner — the app *is* the test.
 
 ```
-tools/verify/run.sh        # 961 assertions, in headless Firefox
+tools/verify/run.sh        # 988 assertions, in headless Firefox
 tools/verify/desktop.sh    # 45 more, driving the real Electron shell
 tools/shots/run.sh         # rebuild the pictures in this README
 ```

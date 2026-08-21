@@ -353,3 +353,125 @@ function fitsFind(hdus, q){
   for(const hd of hdus) for(const c of hd.cards) if(hit(c)) out.push({ hdu: hd, card: c });
   return out;
 }
+
+/* ================= reading a column out =================
+   The one place any of the data is read, and it is still read a slice at a
+   time. A column of a binary table is **not** contiguous — the rows are laid
+   end to end and a column is a few bytes at the same offset inside each of
+   them — so taking one means walking rows. What keeps that affordable is that
+   the walk is planned first:
+
+     fitsPlan(hdu)  → { from, step, take, n, why }
+
+   A column short enough to fit in a table comes out whole. A longer one either
+   comes out **spread across the whole of it**, every nth row, when the walk is
+   small enough to afford — which is what keeps the shape of a light curve —
+   or, when it is not, as the **first rows** and no more. Either way the byte
+   range read is bounded, and `why` is the sentence saying which happened, so
+   the table it lands in can say so out loud rather than quietly showing a
+   tenth of somebody's observation. */
+
+const FITS_ROWMAX = 50000;              // rows one read hands back — what a table can hold
+const FITS_SPAN = 64 * 1024 * 1024;     // …and how much of a data unit is worth walking to spread them
+const FITS_VECMAX = 16;                 // elements of a vector column that become columns of their own
+
+const fitsOrd = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] || 'th'));
+function fitsPlan(hd){
+  const n = Math.max(0, Math.round(hd.rows || 0));
+  if(n <= FITS_ROWMAX) return { from:0, step:1, take:n, n, why:'' };
+  if(n * hd.rowBytes <= FITS_SPAN){
+    const step = Math.ceil(n / FITS_ROWMAX), take = Math.floor((n - 1) / step) + 1;
+    return { from:0, step, take, n,
+      why: take.toLocaleString() + ' of ' + n.toLocaleString() + ' rows — every ' + fitsOrd(step) };
+  }
+  return { from:0, step:1, take:FITS_ROWMAX, n,
+    why: 'first ' + FITS_ROWMAX.toLocaleString() + ' of ' + n.toLocaleString() + ' rows' };
+}
+
+/* what this can and cannot hand over, said in a sentence rather than by failing */
+function fitsColWhy(c, asc){
+  if(asc) return '';                                 // an ASCII table prints its own values already
+  if(c.code === 'P' || c.code === 'Q')
+    return c.name + ' is a variable-length array — its rows live on the heap past the end of the table, which this does not read yet';
+  if(c.code === 'X') return c.name + ' is a bit column, and bits are not readings to put in a table';
+  if(c.code === 'C' || c.code === 'M') return c.name + ' is complex, and a cell holds one number';
+  if(c.code !== 'A' && c.code !== 'L' && !FITS_GET[c.code])
+    return c.name + ' is in a format this does not read (' + (c.form || '?') + ')';
+  return '';
+}
+/* Everything is big-endian, always — FITS predates the machines that are not. */
+const FITS_GET = {
+  B: (v, o) => v.getUint8(o),
+  I: (v, o) => v.getInt16(o, false),
+  J: (v, o) => v.getInt32(o, false),
+  K: (v, o) => Number(v.getBigInt64(o, false)),
+  E: (v, o) => v.getFloat32(o, false),
+  D: (v, o) => v.getFloat64(o, false)
+};
+/* A column of four floats per row becomes four columns, because that is what
+   anyone wants to plot. A column of two thousand is a spectrum per row and is
+   not a table at all, so only the first few come out. */
+const fitsColLabel = (c, k) => c.name + (k == null ? '' : '[' + k + ']') + (c.unit ? ' (' + c.unit + ')' : '');
+function fitsColParts(c){
+  const rep = Math.max(1, Math.round(c.rep || 1));
+  if(c.code === 'A' || rep === 1) return [{ c, k:0, name: fitsColLabel(c, null) }];
+  const out = [];
+  for(let k = 0; k < Math.min(rep, FITS_VECMAX); k++) out.push({ c, k, name: fitsColLabel(c, k) });
+  return out;
+}
+/* the value written down without inventing precision it never had: a float32
+   carries about seven figures and a float64 fifteen, and printing all seventeen
+   of a float32 is how 3.14 becomes 3.1400001049041748 */
+function fitsNumStr(v, code, scaled){
+  if(!Number.isFinite(v)) return '';
+  if(Number.isInteger(v) && !scaled && code !== 'E' && code !== 'D') return String(v);
+  return String(+v.toPrecision(code === 'E' ? 7 : 15));
+}
+function fitsText(U, o, n){
+  let s = '';
+  for(let i = 0; i < n; i++){ const b = U[o + i]; if(b) s += String.fromCharCode(b); }
+  return s.trim();
+}
+function fitsCell(V, U, base, p, asc){
+  const c = p.c, o = base + c.off;
+  if(asc || c.code === 'A') return fitsText(U, o, c.bytes);
+  if(c.code === 'L'){ const b = U[o + p.k]; return b === 84 ? 'T' : b === 70 ? 'F' : ''; }
+  const g = FITS_GET[c.code];
+  if(!g) return '';
+  let v = g(V, o + p.k * (FITS_TW[c.code] || 1));
+  if(c.nul != null && v === +c.nul) return '';       // TNULLn is the file saying "no reading here"
+  const sc = c.scale == null ? 1 : c.scale, z = c.zero == null ? 0 : c.zero;
+  const scaled = sc !== 1 || z !== 0;
+  return fitsNumStr(scaled ? z + sc * v : v, c.code, scaled);
+}
+
+/* Hand back plain rows of plain strings — the same thing a workbook hands back,
+   and the same thing a table is made of. The first row is the column names. */
+async function fitsColumns(f, hd, idxs, plan){
+  plan = plan || fitsPlan(hd);
+  const asc = hd.xtension === 'TABLE';
+  const cols = (idxs || []).map(i => hd.cols[i]).filter(Boolean);
+  if(!cols.length) throw new Error('no columns were picked');
+  for(const c of cols){ const why = fitsColWhy(c, asc); if(why) throw new Error(why); }
+  const parts = [];
+  for(const c of cols) parts.push(...fitsColParts(c));
+  const rb = hd.rowBytes;
+  const last = plan.from + Math.max(0, plan.take - 1) * plan.step;
+  const start = hd.dataOff + plan.from * rb;
+  const end = Math.min(hd.dataOff + hd.dataLen, hd.dataOff + (last + 1) * rb);
+  const buf = await f.blob.slice(start, end).arrayBuffer();
+  const V = new DataView(buf), U = new Uint8Array(buf);
+  const rows = [parts.map(p => p.name)];
+  for(let r = 0; r < plan.take; r++){
+    const base = r * plan.step * rb;
+    if(base + rb > buf.byteLength) break;             // a file cut short stops here rather than lying
+    const line = new Array(parts.length);
+    for(let j = 0; j < parts.length; j++) line[j] = fitsCell(V, U, base, parts[j], asc);
+    rows.push(line);
+  }
+  /* a vector column wider than we take is worth saying out loud too */
+  const clipped = cols.filter(c => c.code !== 'A' && Math.round(c.rep || 1) > FITS_VECMAX);
+  return { rows, rowsTotal: plan.n, wide: false, plan, parts: parts.length,
+    note: [plan.why, clipped.length ? 'first ' + FITS_VECMAX + ' of ' + clipped[0].rep +
+      ' elements of ' + clipped[0].name : ''].filter(Boolean).join(' · ') };
+}

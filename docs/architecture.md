@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 961 assertions, driven in headless Firefox
+tools/verify/       the harness: 988 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -199,7 +199,7 @@ shelf** — a new file under `items/science/` had better call
 | `math/node.js` | 1099 | `node` — five kinds of card, the little graph they make, the wires between them, and the colour wheel |
 | `science/ptable.js` | 154 | `ptable` — the periodic table as a reference card, and `openElementPicker()`, the popover every element chip opens |
 | `science/nuchart.js` | 680 | `nuchart` — the chart of the nuclides: 5646 squares as ten paths, the magic-number rules, four colourings, pan and zoom on a viewBox, Karlsruhe-split squares for the long-lived metastable states, arrows to every daughter and the whole decay chain, and a foot that works the Q values out as you press |
-| `science/fits.js` | 420 | `fits` — an astronomy file as a shortcut, and the reader behind it: `hdu.info()`, the header in three aligned columns with a search over all of them, COMMENT and HISTORY runs folded in place, and every data unit given as a shape and a type rather than as numbers |
+| `science/fits.js` | 617 | `fits` — an astronomy file as a shortcut, and the reader behind it: `hdu.info()`, the header in three aligned columns with a search over all of them, COMMENT and HISTORY runs folded in place, every data unit given as a shape and a type rather than as numbers, and columns you pick and drag off the window onto the sheet, where they land as an ordinary table |
 | `science/molecule.js` | 1106 | `molecule` — the 2D editor with its glass rail and ChemDraw gestures, the hotkeys, the three drawing styles, the ⌕ name-or-SMILES box, and the 3D view: three looks, the momentum orbit, picks that measure, and the solid geometry that keeps it honest |
 | `media/image.js` | 56 | `image` |
 | `media/video.js` | 87 | `video` |
@@ -223,7 +223,7 @@ thing loaded ahead of this whole layer.
 | `spring.js` | 125 | springs and momentum: analytic springs, release velocity, flick projection. What the throws, spins and card-tosses all move on |
 | `latex.js` | 365 | LaTeX → MathML. No library, nothing downloaded |
 | `matrix.js` | 255 | the n×m arithmetic the cards lean on: multiply, transpose, determinant, inverse, powers, and eigen (Hessenberg + shifted QR, null-space eigenvectors) |
-| `fits.js` | 355 | a `.fits` → its HDUs, their headers, and the shape of every data unit. The data itself is stepped over and never read, so a four-gigabyte cube opens as fast as a small one |
+| `fits.js` | 477 | a `.fits` → its HDUs, their headers, and the shape of every data unit; the walk steps over the data without touching it, so a four-gigabyte cube opens as fast as a small one. Then one column of a binary table, on request — planned before it is read, so what comes back is bounded whatever the file weighs |
 | `workbook.js` | 518 | `.xlsx`, `.ods` and `.csv` → plain rows of plain strings. No library: a workbook is a zip of XML, and the browser has an unzipper |
 | `pptx.js` | 1907 | `.pptx` → slides that draw themselves as SVG. The same zip, then DrawingML: the colour engine, the preset and freehand geometry, fills and lines, the inheritance chain a slide hangs off, and the text laid out by hand |
 | `chem.js` | 994 | the chemistry: the molecular graph, implicit hydrogens and lone pairs, Hill formulas and masses, rings and aromaticity, a graph hash that names what you draw, SMILES in and out, the 2D layout, the 3D embedding and VSEPR |
@@ -516,7 +516,7 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**961 assertions**, and they are the real specification of this app. Among them:
+**988 assertions**, and they are the real specification of this app. Among them:
 that all 68 script files load without throwing; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a
@@ -537,7 +537,10 @@ once and says so rather than hanging when it is wired in a circle; that a real
 colour map; that a real `.fits` built in the harness walks to three HDUs whose
 headers start exactly where the last one's data ended, that a `CONTINUE` card is
 folded back into the string it belongs to and BZERO 32768 is read as unsigned,
-and that what lands on the page is a digest rather than a megabyte of `HISTORY`; that ethanol built by clicks says `C₂H₆O` and 46.07 and its 3D view
+and that what lands on the page is a digest rather than a megabyte of `HISTORY`,
+and that a column dragged off that reader arrives as a table holding the readings
+that went into the file — scaled, `TNULL`s left as gaps, and the sentence saying
+how much of a long one came over; that ethanol built by clicks says `C₂H₆O` and 46.07 and its 3D view
 has every ball and no `NaN`; that the chart of the nuclides parses all 5646 of
 them, peaks its binding-energy curve on ⁶²Ni and walks the four natural series
 to lead, lead, lead and thallium; and that **Export** really produces one file

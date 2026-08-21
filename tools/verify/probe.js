@@ -1530,6 +1530,18 @@
         });
         return new Blob(parts);
       }
+      /* real readings in the table, big-endian, so what comes out can be checked
+         against what went in: TIME 1D, FLUX 4E, PHA 1I scaled and with a TNULL
+         in the middle of it, NAME 8A — 34 bytes to a row */
+      var rb = 34, nr = 3, rows = new Uint8Array(rb * nr), rv = new DataView(rows.buffer);
+      for (var r = 0; r < nr; r++) {
+        var o = r * rb;
+        rv.setFloat64(o, 100.5 + r, false);
+        for (var k = 0; k < 4; k++) rv.setFloat32(o + 8 + k * 4, r + k * 0.5, false);
+        rv.setInt16(o + 24, r === 1 ? -1 : 4 + r * 4, false);
+        var nm = 'evt' + r;
+        for (var j = 0; j < 8; j++) rows[o + 26 + j] = j < nm.length ? nm.charCodeAt(j) : 32;
+      }
       var comment = [], history = [];
       for (var q = 0; q < 6; q++) comment.push('COMMENT   pipeline note ' + q);
       for (var q2 = 0; q2 < 5; q2++) history.push('HISTORY   ran step ' + q2);
@@ -1550,12 +1562,14 @@
                   kvs('EXTNAME', 'SCI'), kv('EXTVER', 2)],
           data: new Uint8Array(8) },
         { cards: [kvs('XTENSION', 'BINTABLE'), kv('BITPIX', 8), kv('NAXIS', 2),
-                  kv('NAXIS1', 32), kv('NAXIS2', 3), kv('PCOUNT', 0), kv('GCOUNT', 1),
-                  kv('TFIELDS', 3), kvs('EXTNAME', 'EVENTS'),
+                  kv('NAXIS1', 34), kv('NAXIS2', 3), kv('PCOUNT', 0), kv('GCOUNT', 1),
+                  kv('TFIELDS', 4), kvs('EXTNAME', 'EVENTS'),
                   kvs('TTYPE1', 'TIME'), kvs('TFORM1', '1D'), kvs('TUNIT1', 's'),
                   kvs('TTYPE2', 'FLUX'), kvs('TFORM2', '4E'), kvs('TUNIT2', 'e-/s'),
-                  kvs('TTYPE3', 'NAME'), kvs('TFORM3', '8A')],
-          data: new Uint8Array(96) }
+                  kvs('TTYPE3', 'PHA'), kvs('TFORM3', '1I'), kvs('TUNIT3', 'chan'),
+                  kv('TSCAL3', 0.5), kv('TZERO3', 10), kv('TNULL3', -1),
+                  kvs('TTYPE4', 'NAME'), kvs('TFORM4', '8A')],
+          data: rows }
       ]);
       var file = new File([blob], 'obs.fits');
 
@@ -1570,8 +1584,8 @@
         inf[1].name === 'SCI' && inf[1].ver === 2, inf[1].name + '/' + inf[1].ver);
       ok('fits: a shape is written the way numpy writes it — NAXIS backwards',
         inf[0].dim === '(3, 4)', inf[0].dim);
-      ok('fits: a table is R x C', inf[2].dim === '3R x 3C', inf[2].dim);
-      ok('fits: and its format is the TFORMs', inf[2].format === '[1D, 4E, 8A]', inf[2].format);
+      ok('fits: a table is R x C', inf[2].dim === '3R x 4C', inf[2].dim);
+      ok('fits: and its format is the TFORMs', inf[2].format === '[1D, 4E, 1I, 8A]', inf[2].format);
       ok('fits: the card count leaves out END, and the CONTINUE it folded in',
         inf[0].cards === 22, inf[0].cards);
 
@@ -1587,7 +1601,7 @@
       ok('fits: the chain adds up to the whole file', f.hdus[2].dataEnd === file.size,
         f.hdus[2].dataEnd + ' vs ' + file.size);
       ok('fits: a table row is NAXIS1 bytes and there are NAXIS2 of them',
-        f.hdus[2].rows === 3 && f.hdus[2].rowBytes === 32, f.hdus[2].rows + 'x' + f.hdus[2].rowBytes);
+        f.hdus[2].rows === 3 && f.hdus[2].rowBytes === 34, f.hdus[2].rows + 'x' + f.hdus[2].rowBytes);
 
       /* ---- what the values came out as ---- */
       var h0 = f.hdus[0].keys;
@@ -1606,15 +1620,15 @@
       var cols = f.hdus[2].cols;
       ok('fits: the columns come out named and measured',
         cols.map(function (c) { return c.name + ':' + c.type + ':' + c.bytes; }).join(',') ===
-        'TIME:float64:8,FLUX:float32:16,NAME:char:8',
+        'TIME:float64:8,FLUX:float32:16,PHA:int16:2,NAME:char:8',
         cols.map(function (c) { return c.name + ':' + c.type + ':' + c.bytes; }).join(','));
       ok('fits: their offsets down a row are cumulative',
-        cols.map(function (c) { return c.off; }).join(',') === '0,8,24',
+        cols.map(function (c) { return c.off; }).join(',') === '0,8,24,26',
         cols.map(function (c) { return c.off; }).join(','));
       ok('fits: a repeat count is the shape of one cell, not a row count',
         fitsCellShape(cols[1]) === '(4,)' && fitsCellShape(cols[0]) === 'scalar',
         fitsCellShape(cols[1]) + ' / ' + fitsCellShape(cols[0]));
-      ok('fits: a character column counts characters', fitsCellShape(cols[2]) === '8 chars', fitsCellShape(cols[2]));
+      ok('fits: a character column counts characters', fitsCellShape(cols[3]) === '8 chars', fitsCellShape(cols[3]));
       ok('fits: a unit is carried', cols[1].unit === 'e-/s', cols[1].unit);
 
       /* ---- searching ---- */
@@ -1625,6 +1639,45 @@
         (fitsFind(f.hdus, 'naxis') || []).length);
       ok('fits: the header comes back in the 80 columns it arrived in',
         fitsHeaderText(f.hdus[1]).split('\n').every(function (l, i, a) { return i === a.length - 1 || l.length === 80; }));
+
+
+      /* ---- planning a read before reading it ---- */
+      ok('fits: a column that fits comes out whole',
+        fitsPlan({ rows: 3, rowBytes: 34 }).step === 1 && fitsPlan({ rows: 3, rowBytes: 34 }).why === '',
+        JSON.stringify(fitsPlan({ rows: 3, rowBytes: 34 })));
+      var spread = fitsPlan({ rows: 200000, rowBytes: 16 });
+      ok('fits: a long one worth walking is spread across the whole of it',
+        spread.step === 4 && spread.take === 50000 && /every 4th/.test(spread.why), JSON.stringify(spread));
+      var head = fitsPlan({ rows: 4204881, rowBytes: 48 });
+      ok('fits: one too big to walk comes out as its first rows, and says so',
+        head.step === 1 && head.take === 50000 && /first 50,000 of 4,204,881/.test(head.why), JSON.stringify(head));
+
+      /* ---- and reading it ---- */
+      var got = await fitsColumns(f, f.hdus[2], [0, 1, 2, 3]);
+      ok('fits: a vector column becomes one column per element',
+        got.rows[0].join('|') === 'TIME (s)|FLUX[0] (e-/s)|FLUX[1] (e-/s)|FLUX[2] (e-/s)|FLUX[3] (e-/s)|PHA (chan)|NAME',
+        got.rows[0].join('|'));
+      ok('fits: the readings are the readings that went in',
+        got.rows[1][0] === '100.5' && got.rows[3][0] === '102.5', got.rows[1][0] + ' / ' + got.rows[3][0]);
+      ok('fits: a float32 is written to the seven figures it actually carries',
+        got.rows[1].slice(1, 5).join(',') === '0,0.5,1,1.5' && got.rows[3][2] === '2.5',
+        got.rows[1].slice(1, 5).join(',') + ' | ' + got.rows[3][2]);
+      ok('fits: TSCAL and TZERO are applied on the way out',
+        got.rows[1][5] === '12' && got.rows[3][5] === '16', got.rows[1][5] + ' / ' + got.rows[3][5]);
+      ok('fits: a TNULL is a gap, not a number', got.rows[2][5] === '', JSON.stringify(got.rows[2][5]));
+      ok('fits: a character column comes out trimmed',
+        got.rows[1][6] === 'evt0' && got.rows[3][6] === 'evt2', got.rows[1][6] + '/' + got.rows[3][6]);
+      ok('fits: and the whole column came, so there is nothing to confess',
+        got.rowsTotal === 3 && got.rows.length === 4 && !got.note, got.note);
+
+      /* what it will not pretend to read */
+      ok('fits: a variable-length array says why it cannot come',
+        /variable-length/.test(fitsColWhy({ name: 'PH', code: 'P', form: '1PE(5)' }, false)));
+      ok('fits: …so does a bit column and a complex one',
+        /bit column/.test(fitsColWhy({ name: 'B', code: 'X', form: '8X' }, false)) &&
+        /complex/.test(fitsColWhy({ name: 'Z', code: 'C', form: '1C' }, false)));
+      ok('fits: an ASCII table prints its own values, so nothing is refused there',
+        fitsColWhy({ name: 'A', code: 'F', form: 'F10.4' }, true) === '');
 
       /* ---- gzipped, which has to come out whole before any of it can be read ---- */
       if (typeof CompressionStream === 'function') {
@@ -1642,10 +1695,13 @@
       catch (e) { bad = true; }
       ok('fits: something that is not a FITS file says so', bad);
 
-      /* ---- onto the page ---- */
+      /* ---- onto the page ----
+         From here on the sheet is ours, so put it back whatever happens: a stage
+         that throws half way through used to leave the next one holding it. */
       var page = sheet(), keep = page.items.slice();
       page.items = [];
       await render();
+      try {
       ok('fits: a .fits is claimed before anything else could take it',
         fileTakers().indexOf('fits') < fileTakers().indexOf('model'), fileTakers().join(','));
       var took = ITEMS.fits.takes([file], { x: 10, y: 10 }, page);
@@ -1678,7 +1734,7 @@
 
       QA('#fview .ftrow')[2].click();
       ok('fits: picking a table row shows its columns',
-        QA('#fview .ftcols tbody tr').length === 3, QA('#fview .ftcols tbody tr').length);
+        QA('#fview .ftcols tbody tr').length === 4, QA('#fview .ftcols tbody tr').length);
       ok('fits: …with the cell shape of each',
         /\(4,\)/.test(Q('#fview .ftcols').textContent), Q('#fview .ftcols').textContent.slice(0, 120));
 
@@ -1697,10 +1753,77 @@
         QA('#fview .ftcards .ftc').length === 1 && !!Q('#fview .fthit'),
         QA('#fview .ftcards .ftc').length);
 
+
+      /* ---- picking columns and hauling them out ---- */
+      var tap = function (el) {
+        var r = el.getBoundingClientRect(), o = { pointerId: 7, bubbles: true,
+          clientX: r.left + 4, clientY: r.top + 4 };
+        el.dispatchEvent(new PointerEvent('pointerdown', o));
+        window.dispatchEvent(new PointerEvent('pointerup', o));
+      };
+      Q('#fview .ftall').checked = false;
+      Q('#fview .ftall').dispatchEvent(new Event('change', { bubbles: true }));
+      seek.value = '';
+      seek.dispatchEvent(new Event('input', { bubbles: true }));
+      QA('#fview .ftrow')[2].click();
+      var picks = QA('#fview .ftcols.live tr[data-c]');
+      ok('fits: every column of a table is pickable', picks.length === 4, picks.length);
+      ok('fits: nothing is picked to begin with, and it says what to do',
+        !Q('#fview .ftpick.on') && /Click a column/.test(Q('#fview .ftpick').textContent),
+        Q('#fview .ftpick').textContent);
+      tap(picks[0]);
+      ok('fits: a tap picks one', ftWin.pick.size === 1 && !!Q('#fview .ftcols tr.pick'),
+        ftWin.pick.size);
+      tap(QA('#fview .ftcols.live tr[data-c]')[1]);
+      ok('fits: and another adds to it, with a way out offered',
+        ftWin.pick.size === 2 && !!Q('#fview .ftout') && /2 columns picked/.test(Q('#fview .ftpick').textContent),
+        Q('#fview .ftpick').textContent);
+      tap(QA('#fview .ftcols.live tr[data-c]')[1]);
+      ok('fits: tapping a picked one puts it back', ftWin.pick.size === 1, ftWin.pick.size);
+      tap(QA('#fview .ftcols.live tr[data-c]')[1]);
+
+      Q('#fview .ftout').click();
+      await waitFor(function () { return byType('table'); }, 10000);
+      var t = page.items.filter(function (x) { return x.type === 'table'; })[0];
+      ok('fits: what lands on the sheet is an ordinary table', !!t && t.type === 'table');
+      ok('fits: named after the HDU it came out of', /EVENTS/.test(t.name) && /obs.fits/.test(t.name), t.name);
+      ok('fits: with the column names as its header row',
+        t.head === 1 && tbRows(t)[0].join('|') === 'TIME (s)|FLUX[0] (e-/s)|FLUX[1] (e-/s)|FLUX[2] (e-/s)|FLUX[3] (e-/s)',
+        tbRows(t)[0].join('|'));
+      ok('fits: and the readings under them', tbRows(t).length === 4 && tbRows(t)[3][0] === '102.5',
+        tbRows(t).length + ' rows, ' + tbRows(t)[3][0]);
+      ok('fits: the reader closed behind it', !Q('#fview').classList.contains('on') && ftWin === null);
+
+      /* ---- dropped onto a table that is already there ---- */
+      await ftOpen(it);
+      await waitFor(function () { return Q('#fview .ftrow'); }, 8000);
+      QA('#fview .ftrow')[2].click();
+      var nc0 = tbNC(t);
+      await ftPour([2, 3], { it: t, el: byType('table'), page: page }, null);
+      ok('fits: a drop on a table joins its columns to it', tbNC(t) === nc0 + 2, nc0 + ' → ' + tbNC(t));
+      ok('fits: the names land on the header row, not in a reading',
+        tbRows(t)[0][nc0] === 'PHA (chan)' && tbRows(t)[0][nc0 + 1] === 'NAME',
+        tbRows(t)[0].join('|'));
+      ok('fits: with the values under them, gaps and all',
+        tbRows(t)[1][nc0] === '12' && tbRows(t)[2][nc0] === '' && tbRows(t)[3][nc0 + 1] === 'evt2',
+        tbRows(t)[1][nc0] + '/' + JSON.stringify(tbRows(t)[2][nc0]) + '/' + tbRows(t)[3][nc0 + 1]);
+
+      /* ---- and a truncation is confessed on the table itself ---- */
+      var fake = { rows: [['a'], ['1'], ['2']], rowsTotal: 900000,
+        note: 'first 50,000 of 900,000 rows', plan: { why: 'first 50,000 of 900,000 rows' } };
+      var t2 = ftNewTable(fake, 'BIG · x.fits', { x: 4, y: 4 }, page);
+      ok('fits: a table that only got part of a column says so in its foot',
+        /first 50,000 of 900,000 rows/.test(t2.note) && /first 50,000 of 900,000 rows/.test(tbCountText(t2)),
+        t2.note + ' | ' + tbCountText(t2));
+      page.items = page.items.filter(function (x) { return x !== t2; });
+
       closeViewer();
       ok('fits: and it closes', !Q('#fview').classList.contains('on') && ftWin === null);
-      page.items = keep;
-      await render();
+      } finally {
+        closeViewer();
+        page.items = keep;
+        await render();
+      }
     });
 
     /* ---- reading a slide deck off the disk, and walking it ---- */

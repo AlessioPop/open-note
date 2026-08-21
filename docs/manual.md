@@ -44,7 +44,7 @@ Things scale to the paper they are on: a sticky note is the size it would be on 
 | Molecule | A molecule drawn the way a chemist draws one — skeletal, condensed or Lewis — with its formula, mass and name under it, a periodic table a click away, a name-or-SMILES box, and a 3D view you can turn and measure; see **Chemistry** below |
 | Periodic table | The table on the page as a reference card — tap an element for its number, mass, electronegativity and configuration |
 | Chart of nuclides | The whole nuclear chart — 3558 nuclides and 2088 metastable states on the neutron–proton plane, coloured by how they come apart; zoom in, press one for its half-life, branches and Q values, and follow its decay chain to whatever it ends on |
-| FITS file | An astronomy `.fits` — or just drop one on the page. Click it and the reader opens on `hdu.info()`; pick an HDU for its header, search the keywords, and see the shape and type of every data unit without a single number of it being loaded; see **FITS files** below |
+| FITS file | An astronomy `.fits` — or just drop one on the page. Click it and the reader opens on `hdu.info()`; pick an HDU for its header, search the keywords, and see the shape and type of every data unit without a single number of it being loaded. Pick columns of a binary table and **drag them out onto the sheet**, where they land as a table you can plot; see **FITS files** below |
 | Picture | Taped-in photos with captions. Also: drag-and-drop or just **paste** a screenshot (Ctrl+V) |
 | Video | YouTube / Vimeo links, or a video file from disk (stored inside the note) |
 | 3D model | A `.obj` out of Blender — mesh, materials and textures — in a little window you can turn it in |
@@ -336,6 +336,18 @@ Then the **header** itself: keyword, value and comment in three columns that lin
 **Runs of `COMMENT` and `HISTORY` fold themselves away** where they sit, so the order of the header is still the order of the header — a pipeline that logged two hundred lines into the middle of one is one line until you open it.
 
 **The search box looks in the keyword, the value *and* the comment**, which is the half of it people usually want: half of what anyone hunts for in a header is a filter name or a date sitting in a value field, not a keyword. The first match in each card is lit up. Tick **all HDUs** and it searches the whole file at once, grouped by HDU — click a group's bar to jump to it.
+
+### Pulling a column out
+
+The columns of a binary table are **pickable**. Click one and it lights up; click more to add them; click a picked one to put it back. The line under the list says what you have and, before anything is read, **what will come over** — `2 columns picked · 50,000 of 200,000 rows — every 4th`.
+
+**Then drag any picked column off the window.** The reader steps almost out of sight while you aim — it covers the whole sheet, and you cannot drop on paper you cannot see — with the column names following the pointer. Let go on the sheet and what lands is **an ordinary table**, which is the whole point: it sorts, it exports to `.csv`, it feeds a node graph, and dropping it on a coordinate system plots it. Let go on a table that is already there and the columns join that one instead. `→ table` does the same thing without the drag.
+
+The column names come over as the header row, with the unit in them — `TIME (BJD - 2457000)`, `SAP_FLUX (e-/s)` — so a plot made from them is labelled without anyone typing a label. A column of four floats per row becomes four columns, `FLUX[0]` to `FLUX[3]`; a much wider one gives its first sixteen and says so. `TSCALn` and `TZEROn` are applied on the way out, and a cell holding the file's `TNULLn` comes over as a **gap**, not as a number.
+
+**How much comes over is decided before anything is read, and always confessed** in the table's own foot. A column short enough to fit comes whole. A longer one comes **spread across the whole of it**, every nth row, when the walk is small enough to afford — which is what keeps the shape of a light curve, where taking the first slice would just give you the first hour of the observation. Only when even that would be too much does it take the first 50,000 rows, and it says that too.
+
+Variable-length array columns (`1PE`), bit columns and complex ones are shown greyed, and hovering says why they cannot come. An ASCII table's columns come over as the file prints them.
 
 **⧉** copies the whole header of the picked HDU, in the 80 columns it is written in. **⤓** saves a copy of the file. `Esc` closes the reader.
 

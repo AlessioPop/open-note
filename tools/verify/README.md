@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 961 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 988 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,7 +22,7 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 961 assertions, and they should
+It prints a pass/fail count and every failure. 988 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
@@ -75,6 +75,18 @@ all pass — if one doesn't, that is a real regression.
   that searching every HDU crosses from a table into the primary — and that what
   lands on the page is a **digest**, with no card text in it at all, because a
   note is rewritten on every keystroke and headers are long;
+- **pulling a FITS column out**: that the plan is made before the read — a short
+  column whole, a long one every *n*th row where the walk is affordable, its
+  first rows where it is not, each with the sentence that says so; that the
+  values that come back are the values that went in, that a float32 is written
+  to the seven figures it carries rather than the seventeen it does not, that
+  `TSCALn`/`TZEROn` are applied and a `TNULLn` comes over as a gap; that a
+  vector column becomes one column per element; that a variable-length, bit or
+  complex column is refused in a sentence. Then the gesture: that a tap picks a
+  column and another tap puts it back, that what lands on the sheet is an
+  ordinary table with the column names and units as its header row, and that a
+  drop on a table already there joins the columns to it, names on the header row
+  and gaps intact;
 - **reading a slide deck**: a real `.pptx` is built inside the harness the same
   way the workbook is — a zip written byte by byte, stored rather than deflated,
   carrying a master, a layout, a theme, two slides, a picture drawn onto a

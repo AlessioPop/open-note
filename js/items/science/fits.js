@@ -107,7 +107,7 @@ async function ftAdd(file, at){
 let ftWin = null;                      // { it, f, sel, q, all } while the reader is up
 
 async function ftOpen(it){
-  ftWin = { it, f: null, sel: 0, q: '', all: false };
+  ftWin = { it, f: null, sel: 0, q: '', all: false, pick: new Set() };
   ftFrame('reading the headers…');
   let f = FT_CACHE.get(it.media);
   if(!f){
@@ -147,7 +147,7 @@ function ftFrame(note){
   body.querySelector('.ftinfo').addEventListener('click', e => {
     const row = e.target.closest('.ftrow');
     if(!row) return;
-    w.sel = +row.dataset.i;
+    w.sel = +row.dataset.i; w.pick.clear();
     ftMarkRow(); ftPaint();
   });
   const q = body.querySelector('.ftq');
@@ -206,25 +206,61 @@ function ftDataHTML(hd){
     if(hd.heap) b.push(ftChip('heap', fmtBytes(hd.heap)));
   }
   let h = '<div class="ftdata">' + b.join('') + '</div>';
-  if(hd.kind === 'table' || hd.kind === 'zimage') h += ftColsHTML(hd);
+  if(hd.kind === 'table') h += ftColsHTML(hd, 1) + ftPickHTML(hd);
+  else if(hd.kind === 'zimage') h += ftColsHTML(hd, 0);
   return h;
 }
-function ftColsHTML(hd){
-  const cs = hd.cols.slice(0, FT_MAXCOLS);
+function ftColsHTML(hd, live){
+  const cs = hd.cols.slice(0, FT_MAXCOLS), pick = ftPicked();
   if(!cs.length) return '';
-  let h = '<table class="fttab ftcols"><thead><tr><th>#</th><th>Name</th><th>Format</th><th>Type</th>' +
+  const asc = hd.xtension === 'TABLE';
+  let h = '<table class="fttab ftcols' + (live ? ' live' : '') +
+          '"><thead><tr><th>#</th><th>Name</th><th>Format</th><th>Type</th>' +
           '<th>A cell</th><th>Unit</th><th class="r">Values</th></tr></thead><tbody>';
-  for(const c of cs){
+  cs.forEach((c, i) => {
     const per = c.chars ? 1 : Math.max(1, c.rep);
-    h += '<tr><td class="r">' + c.n + '</td><td>' + esc(c.name) + '</td>' +
+    const why = live ? fitsColWhy(c, asc) : 'x';
+    h += '<tr' + (live ? ' data-c="' + i + '"' + (why ? ' class="no" title="' + esc(why) + '"'
+          : pick.has(i) ? ' class="pick"' : '') : '') + '>' +
+      '<td class="r">' + c.n + '</td><td>' + esc(c.name) + '</td>' +
       '<td class="m">' + esc(c.form) + '</td><td class="m">' + esc(c.type) +
         (c.scale != null || c.zero != null ? ' <i title="this column is rescaled on the way out">scaled</i>' : '') +
       '</td><td class="m">' + esc(fitsCellShape(c)) + '</td><td>' + esc(c.unit || '—') + '</td>' +
       '<td class="r">' + (hd.rows * per).toLocaleString() + '</td></tr>';
-  }
+  });
   if(hd.cols.length > cs.length)
     h += '<tr><td colspan="7" class="ftmore">…and ' + (hd.cols.length - cs.length) + ' more columns</td></tr>';
   return h + '</tbody></table>';
+}
+
+/* ================= a column, dragged out onto the sheet =================
+   Pick columns in the list and drag any one of them off the reader: the window
+   gets out of the way while you aim, and what lands is an ordinary **table** —
+   which is the whole point, because a table already sorts, exports, feeds a
+   node graph and drops onto a coordinate system to be plotted. Drop the drag on
+   a table that is already on the sheet and the columns join it instead.
+
+   What comes over is decided by js/lib/fits.js before anything is read, and
+   said out loud in the table's own foot: a column that fits comes whole, a long
+   one comes spread across the whole of it (every nth row, so the shape survives)
+   where that is affordable, and only otherwise as its first rows. */
+const ftPicked = () => (ftWin && ftWin.pick) || new Set();
+function ftPickHTML(hd){
+  const pick = [...ftPicked()], plan = fitsPlan(hd);
+  const say = !pick.length
+    ? 'Click a column to pick it — then drag it onto the sheet, and it lands there as a table'
+    : pick.length + (pick.length === 1 ? ' column picked' : ' columns picked') +
+      (plan.why ? ' · ' + plan.why : '') + ' — drag it out onto the sheet, or onto a table already there';
+  return '<div class="ftpick' + (pick.length ? ' on' : '') + '"><span class="ftsay">' + esc(say) + '</span>' +
+    (pick.length ? '<button class="ftout" title="Put them on the sheet without dragging">→ table</button>' : '') +
+    '</div>';
+}
+function ftSay(msg, bad){
+  const el = $('#fview').querySelector('.ftpick');
+  if(!el) return;
+  el.classList.toggle('bad', !!bad);
+  const s = el.querySelector('.ftsay');
+  if(s) s.textContent = msg;
 }
 
 /* ---- the header ---- */
@@ -297,13 +333,151 @@ function ftPaint(){
       '<i>' + esc(hd.klass) + '</i></div>' +
     (w.q ? '' : ftDataHTML(hd)) +
     '<div class="ftcards">' + (w.q ? ftFoundHTML(w) : ftCardsHTML(hd)) + '</div>';
+  ftWireCols(pane);
   const jump = pane.querySelectorAll('.fthit');
   jump.forEach(el => el.addEventListener('click', () => {
-    w.sel = +el.dataset.i; w.q = ''; w.all = false;
+    w.sel = +el.dataset.i; w.q = ''; w.all = false; w.pick.clear();
     const q = $('#fview').querySelector('.ftq'), a = $('#fview').querySelector('.ftall');
     if(q) q.value = ''; if(a) a.checked = false;
     ftMarkRow(); ftPaint();
   }));
+}
+
+/* ---- picking, and pulling out ----
+   A press that goes nowhere picks the column; one that travels is a drag. The
+   reader fades almost away while it does — it covers the whole sheet, and you
+   cannot aim at paper you cannot see. */
+let ftHaul = null;                     // { cols, ghost, over } while a drag is in flight
+function ftWireCols(pane){
+  const w = ftWin, tb = pane.querySelector('.ftcols.live');
+  const out = pane.querySelector('.ftout');
+  if(out) out.addEventListener('click', () => ftPour([...w.pick].sort((a, b) => a - b), null, null));
+  if(!tb) return;
+  tb.addEventListener('pointerdown', e => {
+    const tr = e.target.closest('tr[data-c]');
+    if(!tr || tr.classList.contains('no')) return;
+    e.preventDefault();
+    const i = +tr.dataset.c, sx = e.clientX, sy = e.clientY, pid = e.pointerId;
+    let moved = false;
+    const mv = ev => {
+      if(ev.pointerId !== pid) return;
+      if(!moved){
+        if(Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+        moved = true;
+        /* dragging a column nobody picked drags that one alone */
+        if(!w.pick.has(i)){ w.pick.clear(); w.pick.add(i); ftPaint(); }
+        ftHaulStart();
+      }
+      ftHaulMove(ev);
+    };
+    const up = ev => {
+      if(ev.pointerId !== pid) return;
+      window.removeEventListener('pointermove', mv);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if(!moved){                                    // a tap: pick it, or put it back
+        if(w.pick.has(i)) w.pick.delete(i); else w.pick.add(i);
+        ftPaint();
+        return;
+      }
+      ftHaulEnd(ev, ev.type === 'pointerup');
+    };
+    window.addEventListener('pointermove', mv);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  });
+}
+function ftHaulStart(){
+  const hd = ftWin.f.hdus[ftWin.sel];
+  const names = [...ftWin.pick].sort((a, b) => a - b).map(i => (hd.cols[i] || {}).name || '?');
+  const g = document.createElement('div');
+  g.className = 'ftghost';
+  g.innerHTML = names.slice(0, 5).map(n => '<span>' + esc(n) + '</span>').join('') +
+    (names.length > 5 ? '<span>+' + (names.length - 5) + ' more</span>' : '');
+  document.body.appendChild(g);
+  ftHaul = { ghost: g, over: null };
+  $('#fview').classList.add('ftaway');
+}
+function ftHaulMove(ev){
+  if(!ftHaul) return;
+  ftHaul.ghost.style.left = ev.clientX + 'px';
+  ftHaul.ghost.style.top = ev.clientY + 'px';
+  const t = ftTableUnder(ev);
+  if((t && t.el) === (ftHaul.over && ftHaul.over.el)) return;
+  if(ftHaul.over) ftHaul.over.el.classList.remove('dropinto');
+  ftHaul.over = t;
+  if(t) t.el.classList.add('dropinto');
+}
+function ftHaulEnd(ev, ok){
+  const h = ftHaul;
+  ftHaul = null;
+  if(!h) return;
+  h.ghost.remove();
+  if(h.over) h.over.el.classList.remove('dropinto');
+  $('#fview').classList.remove('ftaway');
+  if(!ok || !ftWin) return;
+  const surf = document.querySelector('#pageHost .surface');
+  const r = surf && surf.getBoundingClientRect();
+  /* let go off the paper and nothing happens — the picks are still picked */
+  if(!h.over && (!r || ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom))
+    return ftSay('let go over the sheet, or over a table already on it');
+  ftPour([...ftWin.pick].sort((a, b) => a - b), h.over, h.over ? null : pctFrom(ev, surf));
+}
+function ftTableUnder(ev){
+  for(const n of document.elementsFromPoint(ev.clientX, ev.clientY)){
+    const el = n.closest && n.closest('#pageHost .item');
+    if(!el) continue;
+    const pg = pageOfEl(el);
+    const it = pg && pg.items.find(x => x.id === el.dataset.id);
+    return it && it.type === 'table' ? { el, it, page: pg } : null;
+  }
+  return null;
+}
+
+/* ---- and what lands ---- */
+async function ftPour(idxs, target, at){
+  const w = ftWin;
+  if(!w || !w.f || !idxs.length) return;
+  const hd = w.f.hdus[w.sel];
+  ftSay('reading ' + idxs.length + (idxs.length === 1 ? ' column…' : ' columns…'));
+  let got;
+  try{ got = await fitsColumns(w.f, hd, idxs, fitsPlan(hd)); }
+  catch(e){ return ftSay(String((e && e.message) || e), 1); }
+  if(!ftWin) return;                                 // closed while it was being read
+  const page = sheet();
+  const name = (hd.name || ('HDU ' + hd.i)) + ' · ' + (w.it.name || 'fits');
+  const it = target ? ftInto(target.it, got) : ftNewTable(got, name, at, page);
+  closeViewer();
+  queueSave(page.id); SND.plop();
+  await render();
+  select(it.id);
+}
+function ftNote(it, got){
+  if(got.note) it.note = got.note; else delete it.note;
+}
+function ftNewTable(got, name, at, page){
+  /* readings are set smaller than writing, the way a table read off a file is */
+  const it = { id: uid(), type:'table', fs:13, rot:0, z: maxZ(page) + 1, lay: curLayerId(),
+    ts:'lines', cap:'', rows:[['']], cw:[1], al:['l'] };
+  const put = tbFill(it, got, name);
+  ftNote(it, got);
+  it.w = clamp((8 + put.units * 1.25) * pgK(), 26, 94);
+  const pos = at || viewCentre(page);
+  it.x = clamp(pos.x, 2, Math.max(2, 100 - it.w));
+  it.y = clamp(pos.y, 4, 88);
+  page.items.push(it);
+  return it;
+}
+/* dropped on a table that is already there: the columns go in beside what it
+   holds. A table with no header row does not want the names in a reading row. */
+function ftInto(it, got){
+  const block = tbHead(it) ? got.rows : got.rows.slice(1);
+  tbPour(it, 0, tbNC(it), block);
+  delete it.sort;                                    // whatever it was sorted by no longer sorts it
+  ftNote(it, got);
+  tbCW(it); tbAl(it); tbAutoAlign(it); tbFit(it);
+  tbSync(it);                                        // a plot reading it is reading it still
+  return it;
 }
 
 /* ================= the item ================= */
@@ -412,6 +586,29 @@ addCSS('fits', `
   text-transform:uppercase;cursor:pointer;color:#f3f0ea;
   background:color-mix(in srgb,var(--accent2) 56%,var(--ink))}
 .fthit:hover{background:var(--accent2)}
+/* picking columns, and hauling them out onto the paper */
+.ftcols.live tr[data-c]{cursor:grab}
+.ftcols.live tr[data-c]:hover td{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.ftcols.live tr.pick td{background:color-mix(in srgb,var(--accent) 26%,transparent)}
+.ftcols.live tr.pick td:first-child{box-shadow:inset 2.5px 0 0 var(--accent)}
+.ftcols.live tr.no{opacity:.42;cursor:not-allowed}
+.ftpick{display:flex;align-items:center;gap:10px;padding:7px 10px;font-size:10.5px;letter-spacing:.05em;
+  border-top:1px solid color-mix(in srgb,var(--ink) 18%,var(--paper));opacity:.72}
+.ftpick.on{opacity:1;background:color-mix(in srgb,var(--accent) 12%,var(--paper))}
+.ftpick.bad{background:color-mix(in srgb,#c2452c 22%,var(--paper));opacity:1}
+.ftpick .ftsay{flex:1;min-width:0}
+.ftout{flex:none;font:inherit;font-size:10.5px;letter-spacing:.08em;padding:4px 10px;color:var(--ink);
+  background:color-mix(in srgb,var(--paper) 96%,#fff);
+  box-shadow:inset 1.4px 1.4px 0 color-mix(in srgb,var(--paper) 60%,#fff),
+             inset -1.4px -1.4px 0 color-mix(in srgb,var(--ink) 40%,var(--paper))}
+.ftout:hover{background:color-mix(in srgb,var(--accent) 26%,var(--paper))}
+/* the reader gets out of the way while you aim — you cannot drop on paper you cannot see */
+.fview{transition:opacity .12s ease}
+.fview.ftaway{opacity:.05;pointer-events:none}
+.ftghost{position:fixed;z-index:99;pointer-events:none;transform:translate(-14px,-50%);
+  display:flex;flex-direction:column;gap:2px;font-family:var(--mono)}
+.ftghost span{font-size:11px;padding:3px 9px;color:#f3f0ea;letter-spacing:.04em;
+  background:color-mix(in srgb,var(--accent2) 86%,var(--ink));box-shadow:0 6px 16px rgba(0,0,0,.45)}
 @media (pointer:coarse){ .ftc{font-size:12.5px} .fttab{font-size:12.5px} }
 `);
 defineIcon('fits', '<path d="M4.5 5.5h15v13h-15z"/><path d="M4.5 12h15M12 5.5v13"/>' +
