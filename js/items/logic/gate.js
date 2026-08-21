@@ -10,13 +10,14 @@
 
    Three things are worth knowing before reading on.
 
-   **The truth table is the gate.** A gate definition says what it is called,
-   what its ports are, what its symbol is made of, and what comes out for every
-   combination of what goes in. There is no evaluator per gate — NAND is not
-   `!(a&&b)` written out again, it is the AND body with a bubble on the nose and
-   the table read backwards. Adding a gate is adding a row to LG_GATES.
+   **The definition is the device.** It says what the component is called, what
+   its ports are and which shared symbol primitives make its face. Ordinary
+   combinational gates carry truth tables — NAND is not `!(a&&b)` written out
+   again — while controls declare a source, Tri-State declares its extra `z`
+   rule, and flip-flops declare which stored-state rule they use. Adding a
+   component is still one entry in LG_GATES, not a branch through the app.
 
-   **The symbols are derived, not drawn eight times.** One viewBox, one stroke
+   **The symbols are derived, not drawn twenty-one times.** One viewBox, one stroke
    weight, one bubble, one stub length, one set of port positions. NAND is AND +
    bubble; NOR is OR + bubble; XOR is OR + the rear curve; XNOR is all three;
    NOT is the buffer triangle + bubble. Change the bubble once and every
@@ -36,20 +37,17 @@
    here pretends it is. */
 
 /* ================= what a wire carries =================
-   Two levels and two ways of not knowing. `x` is "nothing is driving this" —
-   an input with no lead in it, or anything downstream of one. `e` is "this
-   circuit cannot settle" — a loop, or anything fed by one. Keeping them apart
-   matters: an unwired input is a circuit you have not finished, a loop is a
-   circuit that is wrong.
-
-   They are deliberately not booleans. A later four-state simulation adds `z`
-   (nothing driving the wire at all, as against nothing driving the input) as
-   one more member of this set and one more branch in lgCombine — no signature
-   in this file changes. */
-const LG_0 = 0, LG_1 = 1, LG_X = 'x', LG_E = 'e';
+   Two levels and three other states. `x` is "this value is not known" — an
+   input with no lead in it, or anything downstream of one. `z` is the distinct
+   high-impedance state a disabled tri-state gate drives. `e` is "this circuit
+   cannot settle" — a loop, or anything fed by one. Keeping them apart matters:
+   an unfinished circuit, an intentionally disconnected bus and a wrong loop
+   must not quietly look like the same nought. They are deliberately not
+   booleans, and every evaluator and renderer carries the value as-is. */
+const LG_0 = 0, LG_1 = 1, LG_X = 'x', LG_Z = 'z', LG_E = 'e';
 const lgIsBit = v => v === LG_0 || v === LG_1;
 const lgOrX = v => (v === undefined || v === null) ? LG_X : v;
-const LG_WORD = { 0: 'nought', 1: 'one', x: 'not driven', e: 'in a loop' };
+const LG_WORD = { 0: 'nought', 1: 'one', x: 'not driven', z: 'high impedance', e: 'in a loop' };
 const lgWord = v => LG_WORD[v] || String(v);
 const LG_MAX_IN = 8;                       /* a truth table is 2^n rows: eight is 256 of them */
 
@@ -87,10 +85,21 @@ const LG_GATES = {
   xnor: { name: 'XNOR', ins: ['a', 'b'], outs: ['q'], table: [1, 0, 0, 1],
           shape: { body: 'or', back: true, bubble: true },
           tip: 'One when the two inputs agree' },
-  /* ---- the four things a circuit is wired to ---- */
+  tri:  { name: 'Tri-State', ins: ['a', 'en'], outs: ['q'],
+          eval: v => v.en === LG_E ? LG_E : v.en === LG_0 ? LG_Z :
+            v.en === LG_1 ? (v.a === LG_E ? LG_E : lgIsBit(v.a) ? v.a : LG_X) : LG_X,
+          shape: { body: 'tri', enable: true },
+          tip: 'Passes a while enable is one; otherwise its output is high impedance' },
+  /* ---- input and output controls ---- */
   sw:   { name: 'Switch', ins: [], outs: ['q'], src: it => (it.on ? LG_1 : LG_0),
           shape: { body: 'switch' },
           tip: 'Click it to send a nought or a one' },
+  btn:  { name: 'Push Button', ins: [], outs: ['q'], src: it => (it.on ? LG_1 : LG_0),
+          shape: { body: 'button' },
+          tip: 'Sends one only while it is held down' },
+  clk:  { name: 'Clock', ins: [], outs: ['q'], src: it => lgClockValue(it),
+          shape: { body: 'clock' },
+          tip: 'A repeating nought–one signal; pause it or change its speed from the toolbar' },
   zero: { name: 'Constant 0', ins: [], outs: ['q'], src: () => LG_0,
           shape: { body: 'const', k: 0 },
           tip: 'A nought, for ever' },
@@ -100,6 +109,19 @@ const LG_GATES = {
   lamp: { name: 'Lamp', ins: ['a'], outs: [], table: [0, 1],
           shape: { body: 'lamp' },
           tip: 'Lights up when what is wired into it is a one' },
+  digit:{ name: '4-Bit Digit', ins: ['8', '4', '2', '1'], outs: [], read: 'digit',
+          shape: { body: 'digit' },
+          tip: 'Reads four bits as one hexadecimal digit, from 0 to F' },
+  /* A flip-flop's output is stored state, so it breaks a combinational loop.
+     Inputs are sampled together on a rising clock edge; nq is always q turned over. */
+  srff: { name: 'SR Flip-Flop', ins: ['s', 'r', 'clk'], outs: ['q', 'nq'], seq: 'sr',
+          shape: { body: 'ff', mark: 'SR' }, tip: 'Set, reset or hold on a rising clock edge' },
+  dff:  { name: 'D Flip-Flop', ins: ['d', 'clk'], outs: ['q', 'nq'], seq: 'd',
+          shape: { body: 'ff', mark: 'D' }, tip: 'Copies D to Q on a rising clock edge' },
+  jkff: { name: 'JK Flip-Flop', ins: ['j', 'k', 'clk'], outs: ['q', 'nq'], seq: 'jk',
+          shape: { body: 'ff', mark: 'JK' }, tip: 'Sets, resets, holds or toggles on a rising edge' },
+  tff:  { name: 'T Flip-Flop', ins: ['t', 'clk'], outs: ['q', 'nq'], seq: 't',
+          shape: { body: 'ff', mark: 'T' }, tip: 'Toggles Q on a rising edge while T is one' },
   /* the one gate whose table is written by hand — see lgDef() */
   cust: { name: 'Custom', ins: null, outs: ['q'],
           shape: { body: 'box' },
@@ -150,7 +172,8 @@ const lgIsGate = it => !!(it && it.type === 'logic');
 /* which item drives each input of `id` — the map every reader wants */
 function lgDrivers(page, id){
   const m = new Map();
-  for(const w of lgWires(page)) if(w && w.to && w.to.item === id) m.set(w.to.port, w.from.item);
+  for(const w of lgWires(page)) if(w && w.from && w.to && w.to.item === id)
+    m.set(w.to.port, { item: w.from.item, port: w.from.port });
   return m;
 }
 function lgFindWire(page, id, port){
@@ -171,16 +194,16 @@ function lgEval(page){
     if(!by.has(w.from.item) || !by.has(w.to.item)) continue;
     let m = drv.get(w.to.item);
     if(!m) drv.set(w.to.item, m = new Map());
-    m.set(w.to.port, w.from.item);
+    m.set(w.to.port, { item: w.from.item, port: w.from.port });
   }
 
   const need = new Map(), feeds = new Map();
   for(const it of items){ need.set(it.id, 0); feeds.set(it.id, []); }
   for(const [dst, m] of drv) for(const src of m.values()){
     /* a port a gate does not actually have is not a dependency */
-    if(!feeds.has(src)) continue;
+    if(lgDef(by.get(dst)).seq || !feeds.has(src.item)) continue;
     need.set(dst, need.get(dst) + 1);
-    feeds.get(src).push(dst);
+    feeds.get(src.item).push(dst);
   }
   const queue = [];
   for(const it of items) if(!need.get(it.id)) queue.push(it.id);
@@ -198,28 +221,124 @@ function lgEval(page){
   return out;
 }
 /* one gate, given what is already settled. The only place a truth table is read */
+function lgOutput(vals, id, port){
+  const v = lgOrX(vals.get(id));
+  if(port === 'nq') return lgIsBit(v) ? 1 - v : v;
+  return v;
+}
+const lgSignal = (vals, src) => src ? lgOutput(vals, src.item, src.port) : LG_X;
+
 function lgOne(it, g, drv, out){
   if(g.src) return g.src(it);
+  if(g.seq) return lgOrX(it.q == null ? LG_0 : it.q);
   if(!g.ins.length) return LG_X;
   let idx = 0, unknown = false, bad = false;
+  const input = {};
   for(const p of g.ins){
-    const src = drv && drv.get(p);
-    const v = src == null ? LG_X : lgOrX(out.get(src));
+    const v = lgSignal(out, drv && drv.get(p));
+    input[p] = v;
     if(v === LG_E) bad = true;
     else if(!lgIsBit(v)) unknown = true;
     idx = idx * 2 + (v === LG_1 ? 1 : 0);
   }
   /* An unwired input is not a nought. Everything that touches one comes out
      saying so rather than quietly answering as if the wire were there. */
+  if(g.eval) return lgOrX(g.eval(input, it));       /* it may intentionally isolate a bad input */
   if(bad) return LG_E;
   if(unknown) return LG_X;
+  if(g.read === 'digit') return idx;
   return (g.table && g.table[idx]) ? LG_1 : LG_0;
 }
 const lgVal = (page, id) => lgOrX(lgEval(page).get(id));
 /* what a lead is carrying: its source's value, unless either end is in a loop */
 function lgWireVal(vals, w){
-  const a = lgOrX(vals.get(w.from.item)), b = lgOrX(vals.get(w.to.item));
+  const a = lgOutput(vals, w.from.item, w.from.port), b = lgOrX(vals.get(w.to.item));
   return (a === LG_E || b === LG_E) ? LG_E : a;
+}
+
+/* ================= state and time =================
+   Combinational gates are pure. A flip-flop is the deliberate exception: its
+   stored q is a source for this evaluation, so feedback through it is not a
+   combinational loop. All flip-flops sample the old circuit together, then take
+   their next states together, which is the distinction synchronous logic needs. */
+function lgInputs(page, vals, it){
+  const drv = lgDrivers(page, it.id), out = {};
+  for(const p of lgDef(it).ins) out[p] = lgSignal(vals, drv.get(p));
+  return out;
+}
+function lgSeqNext(kind, v, q){
+  q = lgIsBit(q) ? q : LG_X;
+  if(kind === 'd') return lgIsBit(v.d) ? v.d : LG_X;
+  if(kind === 't') return !lgIsBit(v.t) ? LG_X : v.t ? (lgIsBit(q) ? 1 - q : LG_X) : q;
+  if(kind === 'sr'){
+    if(!lgIsBit(v.s) || !lgIsBit(v.r)) return LG_X;
+    if(v.s && v.r) return LG_X;
+    if(v.s) return LG_1;
+    if(v.r) return LG_0;
+    return q;
+  }
+  if(kind === 'jk'){
+    if(!lgIsBit(v.j) || !lgIsBit(v.k)) return LG_X;
+    if(v.j && v.k) return lgIsBit(q) ? 1 - q : LG_X;
+    if(v.j) return LG_1;
+    if(v.k) return LG_0;
+    return q;
+  }
+  return q;
+}
+function lgAdvance(page){
+  const vals = lgEval(page), pending = [], clocks = [];
+  for(const it of (page.items || []).filter(lgIsGate)){
+    const g = lgDef(it); if(!g.seq) continue;
+    const v = lgInputs(page, vals, it);
+    const clk = lgIsBit(v.clk) ? v.clk : LG_0;
+    const before = lgIsBit(it.clk) ? it.clk : LG_0;
+    clocks.push({ it, clk });
+    if(before === LG_0 && clk === LG_1)
+      pending.push({ it, q: lgSeqNext(g.seq, v, it.q == null ? LG_0 : it.q) });
+  }
+  let changed = false;
+  for(const x of clocks) if(x.it.clk !== x.clk){ x.it.clk = x.clk; changed = true; }
+  for(const x of pending) if(x.it.q !== x.q){ x.it.q = x.q; changed = true; }
+  return changed;
+}
+
+/* One small scheduler serves every clock on the open sheet. Clock phase is live
+   state, not document history; flip-flop state reached from it is persisted with
+   history disabled so an unattended clock cannot eat the undo stack. */
+const LG_CLOCK = new Map();                       // item id → {v,next}
+let lgClockTimer = 0;
+const lgClockHz = it => clamp(+it.hz || 1, .5, 4);
+function lgClockState(it){
+  let s = LG_CLOCK.get(it.id);
+  if(!s){ s = { v: it.on ? LG_1 : LG_0, next: performance.now() + 500 / lgClockHz(it) }; LG_CLOCK.set(it.id, s); }
+  return s;
+}
+function lgClockValue(it){ return it.paused ? (it.on ? LG_1 : LG_0) : lgClockState(it).v; }
+function lgClockArm(){
+  clearTimeout(lgClockTimer); lgClockTimer = 0;
+  const running = openPages().flatMap(p => (p.items || []).filter(it =>
+    lgIsGate(it) && lgKind(it) === 'clk' && !it.paused));
+  if(!running.length) return;
+  const now = performance.now();
+  const due = Math.min(...running.map(it => lgClockState(it).next));
+  lgClockTimer = setTimeout(lgClockTick, Math.max(16, due - now));
+}
+function lgClockTick(){
+  lgClockTimer = 0;
+  const now = performance.now(); let any = false;
+  for(const page of openPages()){
+    let moved = false;
+    for(const it of (page.items || []).filter(it => lgIsGate(it) && lgKind(it) === 'clk' && !it.paused)){
+      const s = lgClockState(it), half = 500 / lgClockHz(it);
+      if(now + 1 < s.next) continue;
+      do { s.v = s.v ? LG_0 : LG_1; s.next += half; } while(s.next <= now);
+      moved = any = true;
+    }
+    if(moved && lgAdvance(page)) queueSave(page.id, false);
+  }
+  if(any){ lgSync(); lgWake(); }
+  lgClockArm();
 }
 
 /* ================= the symbol =================
@@ -233,7 +352,7 @@ function lgWireVal(vals, w){
    OR back is covered by the body that goes on top of it, which is exactly how
    the symbol is drawn by hand. */
 const LG_VBW = 100, LG_VBH = 64;
-const lgH = it => Math.max(LG_VBH, 20 + lgDef(it).ins.length * 15);
+const lgH = it => Math.max(LG_VBH, 20 + Math.max(lgDef(it).ins.length, lgDef(it).outs.length) * 15);
 /* where the inputs sit down the left edge, evenly, never tighter than the body */
 function lgSpread(n, h){
   if(!n) return [];
@@ -248,7 +367,8 @@ function lgPorts(it){
   const g = lgDef(it), h = lgH(it);
   const ys = lgSpread(g.ins.length, h);
   const out = g.ins.map((p, i) => ({ port: p, dir: 'in', x: 6, y: ys[i] }));
-  for(const p of g.outs) out.push({ port: p, dir: 'out', x: 94, y: h / 2 });
+  const oys = lgSpread(g.outs.length, h);
+  g.outs.forEach((p, i) => out.push({ port: p, dir: 'out', x: 94, y: oys[i] }));
   return out;
 }
 /* where the lever of a switch stands */
@@ -260,16 +380,30 @@ function lgNumeral(it, v){
   const g = lgDef(it);
   if(g.shape.body === 'const') return String(g.shape.k);
   if(g.shape.body === 'switch') return it && it.on ? '1' : '0';
+  if(g.shape.body === 'button') return it && it.on ? '1' : '0';
+  if(g.shape.body === 'clock') return lgClockValue(it) ? '1' : '0';
+  if(g.shape.body === 'digit') return typeof v === 'number' && v >= 0 && v < 16
+    ? '0123456789ABCDEF'[v] : v === LG_E ? '!' : '?';
   return v === LG_1 ? '1' : v === LG_0 ? '0' : v === LG_E ? '!' : '?';
 }
 /* what a screen reader is told, and what the pointer's tooltip says */
 function lgLabel(it, v){
   const g = lgDef(it);
   if(g.shape.body === 'switch') return 'Switch, sending ' + (it && it.on ? 'one' : 'nought');
+  if(g.shape.body === 'button') return 'Push button, sending ' + (it && it.on ? 'one' : 'nought');
+  if(g.shape.body === 'clock') return 'Clock, ' + (it && it.paused ? 'paused at ' : 'sending ') + lgWord(v);
   if(g.shape.body === 'const') return 'Constant ' + g.shape.k;
   if(g.shape.body === 'lamp') return 'Lamp, showing ' + lgWord(v);
+  if(g.shape.body === 'digit') return '4-bit digit, showing ' + lgNumeral(it, v);
+  if(g.seq) return g.name + ', Q is ' + lgWord(v);
   return g.name + ' gate, output ' + lgWord(v);
 }
+
+const LG_SEGS = {
+  0:'abcdef', 1:'bc', 2:'abdeg', 3:'abcdg', 4:'bcfg', 5:'acdfg', 6:'acdefg', 7:'abc',
+  8:'abcdefg', 9:'abcdfg', 10:'abcefg', 11:'cdefg', 12:'adef', 13:'bcdeg', 14:'adefg', 15:'aefg'
+};
+const lgSegOn = (v, s) => typeof v === 'number' && (LG_SEGS[v] || '').indexOf(s) >= 0;
 
 /* The symbol itself. `plain` swaps the stylesheet's classes for presentation
    attributes so the very same builder draws the palette tile, where there is no
@@ -277,6 +411,7 @@ function lgLabel(it, v){
 function lgSym(it, plain, v){
   const g = lgDef(it), sh = g.shape, h = lgH(it), cy = rd1(h / 2);
   const ys = lgSpread(g.ins.length, h);
+  const oys = lgSpread(g.outs.length, h);
   const body = plain ? 'fill="none"' : 'class="lgb"';
   const wire = plain ? 'fill="none"' : 'class="lgs"';
   const solid = plain ? 'fill="currentColor" stroke="none"' : 'class="lgd"';
@@ -286,8 +421,8 @@ function lgSym(it, plain, v){
   let s = '';
 
   /* ---- the stubs: every symbol's ports reach the same distance ---- */
-  if(g.outs.length && sh.body !== 'switch' && sh.body !== 'const')
-    s += '<path ' + wire + ' d="M74 ' + cy + 'H94"/>';
+  if(g.outs.length && sh.body !== 'switch' && sh.body !== 'const' && sh.body !== 'button' && sh.body !== 'clock')
+    for(const y of oys) s += '<path ' + wire + ' d="M74 ' + y + 'H94"/>';
   for(const y of ys) s += '<path ' + wire + ' d="M6 ' + y + 'H38"/>';
 
   /* ---- the bodies ---- */
@@ -301,8 +436,13 @@ function lgSym(it, plain, v){
          'C68 ' + rd1(cy + 12) + ' 50 ' + bot + ' 28 ' + bot +
          'C40 ' + rd1(cy + 12) + ' 40 ' + rd1(cy - 12) + ' 28 ' + top + 'Z"/>';
   }
-  else if(sh.body === 'tri')
+  else if(sh.body === 'tri'){
     s += '<path ' + body + ' d="M32 ' + top + 'L76 ' + cy + 'L32 ' + bot + 'Z"/>';
+    if(sh.enable && !plain) g.ins.forEach((p, i) => {
+      s += '<text class="lgnum lgtiny lgpinlab" x="36" y="' + rd1(ys[i] + 3.5) + '">' +
+        (p === 'en' ? 'EN' : p.toUpperCase()) + '</text>';
+    });
+  }
   else if(sh.body === 'box'){
     const nm = g.name.slice(0, 9);
     s += '<rect ' + body + ' x="26" y="8" width="50" height="' + (h - 16) + '" rx="4"/>';
@@ -320,16 +460,37 @@ function lgSym(it, plain, v){
     }
   }
   else if(sh.body === 'switch'){
-    s += '<path ' + wire + ' d="M12 ' + cy + 'H30"/>';
-    s += '<path ' + wire + ' d="M68 ' + cy + 'H94"/>';
-    s += '<circle ' + solid + ' cx="30" cy="' + cy + '" r="3.6"/>';
-    s += '<circle ' + solid + ' cx="68" cy="' + cy + '" r="3.6"/>';
-    s += '<path ' + (plain ? 'fill="none"' : 'class="lgs lglev"') + ' d="' +
-         lgLever(plain ? { on: 0 } : it, h) + '"/>';
-    /* the icon in the palette is the lever alone — a numeral shrunk to a
-       twenty-fourth of a tile is a smudge, not a reading */
-    if(!plain) s += '<text class="lgnum lgval" x="49" y="' + rd1(cy + 26) + '">' +
-         lgNumeral(it, v) + '</text>';
+    const look = plain ? 'lever' : (it.look || 'lever');
+    if(look === 'rocker'){
+      s += '<path ' + wire + ' d="M70 ' + cy + 'H94"/>' +
+           '<rect ' + body + ' x="28" y="' + rd1(cy - 17) + '" width="42" height="34" rx="17"/>' +
+           '<circle class="lgrock" cx="' + (it.on ? 57 : 41) + '" cy="' + cy + '" r="11"/>';
+    } else if(look === 'plain'){
+      s += '<path ' + wire + ' d="M72 ' + cy + 'H94"/>' +
+           '<rect ' + body + ' x="28" y="' + rd1(cy - 18) + '" width="44" height="36" rx="4"/>' +
+           '<text class="lgnum lgval" x="50" y="' + rd1(cy + 7) + '">' + lgNumeral(it, v) + '</text>';
+    } else {
+      s += '<path ' + wire + ' d="M12 ' + cy + 'H30"/>' +
+           '<path ' + wire + ' d="M68 ' + cy + 'H94"/>' +
+           '<circle ' + solid + ' cx="30" cy="' + cy + '" r="3.6"/>' +
+           '<circle ' + solid + ' cx="68" cy="' + cy + '" r="3.6"/>' +
+           '<path ' + (plain ? 'fill="none"' : 'class="lgs lglev"') + ' d="' +
+           lgLever(plain ? { on: 0 } : it, h) + '"/>';
+      if(!plain) s += '<text class="lgnum lgval" x="49" y="' + rd1(cy + 26) + '">' +
+           lgNumeral(it, v) + '</text>';
+    }
+  }
+  else if(sh.body === 'button'){
+    s += '<path ' + wire + ' d="M70 ' + cy + 'H94"/>' +
+         '<rect ' + body + ' x="27" y="' + rd1(cy - 19) + '" width="43" height="38" rx="6"/>' +
+         '<circle class="lgpress" cx="48.5" cy="' + cy + '" r="12"/>';
+  }
+  else if(sh.body === 'clock'){
+    s += '<path ' + wire + ' d="M72 ' + cy + 'H94"/>' +
+         '<rect ' + body + ' x="25" y="' + rd1(cy - 20) + '" width="47" height="40" rx="5"/>' +
+         '<path ' + wire + ' d="M31 ' + rd1(cy + 7) + 'H39V' + rd1(cy - 8) + 'H51V' +
+         rd1(cy + 7) + 'H64"/>' +
+         (!plain ? '<circle class="lgclkdot" cx="65" cy="' + rd1(cy - 12) + '" r="3"/>' : '');
   }
   else if(sh.body === 'const'){
     s += '<path ' + wire + ' d="M72 ' + cy + 'H94"/>';
@@ -351,6 +512,32 @@ function lgSym(it, plain, v){
     if(!plain) s += '<text class="lgnum lgval" x="52" y="' + rd1(cy + 7) + '">' +
          lgNumeral(it, v) + '</text>';
   }
+  else if(sh.body === 'digit'){
+    const seg = (k, d) => '<path class="lgseg' + (plain || lgSegOn(v, k) ? ' on' : '') +
+      '" data-s="' + k + '" d="' + d + '"/>';
+    s += '<rect ' + body + ' x="28" y="6" width="48" height="' + (h - 12) + '" rx="5"/>' +
+      seg('a', 'M41 ' + (cy - 24) + 'H63') + seg('g', 'M41 ' + cy + 'H63') +
+      seg('d', 'M41 ' + (cy + 24) + 'H63') + seg('f', 'M38 ' + (cy - 21) + 'V' + (cy - 4)) +
+      seg('b', 'M66 ' + (cy - 21) + 'V' + (cy - 4)) + seg('e', 'M38 ' + (cy + 4) + 'V' + (cy + 21)) +
+      seg('c', 'M66 ' + (cy + 4) + 'V' + (cy + 21)) +
+      (!plain ? '<text class="lgnum lgdigbad" x="52" y="' + rd1(cy + 7) + '">' + lgNumeral(it, v) + '</text>' : '');
+    if(!plain) g.ins.forEach((p, i) => {
+      s += '<text class="lgnum lgtiny lgpinlab" x="31" y="' + rd1(ys[i] + 3.5) + '">' + p + '</text>';
+    });
+  }
+  else if(sh.body === 'ff'){
+    s += '<rect ' + body + ' x="26" y="5" width="50" height="' + (h - 10) + '" rx="3"/>' +
+      '<text ' + (plain ? 'fill="currentColor" stroke="none" text-anchor="middle" font-size="16"'
+        : 'class="lgnum lgffmark"') + ' x="51" y="' + rd1(cy + 5) + '">' + esc(sh.mark) + '</text>';
+    if(!plain){
+      g.ins.forEach((p, i) => { s += '<text class="lgnum lgtiny lgpinlab" x="31" y="' +
+        rd1(ys[i] + 3.5) + '">' + esc(p === 'clk' ? '▸' : p.toUpperCase()) + '</text>'; });
+      g.outs.forEach((p, i) => { s += '<text class="lgnum lgtiny lgpoutlab" x="70" y="' +
+        rd1(oys[i] + 3.5) + '">' + (p === 'nq' ? 'Q̅' : 'Q') + '</text>'; });
+    }
+    const ni = g.outs.indexOf('nq');
+    if(ni >= 0) s += '<circle ' + body + ' cx="81" cy="' + oys[ni] + '" r="4"/>';
+  }
   if(sh.bubble) s += '<circle ' + body + ' cx="81" cy="' + cy + '" r="5"/>';
   return s;
 }
@@ -359,8 +546,8 @@ function lgPortSVG(it, page, vals){
   const g = lgDef(it), drv = page ? lgDrivers(page, it.id) : new Map();
   const mine = lgOrX(vals && vals.get(it.id));
   return lgPorts(it).map(p => {
-    const v = p.dir === 'out' ? mine
-      : (drv.has(p.port) ? lgOrX(vals && vals.get(drv.get(p.port))) : LG_X);
+    const v = p.dir === 'out' ? lgOutput(vals || new Map(), it.id, p.port)
+      : lgSignal(vals || new Map(), drv.get(p.port));
     const tip = (p.dir === 'out' ? 'Output ' : 'Input ') + p.port + ' — ' + lgWord(v) +
       '. Drag from here to another port.';
     return '<g class="lgp lgp-' + p.dir + '" data-p="' + esc(p.port) + '" data-dir="' + p.dir +
@@ -377,13 +564,18 @@ function lgHTML(it, c){
   const g = lgDef(it), h = lgH(it);
   const vals = lgEval(c.page);
   const v = lgOrX(vals.get(it.id));
+  const body = g.shape.body;
+  let symbol = lgSym(it, false, v);
+  if(body === 'switch') symbol = '<g class="lgsw lgctl" role="switch" tabindex="0" aria-checked="' +
+    (it.on ? 'true' : 'false') + '" aria-label="Switch — click to send a nought or a one">' + symbol + '</g>';
+  else if(body === 'button') symbol = '<g class="lgbtn lgctl" role="button" tabindex="0" aria-pressed="' +
+    (it.on ? 'true' : 'false') + '" aria-label="Push button — hold to send one">' + symbol + '</g>';
+  else if(body === 'clock') symbol = '<g class="lgclock lgctl" role="switch" tabindex="0" aria-checked="' +
+    (!it.paused ? 'true' : 'false') + '" aria-label="Clock — click to pause or run">' + symbol + '</g>';
   return '<div class="body lgw" data-gate="' + esc(lgKind(it)) + '" data-v="' + v + '">' +
     '<svg class="lgsvg" viewBox="0 0 ' + LG_VBW + ' ' + h + '" role="img" aria-label="' +
       esc(lgLabel(it, v)) + '">' +
-      (g.shape.body === 'switch'
-        ? '<g class="lgsw" role="switch" tabindex="0" aria-checked="' + (it.on ? 'true' : 'false') +
-          '" aria-label="Switch — click to send a nought or a one">' + lgSym(it, false, v) + '</g>'
-        : lgSym(it, false, v)) +
+      symbol +
       lgPortSVG(it, c.page, vals) +
     '</svg><figcaption></figcaption></div>';
 }
@@ -400,8 +592,8 @@ function lgPaint(el, it, page, vals){
   w.setAttribute('data-v', v);
   const drv = lgDrivers(page, it.id);
   w.querySelectorAll('.lgp').forEach(p => {
-    const pv = p.dataset.dir === 'out' ? v
-      : (drv.has(p.dataset.p) ? lgOrX(vals.get(drv.get(p.dataset.p))) : LG_X);
+    const pv = p.dataset.dir === 'out' ? lgOutput(vals, it.id, p.dataset.p)
+      : lgSignal(vals, drv.get(p.dataset.p));
     p.setAttribute('data-v', pv);
     const t = p.querySelector('title');
     if(t) t.textContent = (p.dataset.dir === 'out' ? 'Output ' : 'Input ') + p.dataset.p +
@@ -409,13 +601,22 @@ function lgPaint(el, it, page, vals){
   });
   const lev = w.querySelector('.lglev');
   if(lev) lev.setAttribute('d', lgLever(it, lgH(it)));
+  const rock = w.querySelector('.lgrock');
+  if(rock) rock.setAttribute('cx', it.on ? 57 : 41);
   /* .lgval, not .lgnum: the only glyphs that say a value are a switch's and a
      lamp's. A constant's numeral is fixed and a custom gate's writing is its
      NAME, and overwriting that would rub the gate's own label out. */
   const num = w.querySelector('.lgval');
   if(num) num.textContent = lgNumeral(it, v);
+  w.querySelectorAll('.lgseg').forEach(s => s.classList.toggle('on', lgSegOn(v, s.dataset.s)));
+  const bad = w.querySelector('.lgdigbad');
+  if(bad){ bad.textContent = lgNumeral(it, v); bad.hidden = typeof v === 'number'; }
   const sw = w.querySelector('.lgsw');
   if(sw) sw.setAttribute('aria-checked', it.on ? 'true' : 'false');
+  const btn = w.querySelector('.lgbtn');
+  if(btn) btn.setAttribute('aria-pressed', it.on ? 'true' : 'false');
+  const clk = w.querySelector('.lgclock');
+  if(clk) clk.setAttribute('aria-checked', it.paused ? 'false' : 'true');
   const svg = w.querySelector('svg');
   if(svg) svg.setAttribute('aria-label', lgLabel(it, v));
 }
@@ -473,7 +674,20 @@ function lgDir(rot){
   const t = (+rot || 0) * Math.PI / 180;
   return { x: Math.cos(t), y: Math.sin(t) };
 }
-function lgPath(a, b, rotA, rotB){
+function lgCleanPath(a, b, lane){
+  lane = +lane || 0;
+  if(Math.abs(a.y - b.y) < 1) return 'M' + rd1(a.x) + ' ' + rd1(a.y) + 'H' + rd1(b.x);
+  const forward = b.x > a.x + 18;
+  const mx = forward ? (a.x + b.x) / 2 + lane : Math.max(a.x, b.x) + 28 + Math.abs(lane);
+  const sy = b.y > a.y ? 1 : -1, r = Math.min(7, Math.abs(b.y - a.y) / 2,
+    Math.abs(mx - a.x) / 2, Math.abs(b.x - mx) / 2);
+  return 'M' + rd1(a.x) + ' ' + rd1(a.y) + 'H' + rd1(mx - r) +
+    'Q' + rd1(mx) + ' ' + rd1(a.y) + ' ' + rd1(mx) + ' ' + rd1(a.y + sy * r) +
+    'V' + rd1(b.y - sy * r) + 'Q' + rd1(mx) + ' ' + rd1(b.y) + ' ' +
+    rd1(mx + (b.x >= mx ? r : -r)) + ' ' + rd1(b.y) + 'H' + rd1(b.x);
+}
+function lgPath(a, b, rotA, rotB, clean, lane){
+  if(clean && !(+rotA || 0) && !(+rotB || 0)) return lgCleanPath(a, b, lane);
   const k = clamp(Math.hypot(b.x - a.x, b.y - a.y) * 0.42 + 14, 20, 130);
   const da = lgDir(rotA), db = lgDir(rotB);
   return 'M' + rd1(a.x) + ' ' + rd1(a.y) +
@@ -497,7 +711,7 @@ function lgWireList(){
   }
   return out;
 }
-const lgJoint = w => w.from.item + ' ' + w.from.port;
+const lgJoint = w => w.from.item + '\0' + w.from.port;
 
 function lgLay(){
   const svg = lgBoard();
@@ -519,7 +733,7 @@ function lgLay(){
       g.addEventListener('click', e => { e.stopPropagation(); lgSelect(r); });
       svg.appendChild(g);
     }
-    const d = lgPath(a, b, r.src.rot, r.dst.rot);
+    const d = lgPath(a, b, r.src.rot, r.dst.rot, r.w.clean, r.w.route);
     g.querySelectorAll('path').forEach(p => p.setAttribute('d', d));
     g.setAttribute('class', 'lgwire' + (LG_SEL && LG_SEL.w.id === r.w.id ? ' sel' : ''));
     g.setAttribute('data-v', r.v);
@@ -591,7 +805,8 @@ function lgStaticWires(wrap, page, bIdx){
     const p = document.createElementNS(SVGNS, 'path');
     p.setAttribute('class', 'lgl');
     p.setAttribute('data-v', lgWireVal(vals, w));
-    p.setAttribute('d', lgPath(a, b, by.get(w.from.item).rot, by.get(w.to.item).rot));
+    p.setAttribute('d', lgPath(a, b, by.get(w.from.item).rot, by.get(w.to.item).rot,
+      w.clean, w.route));
     svg.appendChild(p);
     if(fan[lgJoint(w)] > 1 && !drawn[lgJoint(w)]){
       drawn[lgJoint(w)] = 1;
@@ -604,6 +819,135 @@ function lgStaticWires(wrap, page, bIdx){
   }
 }
 onPageOverlay(lgStaticWires);
+
+/* ================= putting a small circuit in order =================
+   Marquee selection belongs to core; circuit layout belongs here. The action
+   is offered only when the picked logic items form one connected component.
+   Ranks follow signal flow, with flip-flops treated as new sources so their
+   feedback leads do not turn an ordinary sequential circuit into a layout
+   cycle. Items in one rank keep their current vertical order. */
+function lgSelectedCircuit(items, page){
+  if(!page || items.length < 2 || items.some(it => !lgIsGate(it))) return null;
+  const ids = new Set(items.map(it => it.id));
+  const wires = lgWires(page).filter(w => w && w.from && w.to &&
+    ids.has(w.from.item) && ids.has(w.to.item));
+  if(!wires.length) return null;
+  const near = new Map(items.map(it => [it.id, []]));
+  wires.forEach(w => { near.get(w.from.item).push(w.to.item); near.get(w.to.item).push(w.from.item); });
+  const seen = new Set(), todo = [items[0].id];
+  while(todo.length){
+    const id = todo.pop();
+    if(seen.has(id)) continue;
+    seen.add(id); near.get(id).forEach(x => { if(!seen.has(x)) todo.push(x); });
+  }
+  return seen.size === items.length ? { items, wires, ids } : null;
+}
+function lgCircuitRanks(c){
+  const by = new Map(c.items.map(it => [it.id, it]));
+  const rank = new Map(c.items.map(it => [it.id, 0]));
+  const indeg = new Map(c.items.map(it => [it.id, 0]));
+  const next = new Map(c.items.map(it => [it.id, []]));
+  /* A flip-flop samples its inputs and starts a new combinational run at Q. */
+  for(const w of c.wires){
+    if(lgDef(by.get(w.to.item)).seq) continue;
+    next.get(w.from.item).push(w.to.item);
+    indeg.set(w.to.item, indeg.get(w.to.item) + 1);
+  }
+  const todo = c.items.filter(it => indeg.get(it.id) === 0)
+    .sort((a, b) => a.x - b.x).map(it => it.id);
+  const done = new Set();
+  while(todo.length){
+    const id = todo.shift(); done.add(id);
+    for(const dst of next.get(id)){
+      rank.set(dst, Math.max(rank.get(dst), rank.get(id) + 1));
+      indeg.set(dst, indeg.get(dst) - 1);
+      if(indeg.get(dst) === 0) todo.push(dst);
+    }
+  }
+  /* A pure combinational loop cannot be ordered causally. Keep its members
+     together after the settled part instead of inventing a misleading order. */
+  const last = Math.max(0, ...rank.values());
+  c.items.filter(it => !done.has(it.id)).forEach(it => rank.set(it.id, last + 1));
+  return rank;
+}
+function lgTidySelection(items, page){
+  const c = lgSelectedCircuit(items, page);
+  if(!c) return;
+  const surf = document.querySelector('#pageHost .item[data-id="' + items[0].id + '"]')?.parentElement;
+  if(!surf) return;
+  const sr = surf.getBoundingClientRect(), rank = lgCircuitRanks(c);
+  const rows = new Map();
+  for(const it of items){
+    const r = rank.get(it.id);
+    if(!rows.has(r)) rows.set(r, []);
+    rows.get(r).push(it);
+  }
+  const cols = [...rows].sort((a, b) => a[0] - b[0]).map(x => x[1].sort((a, b) => a.y - b.y));
+  const width = cols.map(col => Math.max(...col.map(it => it.w || 22)));
+  const sumW = width.reduce((n, x) => n + x, 0);
+  const gapX = cols.length < 2 ? 0 : clamp((96 - sumW) / (cols.length - 1), 1.8, pctW(44));
+  const totalW = sumW + gapX * (cols.length - 1);
+  const heights = new Map(items.map(it => {
+    const el = surf.querySelector('.item[data-id="' + it.id + '"]');
+    return [it.id, el && sr.height ? el.getBoundingClientRect().height / sr.height * 100 : pctH(90)];
+  }));
+  const left = Math.min(...items.map(it => it.x));
+  const right = Math.max(...items.map(it => it.x + (it.w || 22)));
+  const top = Math.min(...items.map(it => it.y));
+  const bottom = Math.max(...items.map(it => it.y + heights.get(it.id)));
+  const centreX = (left + right) / 2, centreY = (top + bottom) / 2;
+  let x = clamp(centreX - totalW / 2, 2, Math.max(2, 98 - totalW));
+  const targets = [];
+  for(let ci = 0; ci < cols.length; ci++){
+    const col = cols[ci], gapY = pctH(24);
+    const totalH = col.reduce((n, it) => n + heights.get(it.id), 0) + gapY * (col.length - 1);
+    let y = clamp(centreY - totalH / 2, 2, Math.max(2, 98 - totalH));
+    for(const it of col){
+      targets.push({ it, x: x + (width[ci] - (it.w || 22)) / 2, y });
+      y += heights.get(it.id) + gapY;
+    }
+    x += width[ci] + gapX;
+  }
+
+  /* Orthogonal routes are a property of these leads, so they survive saving,
+     printing and exporting. Moving a gate by hand later leaves the tidy route
+     intact until rotation makes a curve the honest representation again. */
+  c.wires.forEach(w => { w.clean = 1; w.route = 0; });
+  let pending = targets.length * 2, finished = false;
+  const moving = [];
+  const finish = () => {
+    if(finished) return;
+    finished = true;
+    moving.forEach(m => { if(m.el) m.el._fling = null; });
+    queueSave(page.id); syncSelectionDOM(); lgSync(); lgWake();
+    lgSay('circuit tidied — its logic and connections are unchanged'); SND.plop();
+  };
+  const rested = () => { if(--pending === 0) finish(); };
+  for(const t of targets){
+    const el = surf.querySelector('.item[data-id="' + t.it.id + '"]');
+    if(el && el._fling) el._fling();
+    t.it.rot = 0;
+    if(el) el.style.transform = 'rotate(0deg)';
+    const sx = spring({ from: t.it.x, response: .42, damping: 1, rest: .025,
+      onUpdate: v => { t.it.x = v; if(el) el.style.left = v + '%'; lgWake(); }, onRest: rested });
+    const sy = spring({ from: t.it.y, response: .42, damping: 1, rest: .025,
+      onUpdate: v => { t.it.y = v; if(el) el.style.top = v + '%'; lgWake(); }, onRest: rested });
+    moving.push({ el, sx, sy, target: t });
+  }
+  const cancel = () => {
+    if(finished) return;
+    moving.forEach(m => { m.sx.stopAt(); m.sy.stopAt(); });
+    finish();
+  };
+  moving.forEach(m => { if(m.el) m.el._fling = cancel; });
+  moving.forEach(m => { m.sx.to(m.target.x); m.sy.to(m.target.y); });
+}
+defineSelectionAction({
+  id: 'tidy-logic', order: 10, label: '⇥ Tidy logic',
+  title: 'Arrange this connected circuit by signal flow and clean up its leads',
+  when: (items, page) => !!lgSelectedCircuit(items, page),
+  run: lgTidySelection
+});
 
 /* ================= making and breaking a connection ================= */
 /* the strip along the bottom, borrowed for a sentence about what just happened */
@@ -631,6 +975,7 @@ function lgConnect(page, from, to){
   if(had) page.wires = page.wires.filter(w => w.id !== had.id);
   page.wires.push({ id: uid(), from: { item: from.item, port: from.port },
                     to: { item: to.item, port: to.port } });
+  lgAdvance(page);
   queueSave(page.id);
   lgSync(); lgWake(); SND.pop();
   if(lgVal(page, to.item) === LG_E)
@@ -640,6 +985,7 @@ function lgConnect(page, from, to){
 }
 function lgDisconnect(page, w, quiet){
   page.wires = lgWires(page).filter(x => x.id !== w.id);
+  lgAdvance(page);
   queueSave(page.id);
   if(LG_SEL && LG_SEL.w.id === w.id) lgDeselect();
   lgSync(); lgWake();
@@ -649,14 +995,36 @@ function lgUnplugAll(page, it){
   const before = lgWires(page).length;
   page.wires = lgWires(page).filter(w => w.from.item !== it.id && w.to.item !== it.id);
   if(page.wires.length === before) return;
+  lgAdvance(page);
   queueSave(page.id); lgDeselect(); lgSync(); lgWake(); SND.pluck();
 }
 function lgToggle(it, page){
   if(lgKind(it) !== 'sw') return;
   it.on = it.on ? 0 : 1;
+  lgAdvance(page);
   queueSave(page.id);
   lgSync(); lgWake();
   SND.tick();
+}
+function lgPress(it, page, on){
+  if(lgKind(it) !== 'btn' || !!it.on === !!on) return;
+  it.on = on ? 1 : 0;
+  lgAdvance(page); queueSave(page.id);
+  lgSync(); lgWake(); SND.tick();
+}
+function lgPauseClock(it, page){
+  if(lgKind(it) !== 'clk') return;
+  const s = lgClockState(it);
+  it.on = s.v; it.paused = !it.paused;
+  LG_CLOCK.delete(it.id);
+  lgAdvance(page); queueSave(page.id);
+  lgSync(); lgWake(); lgClockArm(); SND.tick();
+}
+const LG_LOOKS = ['lever', 'rocker', 'plain'];
+function lgCycleSwitchLook(it, page){
+  const at = LG_LOOKS.indexOf(it.look || 'lever');
+  it.look = LG_LOOKS[(at + 1) % LG_LOOKS.length];
+  queueSave(page.id); lgRedrawItem(it, page); lgSync(); lgWake(); SND.tick();
 }
 
 /* ---- pulling a lead ----
@@ -930,8 +1298,7 @@ function lgTTDraw(){
   /* which row the gate is actually standing on */
   const vals = lgEval(page), drv = lgDrivers(page, it.id);
   const cur = g.ins.map(p => {
-    const s = drv.get(p);
-    return s == null ? LG_X : lgOrX(vals.get(s));
+    return lgSignal(vals, drv.get(p));
   });
   const mine = lgOrX(vals.get(it.id));
   const live = mine !== LG_E && cur.every(lgIsBit);
@@ -1035,8 +1402,8 @@ function lgBind(el, it, page){
     p.addEventListener('pointerdown', e =>
       lgStartWire(e, it, p.dataset.p, p.dataset.dir, page));
   });
-  const sw = w.querySelector('.lgsw');
-  if(sw){
+  const tap = w.querySelector('.lgsw,.lgclock');
+  if(tap){
     let dn = null;
     el.addEventListener('pointerdown', e => {
       dn = e.target.closest('.lgp') ? null : { x: e.clientX, y: e.clientY };
@@ -1045,15 +1412,38 @@ function lgBind(el, it, page){
       const d = dn; dn = null;
       if(!d || e.target.closest('.lgp')) return;
       if(Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;   /* that was a drag */
-      lgToggle(it, page);
+      lgKind(it) === 'sw' ? lgToggle(it, page) : lgPauseClock(it, page);
     });
-    sw.addEventListener('keydown', e => {
+    tap.addEventListener('keydown', e => {
       if(e.key === 'Enter' || e.key === ' '){
         e.preventDefault(); e.stopPropagation();
-        lgToggle(it, page);
+        lgKind(it) === 'sw' ? lgToggle(it, page) : lgPauseClock(it, page);
       }
     });
   }
+  const btn = w.querySelector('.lgbtn');
+  if(btn){
+    const down = e => {
+      if(!e.target.closest('.lgpress')) return;
+      e.preventDefault(); e.stopPropagation();
+      try{ btn.setPointerCapture(e.pointerId); }catch(err){}
+      lgPress(it, page, true);
+    };
+    const up = e => { if(it.on){ e.preventDefault(); e.stopPropagation(); lgPress(it, page, false); } };
+    btn.addEventListener('pointerdown', down);
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointercancel', up);
+    btn.addEventListener('keydown', e => {
+      if((e.key === 'Enter' || e.key === ' ') && !e.repeat){
+        e.preventDefault(); e.stopPropagation(); lgPress(it, page, true);
+      }
+    });
+    btn.addEventListener('keyup', e => {
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); e.stopPropagation(); lgPress(it, page, false); }
+    });
+    btn.addEventListener('blur', () => { if(it.on) lgPress(it, page, false); });
+  }
+  if(lgKind(it) === 'clk') lgClockArm();
 }
 
 defineItem('logic', {
@@ -1061,7 +1451,10 @@ defineItem('logic', {
     const a = {};
     for(const k in LG_GATES) a['lg-' + k] = base => {
       const it = { ...base, type: 'logic', gate: k, w: 22, rot: 0, cap: '' };
-      if(k === 'sw') it.on = 0;
+      if(k === 'sw' || k === 'btn') it.on = 0;
+      if(k === 'clk'){ it.on = 0; it.hz = 1; it.paused = false; }
+      if(LG_GATES[k].seq){ it.q = 0; it.clk = 0; it.w = 24; }
+      if(k === 'digit') it.w = 24;
       if(k === 'cust') it.def = { name: 'Custom', n: 2, table: [0, 0, 0, 1] };
       return it;
     };
@@ -1073,8 +1466,27 @@ defineItem('logic', {
   after(it, el, page){ lgSync(); lgWake(); },
   tools(mk, it, el, page){
     const g = lgDef(it);
-    if(lgKind(it) === 'sw')
+    if(lgKind(it) === 'sw'){
       mk('⇄', 'Flick it — send a nought or a one', () => lgToggle(it, page));
+      mk('▣', 'Switch appearance — lever, rocker or plain 0/1', () => lgCycleSwitchLook(it, page));
+    }
+    if(lgKind(it) === 'clk'){
+      mk(it.paused ? '▶' : 'Ⅱ', it.paused ? 'Run the clock' : 'Pause the clock', b => {
+        lgPauseClock(it, page);
+        b.textContent = it.paused ? '▶' : 'Ⅱ';
+        b.title = it.paused ? 'Run the clock' : 'Pause the clock';
+      });
+      mk(lgClockHz(it) + 'Hz', 'Clock speed — 0.5, 1, 2 or 4 Hz', b => {
+        const hz = [.5, 1, 2, 4], at = hz.indexOf(lgClockHz(it));
+        it.on = lgClockValue(it); it.hz = hz[(at + 1) % hz.length]; LG_CLOCK.delete(it.id);
+        b.textContent = it.hz + 'Hz'; lgAdvance(page); queueSave(page.id);
+        lgSync(); lgWake(); lgClockArm(); SND.tick();
+      });
+    }
+    if(g.seq) mk('Q=' + lgNumeral(it, it.q), 'Set the stored state manually', b => {
+      it.q = it.q === LG_1 ? LG_0 : LG_1; b.textContent = 'Q=' + it.q;
+      lgAdvance(page); queueSave(page.id); lgSync(); lgWake(); SND.tick();
+    });
     if(g.ins.length && g.table)
       mk(g.custom ? '⊞✎' : '⊞',
          g.custom ? 'The truth table — fill it in yourself' : 'The truth table behind this gate',
@@ -1094,6 +1506,7 @@ defineItem('logic', {
      gate that is not there any more */
   forget(it){
     if(!lgIsGate(it)) return;
+    LG_CLOCK.delete(it.id);
     for(const p of openPages()){
       if(!p || !lgWires(p).length) continue;
       const n = p.wires.length;
@@ -1119,7 +1532,10 @@ defineItem('logic', {
 });
 /* a different note is a different circuit: nothing may be left holding a gate
    that is not on the paper any more */
-onNoteOpen(() => { lgCancelWire(); lgDeselect(); lgTTClose(); });
+onNoteOpen(() => {
+  lgCancelWire(); lgDeselect(); lgTTClose();
+  clearTimeout(lgClockTimer); lgClockTimer = 0; LG_CLOCK.clear();
+});
 
 /* ================= the palette ================= */
 /* The tiles are drawn by the very same builder as the symbols, at icon size, so
@@ -1130,14 +1546,20 @@ function lgIcon(kind){
   return '<g transform="translate(1 ' + rd1((24 - h * k) / 2) + ') scale(' + rd1(k * 100) / 100 +
     ')" stroke-width="' + rd1(1.6 / k) + '">' + lgSym(it, true) + '</g>';
 }
-const LG_ORDER = ['and', 'or', 'not', 'buf', 'nand', 'nor', 'xor', 'xnor',
-                  'sw', 'zero', 'one', 'lamp', 'cust'];
-LG_ORDER.forEach((k, i) => {
+const LG_PALETTE = [
+  { label: 'Input controls', order: 10, kinds: ['sw', 'btn', 'clk', 'zero', 'one'] },
+  { label: 'Output controls', order: 20, kinds: ['lamp', 'digit'] },
+  { label: 'Logic gates', order: 30,
+    kinds: ['and', 'or', 'not', 'buf', 'nand', 'nor', 'xor', 'xnor', 'tri', 'cust'] },
+  { label: 'Flip-flops', order: 40, kinds: ['srff', 'dff', 'jkff', 'tff'] }
+];
+const LG_ORDER = LG_PALETTE.flatMap(g => g.kinds);
+LG_PALETTE.forEach(group => group.kinds.forEach((k, i) => {
   defineIcon('lg-' + k, lgIcon(k));
-  defineTool({ kind: 'lg-' + k, cat: 'logic', label: LG_GATES[k].name,
-               icon: 'lg-' + k, hint: LG_GATES[k].name + ' — ' + LG_GATES[k].tip,
-               order: 10 + i });
-});
+  defineTool({ kind: 'lg-' + k, cat: 'logic', group: group.label, groupOrder: group.order,
+               label: LG_GATES[k].name, icon: 'lg-' + k,
+               hint: LG_GATES[k].name + ' — ' + LG_GATES[k].tip, order: 10 + i });
+}));
 
 /* ================= how it looks ================= */
 addCSS('logic', `
@@ -1154,6 +1576,18 @@ addCSS('logic', `
 .lgw .lgnum{fill:var(--ink);stroke:none;font-family:var(--mono);font-size:19px;
   text-anchor:middle;letter-spacing:0}
 .lgw .lgnum.lgtiny{font-size:10px;opacity:.75}
+.lgw .lgffmark{font-size:16px}
+.lgw .lgpinlab{text-anchor:start}.lgw .lgpoutlab{text-anchor:end}
+.lgw .lgrock{fill:var(--ink);stroke:var(--ink);stroke-width:2;transition:cx .16s ease,fill .12s}
+.lgw[data-gate="sw"][data-v="1"] .lgrock{fill:var(--accent);stroke:var(--accent)}
+.lgw .lgpress{fill:var(--paper);stroke:var(--ink);stroke-width:3;transform-origin:center;
+  transition:transform .08s ease,fill .08s}
+.lgw[data-gate="btn"][data-v="1"] .lgpress{fill:var(--accent);stroke:var(--accent);transform:scale(.86)}
+.lgw .lgclkdot{fill:var(--soft);stroke:none}
+.lgw[data-gate="clk"][data-v="1"] .lgclkdot{fill:var(--accent)}
+.lgw .lgseg{fill:none;stroke:var(--line);stroke-width:5;stroke-linecap:round;opacity:.22}
+.lgw .lgseg.on{stroke:var(--accent);opacity:1}
+.lgw .lgdigbad{font-size:22px}
 /* the lamp: lit is a filled bulb AND four rays, so it still reads as lit in a
    black-and-white print, and "?" when nothing is driving it */
 .lgw .lgray{display:none}
@@ -1165,6 +1599,7 @@ addCSS('logic', `
 .lgw[data-gate="lamp"][data-v="1"] .lgval{fill:var(--paper)}
 .lgw[data-v="x"] .lglamp{stroke-dasharray:5 4;opacity:.75}
 .lgw[data-v="x"] .lgval{fill:var(--soft)}
+.lgw[data-v="z"] .lgb,.lgw[data-v="z"] .lgs{stroke-dasharray:9 4 2 4;opacity:.72}
 .lgw[data-v="e"] .lgb,.lgw[data-v="e"] .lgs{stroke:var(--accent);stroke-dasharray:3 4}
 .lgw[data-v="e"] .lgnum{fill:var(--accent)}
 /* the ports: a dot you can see, and a hit area three times its size */
@@ -1172,28 +1607,31 @@ addCSS('logic', `
 .lgw .lgdot{fill:var(--paper);stroke:var(--soft);stroke-width:2;pointer-events:none}
 .lgw .lgp[data-v="1"] .lgdot{fill:var(--accent);stroke:var(--accent)}
 .lgw .lgp[data-v="e"] .lgdot{stroke:var(--accent);stroke-dasharray:2 2}
+.lgw .lgp[data-v="z"] .lgdot{fill:transparent;stroke-dasharray:4 2}
 .lgw .lgp:hover .lgdot{stroke:var(--accent2);stroke-width:3}
 .lgw .lgp.lgok .lgdot{stroke:var(--accent2);stroke-width:3}
 .lgw .lgp.lgaim .lgdot{fill:var(--accent2);stroke:var(--accent2);stroke-width:4}
-.lgw .lgsw{cursor:pointer}
-.lgw .lgsw:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.lgw .lgctl{cursor:pointer}
+.lgw .lgctl:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* The line is always there, so picking a gate up does not resize it — but the
-   word only appears on the gate you have picked. Thirteen ghost "caption"s
-   under a circuit is thirteen things to read that say nothing. */
+   word only appears on the gate you have picked. A page of ghost "caption"s
+   under a circuit is visual noise that says nothing. */
 .lgw figcaption{display:block;font-family:var(--mono);font-size:calc(var(--scale)*10px);
   color:var(--soft);padding-top:calc(var(--scale)*3px);outline:none;letter-spacing:.04em;
   text-align:center;min-height:calc(var(--scale)*13px)}
 .item.sel .lgw figcaption:empty::before{content:"caption";opacity:.35}
 /* ---- the leads ----
    Never colour alone: a one is bright AND thick, a nought is muted AND thin,
-   an undriven lead is dashed, and a lead in a loop is dotted. Each of the four
-   is told from the others with the colour taken away. */
+   unknown, high-impedance and loop-error leads each wear a different dash.
+   Every state is told from the others with the colour taken away. */
 svg.lgwires{position:absolute;inset:0;width:100%;height:100%;z-index:192;pointer-events:none;
   overflow:visible}
 svg.lgwires path{fill:none}
 svg.lgwires .lgl{stroke:var(--soft);stroke-width:2.2;stroke-linecap:round;opacity:.7}
 svg.lgwires [data-v="1"] .lgl,svg.lgwires .lgl[data-v="1"]{stroke:var(--accent);stroke-width:3.4;opacity:1}
 svg.lgwires [data-v="x"] .lgl,svg.lgwires .lgl[data-v="x"]{stroke:var(--soft);stroke-dasharray:6 5;opacity:.6}
+svg.lgwires [data-v="z"] .lgl,svg.lgwires .lgl[data-v="z"]{stroke:var(--soft);stroke-width:2.2;
+  stroke-dasharray:10 4 2 4;opacity:.75}
 svg.lgwires [data-v="e"] .lgl,svg.lgwires .lgl[data-v="e"]{stroke:var(--accent);stroke-width:3.4;
   stroke-dasharray:1 5;opacity:1}
 svg.lgwires .lghit{stroke:transparent;stroke-width:15;pointer-events:stroke;cursor:pointer}

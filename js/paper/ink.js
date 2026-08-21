@@ -236,7 +236,11 @@ function setDraw(on){
   document.body.classList.toggle('drawing', drawMode);
   $('#drawBtn').classList.toggle('on', drawMode);
   $('#inkbar').classList.toggle('open', drawMode);
-  if(drawMode){ if(mathMode) setMath(false); select(null); deselectString(); cancelLinking(); closeQuickMenu(); }
+  if(drawMode){
+    if(mathMode) setMath(false);
+    if(typeof setSelectMode === 'function' && selectMode) setSelectMode(false, true);
+    select(null); deselectString(); cancelLinking(); closeQuickMenu();
+  }
   syncInkBar(); syncCapture();
 }
 function undoInk(){

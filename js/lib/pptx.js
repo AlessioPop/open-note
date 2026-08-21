@@ -248,7 +248,7 @@ const PX_WIDTHS = new Map();
 /* the width of a run of text, in the same points the slide is drawn in */
 function pxWidth(text, f){
   if(!text) return 0;
-  const key = f.key + ' ' + text;
+  const key = f.key + '\0' + text;
   let w = PX_WIDTHS.get(key);
   if(w === undefined){
     const c = pxCanvas();

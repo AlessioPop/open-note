@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1120 assertions, driven in headless Firefox
+tools/verify/       the harness: 1158 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -136,22 +136,23 @@ right up until it loses the session.
 
 | File | Lines | What it does |
 |---|---:|---|
-| `registry.js` | 123 | `defineItem()`, `defineTool()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
+| `registry.js` | 138 | `defineItem()`, `defineTool()`, `defineSelectionAction()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
 | `store.js` | 68 | IndexedDB for the note, its sheet and its blobs, with an in-memory fallback |
 | `util.js` | 68 | `uid` `$` `clamp` `esc`, sheet sizes and page units, the theme palettes, the stored-HTML sanitiser |
-| `state.js` | 38 | the open note, its sheet, the selection, the zoom — and `sheet()`, the only way to ask for the paper |
-| `save.js` | 40 | debounced writes back to the store — the two doors every change goes through, which is what undo listens at |
-| `history.js` | 243 | **`undo()` / `redo()`** — what the sheet said before a change and what it says after, and where one step ends and the next begins |
+| `state.js` | 39 | the open note, its sheet, the selection, the zoom — and `sheet()`, the only way to ask for the paper |
+| `save.js` | 41 | debounced writes back to the store — the two doors every change goes through, which is what undo listens at |
+| `history.js` | 252 | **`undo()` / `redo()`** — what the sheet said before a change and what it says after, including rebasing live clock state, and where one step ends and the next begins |
 | `theme.js` | 89 | the theme presets, the colour overrides and the paper grain |
 | `zoom.js` | 153 | zoom, panning the desk, and holding the paper still while either changes |
 | `richtext.js` | 34 | editing text in place, and the ∑ button |
 | `media.js` | 21 | handing stored blobs to the page as object URLs |
-| `item.js` | 196 | **`buildItem()`** — builds any item from its spec; also what an item owns and deleting one |
-| `drag.js` | 155 | rotate, drag and resize — and the throw: a released item keeps the hand's momentum |
+| `item.js` | 201 | **`buildItem()`** — builds any item from its spec; also what an item owns and deleting one or a selection |
+| `drag.js` | 180 | rotate, drag and resize — the throw for one item and rigid movement for a selected group |
+| `select.js` | 156 | the toolbar's one-shot marquee, the selected-id set, bulk deletion and feature-owned group actions |
 | `page.js` | 104 | **`buildPage()`** — the paper, its items and its ink, live or static |
 | `sheet.js` | 207 | **`growSheet()`** — the rails, and every stored fraction remapped so nothing moves when the paper does |
 | `add.js` | 58 | **`addItem()`** — makes whatever the palette asked for, at the size this paper wants |
-| `keys.js` | 126 | **`render()`**, the selection and the keyboard |
+| `keys.js` | 116 | **`render()`** and the keyboard |
 | `doc.js` | 73 | making, opening and deleting a note |
 
 ### `js/paper/` — drawn on the sheet, belonging to no one item
@@ -168,7 +169,7 @@ right up until it loses the session.
 |---|---:|---|
 | `icons.js` | 70 | the line-icon set — `icn('table')` — and `defineIcon()` for a feature's own. Loads ahead of the items so they can register icons while loading |
 | `glass.js` | 69 | the glass material and the warp that every floating panel shares |
-| `palette.js` | 215 | the palette — shelves, tiles and search, drawn from the registry |
+| `palette.js` | 229 | the palette — shelves, labelled groups, tiles and search, drawn from the registry |
 | `props.js` | 271 | the properties popover — glass sliders, steppers, the sweep dial and a deed button; `openProps()` for any feature with measurements, and `placePanel()`, the above-then-beside-then-below rule every panel an item opens off its toolbar follows |
 | `mathbar.js` | 101 | the maths toolbar |
 | `map.js` | 174 | the map: the whole sheet, and where you are standing on it |
@@ -198,7 +199,7 @@ shelf** — a new file under `items/science/` had better call
 | `math/cards.js` | 397 | `matrix`, `vecbox` — any size through the ✎ panel, the label algebra (`M⁻¹` undone is `M`), determinants between bars, eigen rows |
 | `math/calc.js` | 264 | `calc` — the written-out product: the animated working, folding it to just the answer, taking it apart again, and standing in as an operand itself |
 | `math/node.js` | 1099 | `node` — five kinds of card, the little graph they make, the wires between them, and the colour wheel |
-| `logic/gate.js` | 1265 | `logic` — Boolean circuits: eight gate symbols derived from four shared primitives, a switch, two constants, a lamp and a truth-table gate of your own; the port-level wire overlay, the topological evaluator with its cycle marking, and the truth-table panel |
+| `logic/gate.js` | 1703 | `logic` — combinational and sequential circuits: controls, ten gates, SR/D/JK/T flip-flops, the five-state evaluator and clock scheduler, port-level wires, truth tables and selection-aware circuit layout |
 | `science/ptable.js` | 154 | `ptable` — the periodic table as a reference card, and `openElementPicker()`, the popover every element chip opens |
 | `science/nuchart.js` | 680 | `nuchart` — the chart of the nuclides: 5646 squares as ten paths, the magic-number rules, four colourings, pan and zoom on a viewBox, Karlsruhe-split squares for the long-lived metastable states, arrows to every daughter and the whole decay chain, and a foot that works the Q values out as you press |
 | `science/fits.js` | 617 | `fits` — an astronomy file as a shortcut, and the reader behind it: `hdu.info()`, the header in three aligned columns with a search over all of them, COMMENT and HISTORY runs folded in place, every data unit given as a shape and a type rather than as numbers, and columns you pick and drag off the window onto the sheet, where they land as an ordinary table |
@@ -320,6 +321,21 @@ Three things every item gets for free, with no field to set:
   dragging, rotating, resizing, layers, ink over the top, print, backup and
   export.
 
+### A group is still ordinary items
+
+`core/select.js` keeps a `Set` of selected ids while the older `selected` name
+continues to mean the single item whose own toolbar is open. A normal click
+puts one id in the set; the main-toolbar marquee puts several there. Dragging
+one member applies the same pointer delta to every record, and `removeItems()`
+does one save/render after all feature cleanup has run. There is no group item,
+wrapper or second coordinate system to migrate, serialize or undo.
+
+Feature-specific group operations register through `defineSelectionAction()`.
+Core only asks `when(items, page)` whether to show a button and calls
+`run(items, page)`; it knows neither what a circuit is nor how one should be
+laid out. Logic uses that seam for **Tidy logic**, while another feature can add
+an operation without a type branch in selection or the toolbar.
+
 ## Circuits, and the graph seam under them
 
 `js/items/logic/gate.js` is the first thing in the app that needs a **directed,
@@ -340,7 +356,8 @@ So a sheet carries a second list beside `page.links`:
 ```js
 page.wires = [
   { id, from: { item: 'src-id', port: 'q' },
-        to:   { item: 'dst-id', port: 'a' } }
+        to:   { item: 'dst-id', port: 'a' },
+        clean: 1, route: 0 } // the last two exist only after Tidy logic
 ]
 ```
 
@@ -349,6 +366,8 @@ and an item is stored as what it *means*, never as a picture of itself:
 ```js
 { id, type: 'logic', gate: 'nand', x, y, w, rot, z, lay }
 { id, type: 'logic', gate: 'sw',   on: 1, … }
+{ id, type: 'logic', gate: 'clk',  hz: 2, paused: false, … }
+{ id, type: 'logic', gate: 'dff',  q: 1, clk: 0, … }
 { id, type: 'logic', gate: 'cust', def: { name, n, table: [0,0,0,1] }, … }
 ```
 
@@ -359,7 +378,7 @@ features using it.
 
 **The evaluator knows nothing about Boolean logic.** `lgEval(page)` walks the
 wire graph in dependency order and asks each node what it is worth; only
-`lgOne()` — twenty lines — reads a truth table. That is the seam a scientific
+`lgOne()` reads a truth table or a component's small evaluator. That is the seam a scientific
 dataflow would grow along later: ports are *named* rather than numbered, values
 are an open set rather than a bit, and the order, the fan-out and the cycle
 handling are all indifferent to what is travelling. `js/items/math/node.js` is
@@ -373,11 +392,26 @@ downstream of one, and it is marked `e`. There is no recursion, no visit flag an
 no iteration limit, so a circuit wired in a ring cannot hang, blow the stack, or
 cost more than one that is fine.
 
-**Four signal states, not two.** `0`, `1`, `x` (nothing is driving this) and `e`
-(this cannot settle). An undriven input is emphatically not a nought, and `x`
-propagates — that is the difference between a circuit you have not finished and
-a circuit that is wrong. A later four-state simulation adds `z` as one more
-member of the set and one more branch in `lgOne()`; no signature changes.
+**Five signal states, not two.** `0`, `1`, `x` (unknown or undriven), `z`
+(high impedance) and `e` (this cannot settle). An undriven input is emphatically
+not a nought, a disabled tri-state gate remains distinct from it, and a loop is
+distinct from both. The value stays scalar all the way through evaluation,
+ports, stored wires and rendering.
+
+**Stored state is an explicit graph boundary.** A flip-flop's Q is a source for
+the combinational pass, so its incoming dependencies are cut before Kahn's
+walk and feedback through it is not marked as a loop. `lgAdvance()` evaluates
+the old circuit once, detects every rising edge, calculates every next state,
+then commits them together. The one clock scheduler owns all running clock
+items. Its phase is runtime state; only reached flip-flop state is queued for
+persistence, with history capture disabled so a running note cannot consume
+its undo stack.
+
+**Tidy logic changes geometry, never topology.** The selection action checks
+that its items are one connected component, ranks them in signal order (with
+flip-flops as new sources), preserves vertical peer order, springs their stored
+positions to the layout and marks only internal selected wires for rounded
+orthogonal routing. The same stored route goes through live, print and export.
 
 **Nothing is cached.** Working a sheet out is one Map and one sweep, and a stale
 answer after an undo would be a wrong picture on the paper. That is a far worse
@@ -604,8 +638,8 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1120 assertions**, and they are the real specification of this app. Among them:
-that all 69 script files load without throwing; that a fresh note is one empty
+**1158 assertions**, and they are the real specification of this app. Among them:
+that all 70 script files load without throwing; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a
 third on the real one; that every add-menu entry adds the type it claims to;
@@ -626,7 +660,9 @@ input nothing is wired into is *not* read as a nought, that a second lead into
 one input replaces the first rather than joining it, that a circuit wired in a
 ring is marked rather than run for ever, and that a gate turned a quarter turn
 swings its ports a quarter turn — which is the whole of the rotation-aware port
-geometry, held honest; that a real
+geometry, held honest; that tri-state isolation, the four-bit display, all four
+flip-flop tables and real rising edges agree, and that marquee-selected circuits
+move, delete and tidy without changing their connections; that a real
 `.pptx` built in the harness comes back as two slides through the master's
 colour map; that a real `.fits` built in the harness walks to three HDUs whose
 headers start exactly where the last one's data ended, that a `CONTINUE` card is

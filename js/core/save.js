@@ -5,9 +5,10 @@
 let saveTimer = null, dirtyPages = new Set(), dirtyIndex = false, dirtyLib = false;
 /* Every change in the app comes through one of these two — that is what the
    undo stack listens to, so no feature has to tell it anything (core/history.js) */
-function queueSave(pageId){
+function queueSave(pageId, history){
   const id = pageId || index.pages[0].id;
-  if(typeof histTouch === 'function') histTouch(id);
+  if(history !== false){ if(typeof histTouch === 'function') histTouch(id); }
+  else if(typeof histRebase === 'function') histRebase(id);
   dirtyPages.add(id);
   clearTimeout(saveTimer); saveTimer = setTimeout(flush, 600);
 }

@@ -170,6 +170,9 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 
   <div class="tools-bar">
     <button class="btn" id="qaddBtn" title="Add to the sheet — Space, Shift+A or right-click">+ Add…</button>
+    <button class="btn" id="selectBtn" aria-pressed="false" title="Drag a rectangle around several things, then move or delete them">□ Select</button>
+    <span class="select-actions" id="selectActions"></span>
+    <button class="btn" id="selectDelete" title="Delete the selected things" hidden>✕ Delete</button>
     <button class="btn" id="drawBtn" title="Stylus — draw straight onto the sheet, over anything (D)">✎ Draw</button>
     <button class="btn" id="mathBtn" title="Maths — coordinate systems, functions, vectors and matrices (M)">∑ Math</button>
     <span class="divider"></span>
@@ -377,6 +380,7 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <script src="js/core/media.js"></script>
 <script src="js/core/item.js"></script>
 <script src="js/core/drag.js"></script>
+<script src="js/core/select.js"></script>
 <script src="js/core/page.js"></script>
 <script src="js/core/sheet.js"></script>
 <script src="js/core/add.js"></script>

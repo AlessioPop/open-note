@@ -16,6 +16,7 @@ let curNoteId = null;
 let index = null;          // the open note: {kind:'canvas', pgmax, theme, settings:{}, pages:[one]}
 let pages = new Map();
 let selected = null;
+const SELECTED = new Set();             // one id for an ordinary pick; several for a marquee pick
 const MEDIA_URL = {};
 let zoom = 1, panX = 0, panY = 0;
 

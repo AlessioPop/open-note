@@ -38,7 +38,7 @@ Things scale to the paper they are on: a sticky note is the size it would be on 
 | Flip cards | A deck of index cards — question on the front, answer on the back, laid out how you like and marked ✓ or ✗ as you go |
 | Coordinate system | Axes you can drag around, with functions, vectors and a table's points drawn in them — see **Maths** below |
 | Node | A small card you wire between a table and a plot: keep some columns, do arithmetic on whole columns, put every number through a formula, or hand in a number on a slider or a colour — see **Nodes** below |
-| Logic gates | AND, OR, NOT, Buffer, NAND, NOR, XOR, XNOR as the conventional symbols, plus a switch, two constants, a lamp and a gate whose truth table you write yourself. Wire port to port and the ones run down the wires as you flick the switches; every gate shows the table that is its behaviour, with the row it is standing on lit — see **Logic gates** below |
+| Logic circuits | Input controls (switch, push button, clock and constants), output controls (lamp and four-bit digit), ten combinational gates including Tri-State and Custom, and SR/D/JK/T flip-flops. Wire port to port and the signals move immediately — see **Logic gates** below |
 | Matrix / Vector | Cards you fill in and throw at each other — any size, ✎ reshapes them; multiply, invert, take powers, eigen-decompose, fold a product down to its answer, drop them into a plot |
 | Pie chart / Donut / Bar chart / Stacked bar | Charts of named shares, typed straight into their own legend — a pie in four looks (flat, donut, 3D, hand-sketched), up to ten slices in six colour palettes, labels you can flip between four placements or simply drag where you want them; see **Charts** below |
 | Cube / Sphere / Torus / Square / Circle | Wireframe shapes to draw over — turn them, size them, set their measurements (a torus's radii, a sweep down to a part shape), fade them back under your pen; the square and circle lie flat and reshape by their corners; see **Shapes to draw over** below |
@@ -56,6 +56,8 @@ Things scale to the paper they are on: a sticky note is the size it would be on 
 | Sticker | Arrow, star, warning, check, bug, heart — recolourable |
 
 Every item: drag to move — **it leans into the push and keeps your momentum when you let go**, sliding a little way like paper on a desk (grab it mid-slide and it's simply yours again) — corner dot to resize, **drag the red handle above an item to rotate it** (hold Shift for 15° snapping), ⤒ / ⤓ to send it to the front or the back, ✕ or `Delete` to remove.
+
+For several things, press **□ Select** in the main toolbar and drag a rectangle around them, like selecting desktop icons. The mode finishes on release; drag any selected member to move the whole arrangement, use **✕ Delete** in the same toolbar (or the keyboard's `Delete`) to remove it, and press `Esc` to clear the selection. The gesture is the same with a mouse, pen or finger.
 
 ## Tables
 
@@ -168,20 +170,18 @@ Not yet: nodes cannot be filed into a folder. A graph shut inside one would go d
 ## Logic gates
 
 Digital Lego. Conventional gate symbols on the paper, wired port to port, with
-the ones and noughts arriving the moment you flick a switch. There is no run
-button: the whole sheet is worked out again every time anything at all changes.
+signals arriving the moment you flick a switch, hold a button or a clock ticks.
+There is no global run button: the sheet works itself out as its inputs change.
 
 **Add them** from `+ Add…` (or right-click the paper, or Space) → the **Logic**
 shelf.
 
 | | What it is |
 |---|---|
-| **AND · OR · NAND · NOR · XOR · XNOR** | Two inputs `a` and `b`, one output `q`. |
-| **NOT · Buffer** | One input `a`, one output `q`. |
-| **Switch** | No input, one output. Click it to send a nought or a one. |
-| **Constant 0 · Constant 1** | No input, one output, never changes. |
-| **Lamp** | One input, nothing out. It is how you read the answer. |
-| **Custom** | A gate whose truth table you fill in yourself — see below. |
+| **Input controls** | **Switch** sends 0 or 1; its ▣ button cycles lever, rocker and plain 0/1 appearances without changing its behavior. **Push button** sends 1 only while held. **Clock** repeats 0–1; pause/run it and cycle 0.5, 1, 2 or 4 Hz from its toolbar. **Constant 0/1** never change. |
+| **Output controls** | **Lamp** reads one bit. **4-bit digit** takes `8`, `4`, `2`, `1` and draws the hexadecimal digit 0–F on a seven-segment face. Neither has an output. |
+| **Logic gates** | **AND · OR · NAND · NOR · XOR · XNOR** have inputs `a`, `b`; **NOT · Buffer** have `a`. **Tri-State** has `a`, `en` and outputs high impedance while disabled. **Custom** is the gate whose truth table you fill in. |
+| **Flip-flops** | **SR · D · JK · T** sample on the rising edge of `clk` and expose both `q` and `nq` (Q̅). Their stored Q can also be set from the toolbar. |
 
 The symbols are the ANSI ones: inputs on the left, output on the right, the
 D-shaped body for AND, the curved one for OR, the extra rear curve for XOR, a
@@ -215,13 +215,19 @@ the value it is carrying. `Delete` removes it, and so does the ✕ on the chip.
 Escape puts it back. A gate's **⌦** button unplugs every lead on it at once, and
 **⧉** makes another gate just like it beside it.
 
+Marquee-select a connected set of logic items and the main toolbar offers
+**⇥ Tidy logic**. It resets their rotations, orders them from sources through
+gates to outputs, keeps peers in their existing vertical order, and replaces
+the selected internal leads with rounded orthogonal routes. The circuit's
+connections and values do not change, and the group stays selected afterwards.
+
 **Turn a gate to any angle** with the rotate handle and the leads stay on its
 ports — and leave along the way the gate is now facing. Move it, resize it, put
 it on another layer: the leads follow.
 
 ### What the wires are carrying
 
-Four things, and each one is told from the others by more than its colour, so
+Five things, and each one is told from the others by more than its colour, so
 none of it depends on you seeing colour or on the page being in colour:
 
 | | The lead | The gate |
@@ -229,6 +235,7 @@ none of it depends on you seeing colour or on the page being in colour:
 | **1** | bright and thick | a lamp fills in and grows rays |
 | **0** | muted and thin | a lamp is empty and says `0` |
 | **not driven** | dashed | a lamp says `?` |
+| **high impedance** | long–short dashed | a disabled Tri-State output is disconnected |
 | **in a loop** | dotted | the symbol goes dashed and says `!` |
 
 **An input nothing is wired into is not a nought.** A gate with a lead in only
@@ -240,9 +247,23 @@ difference between a circuit you have not finished and a circuit that is wrong.
 by one, is marked; nothing hangs, nothing recurses and nothing takes any longer
 than a circuit that is fine. Cut one lead and the whole thing settles again.
 
+### Flip-flops and clocks
+
+All four flip-flops change only on a **0 → 1 clock edge**. D copies `d`; T holds
+for `t=0` and toggles for `t=1`; JK holds, resets, sets and toggles for `jk =
+00, 01, 10, 11`; SR holds for `sr=00`, sets for `10`, resets for `01`, and shows
+an unknown state for the forbidden `11`. Inputs are sampled together and Q̅ is
+always the inverse of Q. A flip-flop breaks a feedback path, so an ordinary
+sequential circuit is not mistaken for a combinational loop.
+
+Clock phase is live rather than an undo step: leaving a clock running does not
+fill the undo history. Flip-flop state reached on its edges is still saved, so
+the circuit opens in the state it reached. Pause a clock before using a backup
+as a particular timing snapshot.
+
 ### The truth table
 
-Every gate's **⊞** button opens the table that *is* its behaviour: a column per
+Every table-driven gate's **⊞** button opens the table that *is* its behaviour: a column per
 input, a column for the output, and a row per combination. **The row the gate is
 actually standing on is lit** — flick a switch and the lit row walks. If an input
 is not driven, no row claims to be the one it is on, and the line underneath says
@@ -272,16 +293,14 @@ the gate letters them on its own face so you can see which is which.
 ### Where it ends
 
 Gates and their leads save, print, export and back up like everything else on the
-sheet, and undo/redo covers placing a gate, making and breaking a lead, and
-flicking a switch. A gate is stored as what it *means* — `{gate:"nand"}` and a
+sheet, and undo/redo covers placing a gate, making and breaking a lead, changing
+a control, and tidying a circuit. A gate is stored as what it *means* —
+`{gate:"nand"}` and a
 list of leads between named ports — never as a picture of itself, so a note made
 today still draws with tomorrow's symbols.
 
-**Not in this first version:** clocks, flip-flops, latches, buses, propagation
-delays and anything else that needs the circuit to have a history. Everything
-here is combinational — the output is a function of the inputs and of nothing
-else. Ports on a custom gate cannot be renamed yet, and a group of gates cannot
-be folded into one gate of its own.
+**Not yet:** shared multi-driver buses, propagation delays, renamable ports on a
+custom gate, or folding a group of gates into one reusable gate of its own.
 
 ## Equations
 
@@ -627,4 +646,3 @@ There's also a **studio sounds** toggle with a volume slider — soft pencil scr
 - Images are downscaled to ≤2000 px on import to keep the note light while still holding up under zoom.
 - Fonts load from Google Fonts; offline you get clean system fallbacks.
 - Data lives in the browser profile that opened the file. Moving the folder is fine; switching browsers means restoring from a backup.
-

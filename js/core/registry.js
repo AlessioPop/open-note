@@ -70,11 +70,12 @@ function addCSS(label, css){
    under the pointer. The palette is drawn entirely from these, so a new
    feature's menu entry lives in the feature's own file, not in index.html.
 
-     defineTool({ kind:'note', cat:'write', label:'Sticky', icon:'note',
+     defineTool({ kind:'note', cat:'write', group:'Paper', label:'Sticky', icon:'note',
                   hint:'Sticky notes in 5 colours', order:50 })
 
    `kind` is the add-menu kind the feature registered in defineItem's `add`.
-   `order` sorts within the shelf (default 50, ties keep load order).
+   `group` optionally gives a crowded shelf labelled subsections; `groupOrder`
+   orders those sections. `order` sorts within one (default 50, ties keep load order).
    A shelf itself is one line — palette.js declares the five standard ones:
 
      defineToolCat('write', { label:'Write', icon:'pencil', order:10 })   */
@@ -111,6 +112,20 @@ const drawPageOverlays = (wrap, page, idx) => PAGE_OVERLAYS.forEach(f => f(wrap,
 const NOTE_OPEN_HOOKS = [];
 const onNoteOpen = fn => NOTE_OPEN_HOOKS.push(fn);
 const resetForNewNote = () => NOTE_OPEN_HOOKS.forEach(f => f());
+
+/* Selection owns the gesture and the generic actions; a feature may add one
+   operation for a set it understands without teaching core what that set is.
+
+     defineSelectionAction({ id:'tidy-logic', label:'Tidy logic',
+       title:'Lay this circuit out in signal order',
+       when:(items, page) => true, run:(items, page) => {} }) */
+const SELECTION_ACTIONS = [];
+function defineSelectionAction(spec){
+  if(!spec || !spec.id || typeof spec.run !== 'function') return;
+  const at = SELECTION_ACTIONS.findIndex(x => x.id === spec.id);
+  if(at >= 0) SELECTION_ACTIONS.splice(at, 1);
+  SELECTION_ACTIONS.push({ order: 50, ...spec });
+}
 
 /* Styles travel with their feature, but the export writes ONE stylesheet into
    the file it hands you, so everything lands in the single <style id="appcss">

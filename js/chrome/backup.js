@@ -71,7 +71,7 @@ $('#jsonInput').addEventListener('change', e => {
       if(be) be.updated = Date.now();
       await kvSet(K_LIB, lib);
       resetForNewNote();                            // a restore is an open: features drop what they held
-      applyTheme(); syncSound(); selected = null;
+      applyTheme(); syncSound(); select(null);
       layers(index); curLayerId(); focusLayer = null; setDraw(false); renderLayers();
       render();
     }catch(err){ alert("That file isn't an Open Note backup."); }

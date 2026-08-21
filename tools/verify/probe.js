@@ -2963,7 +2963,9 @@
       var mk = function (gate, extra) {
         var g = { id: uid(), type: 'logic', gate: gate, x: 5, y: 5, w: 11, rot: 0,
                   z: 1, lay: lay, cap: '' };
-        if (gate === 'sw') g.on = 0;
+        if (gate === 'sw' || gate === 'btn') g.on = 0;
+        if (gate === 'clk') { g.on = 0; g.hz = 1; g.paused = false; }
+        if (LG_GATES[gate] && LG_GATES[gate].seq) { g.q = 0; g.clk = 0; }
         if (gate === 'cust') g.def = { name: 'Custom', n: 2, table: [0, 0, 0, 1] };
         for (var k in (extra || {})) g[k] = extra[k];
         return g;
@@ -3035,6 +3037,18 @@
         LG_ORDER.every(function (k) { return (ICONS['lg-' + k].match(/<text/g) || []).length <= 1; }),
         LG_ORDER.filter(function (k) {
           return (ICONS['lg-' + k].match(/<text/g) || []).length > 1; }).join(','));
+      var oldCat = curCat;
+      curCat = 'logic'; Q('#palSeek').value = ''; renderGrid();
+      var logicHeads = [].slice.call(Q('#palGrid').querySelectorAll('.pgroup'))
+        .map(function (x) { return x.textContent; });
+      ok('palette: logic is divided into the four named families',
+        logicHeads.join('|') === 'Input controls|Output controls|Logic gates|Flip-flops',
+        logicHeads.join('|'));
+      ok('palette: every logic device appears once under those families',
+        Q('#palGrid').querySelectorAll('.ptile').length === LG_ORDER.length &&
+        new Set(LG_ORDER).size === LG_ORDER.length,
+        Q('#palGrid').querySelectorAll('.ptile').length + ' tiles for ' + LG_ORDER.length);
+      curCat = oldCat; renderGrid();
       ok('logic: and eight inputs is as far as it goes',
         lgDef(mk('cust', { def: { n: 40, table: [] } })).ins.length === 8);
 
@@ -3047,6 +3061,73 @@
       join(page, o, 'q', lp, 'a');
       ok('logic: a lamp shows what is wired into it', V(page, lp) === 1, V(page, lp));
       ok('logic: and nothing can be wired out of a lamp', lgDef(lp).outs.length === 0);
+
+      /* ---- tri-state isolation and the four-bit display ---- */
+      var ta = mk('sw', { on: 1 }), ten = mk('sw', { on: 0 }), tri = mk('tri'), tb = mk('buf');
+      page.items = [ta, ten, tri, tb]; page.wires = [];
+      join(page, ta, 'q', tri, 'a'); join(page, ten, 'q', tri, 'en');
+      var tw = join(page, tri, 'q', tb, 'a'), tv = lgEval(page);
+      ok('tri-state: disabled means a real high-impedance output',
+        tv.get(tri.id) === 'z' && lgWireVal(tv, tw) === 'z' &&
+        LG_GATES.tri.eval({ a:'e', en:0 }) === 'z',
+        tv.get(tri.id) + ' on the gate, ' + lgWireVal(tv, tw) + ' on the lead');
+      ok('tri-state: high impedance is unknown to an ordinary logic input',
+        tv.get(tb.id) === 'x', tv.get(tb.id));
+      ten.on = 1; tv = lgEval(page);
+      ok('tri-state: enabled passes a one without changing it',
+        tv.get(tri.id) === 1 && tv.get(tb.id) === 1,
+        tv.get(tri.id) + ',' + tv.get(tb.id));
+      ta.on = 0; tv = lgEval(page);
+      ok('tri-state: and enabled passes a nought without changing it',
+        tv.get(tri.id) === 0 && tv.get(tb.id) === 0,
+        tv.get(tri.id) + ',' + tv.get(tb.id));
+
+      var bits = [mk('sw', { on: 1 }), mk('sw', { on: 0 }),
+                  mk('sw', { on: 1 }), mk('sw', { on: 0 })];
+      var digit = mk('digit'); page.items = bits.concat([digit]); page.wires = [];
+      ['8', '4', '2', '1'].forEach(function (p, i) { join(page, bits[i], 'q', digit, p); });
+      ok('four-bit digit: 1010 is read as hexadecimal A',
+        V(page, digit) === 10 && lgNumeral(digit, V(page, digit)) === 'A', V(page, digit));
+      bits[3].on = 1;
+      ok('four-bit digit: the least-significant input changes A to B',
+        V(page, digit) === 11 && lgNumeral(digit, V(page, digit)) === 'B', V(page, digit));
+      ok('four-bit digit: it is an output control, never a signal source',
+        lgDef(digit).outs.length === 0 && lgDef(digit).ins.join('') === '8421');
+
+      /* ---- stored state: all four characteristic tables, then a real edge ---- */
+      ok('flip-flops: SR holds, sets, resets and rejects S=R=1',
+        lgSeqNext('sr', { s:0, r:0 }, 1) === 1 && lgSeqNext('sr', { s:1, r:0 }, 0) === 1 &&
+        lgSeqNext('sr', { s:0, r:1 }, 1) === 0 && lgSeqNext('sr', { s:1, r:1 }, 0) === 'x');
+      ok('flip-flops: D copies D and T toggles only when asked',
+        lgSeqNext('d', { d:1 }, 0) === 1 && lgSeqNext('d', { d:0 }, 1) === 0 &&
+        lgSeqNext('t', { t:0 }, 1) === 1 && lgSeqNext('t', { t:1 }, 1) === 0);
+      ok('flip-flops: JK holds, sets, resets and toggles',
+        lgSeqNext('jk', { j:0, k:0 }, 1) === 1 && lgSeqNext('jk', { j:1, k:0 }, 0) === 1 &&
+        lgSeqNext('jk', { j:0, k:1 }, 1) === 0 && lgSeqNext('jk', { j:1, k:1 }, 1) === 0);
+      ok('flip-flops: every device exposes Q and inverted Q',
+        ['srff','dff','jkff','tff'].every(function (k) {
+          return LG_GATES[k].seq && LG_GATES[k].outs.join(',') === 'q,nq'; }));
+
+      var dat = mk('sw', { on: 1 }), edge = mk('sw', { on: 0 }), dff = mk('dff');
+      page.items = [dat, edge, dff]; page.wires = [];
+      join(page, dat, 'q', dff, 'd'); join(page, edge, 'q', dff, 'clk');
+      lgAdvance(page);
+      ok('D flip-flop: changing D without an edge leaves Q alone', dff.q === 0, dff.q);
+      edge.on = 1; lgAdvance(page); var dv = lgEval(page);
+      ok('D flip-flop: a rising edge copies D to Q and Q-bar is its inverse',
+        dff.q === 1 && lgOutput(dv, dff.id, 'nq') === 0,
+        dff.q + ',' + lgOutput(dv, dff.id, 'nq'));
+      dat.on = 0; lgAdvance(page);
+      ok('D flip-flop: changing D while the clock stays high is not another edge', dff.q === 1, dff.q);
+      edge.on = 0; lgAdvance(page); edge.on = 1; lgAdvance(page);
+      ok('D flip-flop: the next rising edge samples the new D', dff.q === 0, dff.q);
+      histCommit();
+      HIST.shadow.set(page.id, histSnap(page));
+      var stepsBeforeClock = HIST.past.length;
+      dff.q = 1; queueSave(page.id, false);
+      ok('clock: silently persisted state rebases history without making an undo step',
+        HIST.past.length === stepsBeforeClock && HIST.shadow.get(page.id) === histSnap(page),
+        HIST.past.length + ' steps, shadow current=' + (HIST.shadow.get(page.id) === histSnap(page)));
 
       /* ---- one output feeding three inputs, and three levels of it ---- */
       var s1 = mk('sw', { on: 1 }), inv = mk('not');
@@ -3222,7 +3303,7 @@
           bubbles: true, pointerId: 7, isPrimary: true }));
       ok('switch: a hand that moved was dragging it, not flicking it', sw.on === 1, sw.on);
 
-      /* ---- the four states are told apart with the colour taken away ---- */
+      /* ---- all five states are told apart with the colour taken away ---- */
       var lines = [].slice.call(Q('#pageHost svg.lgwires').querySelectorAll('g[data-w] .lgl'));
       var styleOf = function (v) {
         var g = Q('#pageHost svg.lgwires g[data-w]');
@@ -3233,9 +3314,78 @@
         g.setAttribute('data-v', was);
         return out;
       };
-      var looks = ['0', '1', 'x', 'e'].map(styleOf);
-      ok('logic: the four signal states differ by more than colour',
-        new Set(looks).size === 4, looks.join('  '));
+      var looks = ['0', '1', 'x', 'z', 'e'].map(styleOf);
+      ok('logic: all five signal states differ by more than colour',
+        new Set(looks).size === 5, looks.join('  '));
+
+      /* ---- the new controls are controls, not static drawings ---- */
+      var styled = mk('sw', { on: 0, x: 5, y: 35, w: 12 });
+      var push = mk('btn', { x: 22, y: 35, w: 12 }), pushLamp = mk('lamp', { x: 39, y: 35, w: 12 });
+      var clock = mk('clk', { x: 56, y: 35, w: 12, paused: true, hz: 4 });
+      var dbits = [mk('sw', { on: 1, x: 5, y: 55, w: 10 }),
+                   mk('sw', { on: 0, x: 18, y: 55, w: 10 }),
+                   mk('sw', { on: 1, x: 31, y: 55, w: 10 }),
+                   mk('sw', { on: 0, x: 44, y: 55, w: 10 })];
+      var liveDigit = mk('digit', { x: 62, y: 55, w: 14 });
+      page.items = [styled, push, pushLamp, clock].concat(dbits, [liveDigit]); page.wires = [];
+      join(page, push, 'q', pushLamp, 'a');
+      ['8','4','2','1'].forEach(function (p, i) { join(page, dbits[i], 'q', liveDigit, p); });
+      await render(); await sleep(50);
+      select(styled.id);
+      var lookBtn = [].slice.call(el(styled).querySelectorAll('.tools button'))
+        .filter(function (b) { return b.textContent === '▣'; })[0];
+      lookBtn.click();
+      ok('switch style: the toolbar can replace the lever with a rocker',
+        styled.look === 'rocker' && !!el(styled).querySelector('.lgrock'), styled.look);
+      lookBtn.click();
+      ok('switch style: and replace the rocker with a plain 0/1 control',
+        styled.look === 'plain' && !el(styled).querySelector('.lgrock') &&
+        el(styled).querySelector('.lgval').textContent === '0', styled.look);
+
+      var press = el(push).querySelector('.lgpress'), pushCtl = el(push).querySelector('.lgbtn');
+      press.dispatchEvent(new PointerEvent('pointerdown', mid(press)));
+      ok('push button: it sends one only while the pointer is held',
+        push.on === 1 && V(page, pushLamp) === 1 && pushCtl.getAttribute('aria-pressed') === 'true',
+        push.on + ',' + V(page, pushLamp));
+      pushCtl.dispatchEvent(new PointerEvent('pointerup', mid(pushCtl)));
+      ok('push button: releasing it returns the signal to nought',
+        push.on === 0 && V(page, pushLamp) === 0 && pushCtl.getAttribute('aria-pressed') === 'false',
+        push.on + ',' + V(page, pushLamp));
+
+      ok('four-bit digit: the live seven-segment face draws A, not just a label',
+        V(page, liveDigit) === 10 && el(liveDigit).querySelectorAll('.lgseg.on').length === 6 &&
+        el(liveDigit).querySelector('.lgdigbad').hidden,
+        V(page, liveDigit) + ',' + el(liveDigit).querySelectorAll('.lgseg.on').length + ' segments');
+
+      select(clock.id);
+      var runBtn = [].slice.call(el(clock).querySelectorAll('.tools button'))
+        .filter(function (b) { return b.textContent === '▶'; })[0];
+      ok('clock: a paused clock offers Run and says its speed', !!runBtn &&
+        [].slice.call(el(clock).querySelectorAll('.tools button')).some(function (b) { return b.textContent === '4Hz'; }));
+      runBtn.click();
+      ok('clock: Run starts it and the same control becomes Pause',
+        clock.paused === false && runBtn.textContent === 'Ⅱ', clock.paused + ',' + runBtn.textContent);
+      runBtn.click();
+      var stoppedClock = V(page, clock);
+      var speedBtn = [].slice.call(el(clock).querySelectorAll('.tools button'))
+        .filter(function (b) { return b.textContent === '4Hz'; })[0];
+      speedBtn.click();
+      ok('clock: Pause freezes the current level',
+        clock.paused === true && runBtn.textContent === '▶' && V(page, clock) === stoppedClock &&
+        clock.hz === .5 && speedBtn.textContent === '0.5Hz',
+        clock.paused + ',' + V(page, clock) + ',' + speedBtn.textContent);
+      clock.paused = false;
+      LG_CLOCK.set(clock.id, { v: 0, next: performance.now() - 1 });
+      lgClockTick();
+      ok('clock: its scheduler advances the signal without a Run button or simulation step',
+        lgClockValue(clock) === 1, lgClockValue(clock));
+      lgPauseClock(clock, page);
+
+      /* Put the original live circuit back for the lead-dragging checks below. */
+      page.items = [sw, gate, lamp]; page.wires = [];
+      join(page, sw, 'q', gate, 'a'); join(page, sw, 'q', gate, 'b');
+      join(page, gate, 'q', lamp, 'a');
+      await render(); await sleep(50);
 
       /* ---- pulling a lead by hand ---- */
       var pull = function (from, to) {
@@ -3365,6 +3515,75 @@
       mb.w = 20; el(mb).style.width = '20%';
       lgLay();
       ok('follow: and so does resizing it', dOf() !== d1 && dOf().indexOf('NaN') < 0, dOf());
+
+      /* ---- marquee selection, rigid group movement, and circuit cleanup ---- */
+      var lonely = mk('or', { x: 76, y: 15, w: 12 });
+      page.items.push(lonely);
+      await render(); await sleep(40);
+      Q('#selectBtn').click();
+      ok('selection: the toolbar enters a one-shot rectangle mode',
+        selectMode && document.body.classList.contains('selecting') && /Drag to select/.test(Q('#selectBtn').textContent));
+      var ar = el(ma).getBoundingClientRect(), br = el(mb).getBoundingClientRect();
+      var surf = Q('#pageHost .surface');
+      var boxA = { clientX: Math.min(ar.left, br.left) - 3, clientY: Math.min(ar.top, br.top) - 3,
+                   bubbles: true, pointerId: 61, isPrimary: true, button: 0 };
+      var boxB = { clientX: Math.max(ar.right, br.right) + 3, clientY: Math.max(ar.bottom, br.bottom) + 3,
+                   bubbles: true, pointerId: 61, isPrimary: true, button: 0 };
+      surf.dispatchEvent(new PointerEvent('pointerdown', boxA));
+      surf.dispatchEvent(new PointerEvent('pointermove', boxB));
+      ok('selection: items light while the rectangle crosses them',
+        surf.querySelectorAll('.item.multipreview').length === 2,
+        surf.querySelectorAll('.item.multipreview').length);
+      surf.dispatchEvent(new PointerEvent('pointerup', boxB));
+      ok('selection: release commits exactly those two items and leaves the mode',
+        SELECTED.size === 2 && SELECTED.has(ma.id) && SELECTED.has(mb.id) &&
+        !SELECTED.has(lonely.id) && !selectMode,
+        [].slice.call(SELECTED).join(','));
+      ok('selection: group actions live in the main toolbar for touch as well as desktop',
+        !Q('#selectDelete').hidden && !!Q('#selectActions button'));
+
+      var ax = ma.x, ay = ma.y, bx = mb.x, by = mb.y, lx = lonely.x, ly = lonely.y;
+      var hand = mid(el(ma));
+      el(ma).dispatchEvent(new PointerEvent('pointerdown', hand));
+      window.dispatchEvent(new PointerEvent('pointermove', {
+        clientX: hand.clientX + 24, clientY: hand.clientY + 16,
+        bubbles: true, pointerId: hand.pointerId, isPrimary: true }));
+      window.dispatchEvent(new PointerEvent('pointerup', {
+        clientX: hand.clientX + 24, clientY: hand.clientY + 16,
+        bubbles: true, pointerId: hand.pointerId, isPrimary: true }));
+      ok('selection: dragging either member moves the set as one rigid arrangement',
+        Math.abs((ma.x - ax) - (mb.x - bx)) < .01 &&
+        Math.abs((ma.y - ay) - (mb.y - by)) < .01 && ma.x !== ax,
+        [ma.x - ax, ma.y - ay, mb.x - bx, mb.y - by].map(function (x) { return x.toFixed(2); }).join(','));
+      ok('selection: an item outside the rectangle does not move with the set',
+        lonely.x === lx && lonely.y === ly, lonely.x + ',' + lonely.y);
+
+      ma.x = 62; ma.y = 68; ma.rot = 19;
+      mb.x = 8; mb.y = 48; mb.rot = -27;
+      el(ma).style.left = ma.x + '%'; el(ma).style.top = ma.y + '%'; el(ma).style.transform = 'rotate(19deg)';
+      el(mb).style.left = mb.x + '%'; el(mb).style.top = mb.y + '%'; el(mb).style.transform = 'rotate(-27deg)';
+      syncSelectionBar();
+      var tidyBtn = [].slice.call(Q('#selectActions').querySelectorAll('button'))
+        .filter(function (b) { return /Tidy logic/.test(b.textContent); })[0];
+      ok('tidy: a connected logic selection offers the operation', !!tidyBtn);
+      tidyBtn.click();
+      await sleep(SPRING_STILL.matches ? 40 : 1100);
+      lgLay();
+      ok('tidy: signal sources are placed before the gates they feed',
+        ma.x < mb.x && ma.rot === 0 && mb.rot === 0,
+        ma.x.toFixed(1) + ' → ' + mb.x.toFixed(1) + ', rotations ' + ma.rot + ',' + mb.rot);
+      ok('tidy: internal leads become saved orthogonal routes without changing endpoints',
+        page.wires[0].clean === 1 && !/C/.test(dOf()) && /[HV]/.test(dOf()) &&
+        page.wires[0].from.item === ma.id && page.wires[0].to.item === mb.id,
+        dOf());
+      ok('tidy: the group remains selected so it can be moved or deleted next',
+        SELECTED.size === 2 && el(ma).classList.contains('multi') && el(mb).classList.contains('multi'));
+
+      Q('#selectDelete').click();
+      await sleep(100);
+      ok('selection: the main-toolbar Delete removes the whole set and its internal lead',
+        page.items.length === 1 && page.items[0] === lonely && page.wires.length === 0 && SELECTED.size === 0,
+        page.items.length + ' items, ' + page.wires.length + ' leads');
 
       /* ---- what it says for itself: the truth table ---- */
       var tt = mk('nand', { x: 20, y: 20, w: 12 }), ts = mk('sw', { on: 1, x: 5, y: 20, w: 12 });

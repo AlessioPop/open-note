@@ -78,6 +78,15 @@ function histTouch(pageId){
   if(pageId) HIST.pages.add(pageId);
   histArm();
 }
+/* A live source such as a clock must still persist reached state, but it is not
+   a user command. Move the comparison copy forward without making an undo step;
+   if a real edit is already open on this page, leave its original before-copy
+   alone and let the two settle together. */
+function histRebase(pageId){
+  if(HIST.busy || !index || !pageId || HIST.pages.has(pageId)) return;
+  const p = pages.get(pageId);
+  if(p) HIST.shadow.set(pageId, histSnap(p));
+}
 function histTouchIndex(){
   if(HIST.busy || !index) return;
   HIST.index = true;
@@ -190,7 +199,7 @@ async function histApply(step, side){
       c[side] == null ? HIST.shadow.delete(c.id) : HIST.shadow.set(c.id, c[side]);
     }
     if(step.index){ histPutIdx(step.index[side]); HIST.idx = step.index[side]; }
-    selected = null;
+    select(null);
     selectMath(null, null);                      // a chip may be pointing at something no longer there
     if(step.index){                              // the sheet itself may have changed shape
       applyTheme(); sizeTag();

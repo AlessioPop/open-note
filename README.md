@@ -46,17 +46,17 @@ No library, nothing downloaded: a FITS file is 80-column ASCII cards in 2880-byt
 
 ### Logic gates you can flick
 
-Conventional ANSI gate symbols on the paper, wired port to port. Flick a switch and the ones run down the wires and light the lamps — there is no run button and no simulation step, because the whole sheet is worked out again every time anything changes.
+Conventional ANSI gate symbols on the paper, wired port to port. Flick a switch, hold a push button or start a clock and the ones run down the wires immediately — there is no global run button or simulation step.
 
 ![A one-bit full adder, wired up on the sheet](docs/img/logic.png)
 
-Eight gates, a switch, two constants and a lamp, plus a **custom gate whose truth table you fill in yourself**. Every gate can show the table that *is* its behaviour, with the row it is standing on lit — and put that table on the sheet as an ordinary Open Note table if you want to keep it.
+The Logic shelf is split into **Input controls, Output controls, Logic gates and Flip-flops**. Alongside the eight standard gates are a tri-state buffer, a switch with three interchangeable appearances, a push button, a variable-speed clock, constants, a lamp, a four-bit hexadecimal display, SR/D/JK/T flip-flops and a **custom gate whose truth table you fill in yourself**. Standard and custom combinational gates can show the table that *is* their behaviour, with the current row lit.
 
-Nothing is a picture of a gate: a gate is stored as `{gate:"nand"}` and drawn from shared SVG primitives, so NAND really is AND plus the one inversion bubble every inverting gate wears. Turn a gate to any angle and the wires stay on its ports, because where a port is is measured off the drawing rather than guessed from a bounding box. Wire a loop and it says so instead of hanging.
+Nothing is a picture of a gate: a gate is stored as `{gate:"nand"}` and drawn from shared SVG primitives, so NAND really is AND plus the one inversion bubble every inverting gate wears. Turn a gate to any angle and the wires stay on its ports, because where a port is is measured off the drawing rather than guessed from a bounding box. Wire a combinational loop and it says so instead of hanging. Marquee-select a connected circuit and **Tidy logic** lays it out by signal flow with clean orthogonal leads.
 
 ### And the rest
 
-**Write** — text in five styles, sticky notes, checklists, a terminal-style code cell syntax-coloured for twelve languages, flip cards you can study. **Media** — pictures, video, `.obj` models in their own little window, `.pptx` decks that draw themselves as SVG, file attachments and the folders they file into. **Shapes** — five wireframe solids to draw over. **Over the top of all of it** — a stylus, layers, and string tied between anything and anything.
+**Write** — text in five styles, sticky notes, checklists, a terminal-style code cell syntax-coloured for twelve languages, flip cards you can study. **Media** — pictures, video, `.obj` models in their own little window, `.pptx` decks that draw themselves as SVG, file attachments and the folders they file into. **Shapes** — five wireframe solids to draw over. **Over the top of all of it** — a stylus, layers, string tied between anything and anything, and a toolbar selection mode that drags a rectangle around several things so they move or delete as one on a mouse or touchscreen.
 
 Then take it out again: one self-contained `.html` anyone can open, a PDF, or a `.json` backup that restores anywhere.
 
@@ -110,7 +110,7 @@ js/lib/           algorithms that owe nothing to this app — latex, pptx, workb
 js/data/          tables the lib files read — the nuclides, the elements. Data, never code
 fonts/            the four families, carried locally so nothing needs the network
 desktop/          the Electron shell — main process and icon; wraps the app, never part of it
-tools/verify/     headless-Firefox verification harness — 1120 assertions
+tools/verify/     headless-Firefox verification harness — 1158 assertions
 tools/shots/      rebuilds the pictures above from the real app
 docs/             manual, architecture, and those pictures
 ```
@@ -124,7 +124,7 @@ Only `index.html`, `js/`, `fonts/` and `desktop/` are packaged into a build — 
 There is no test runner — the app *is* the test.
 
 ```
-tools/verify/run.sh        # 1120 assertions, in headless Firefox
+tools/verify/run.sh        # 1158 assertions, in headless Firefox
 tools/verify/desktop.sh    # 45 more, driving the real Electron shell
 tools/shots/run.sh         # rebuild the pictures in this README
 ```

@@ -32,7 +32,7 @@ async function openNote(id){
   curNoteId = id;
   index = doc; index.settings = index.settings || {};
   pages = new Map();
-  selected = null;
+  select(null);
   panX = panY = 0; setZoom(1);
   layers(index); curLayerId(); queueIndex();      // stable layer ids from the first open
   focusLayer = null; setDraw(false); setMath(false); renderLayers();

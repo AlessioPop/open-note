@@ -1,18 +1,6 @@
 /* Open Note — core/keys.js
    drawing the sheet, what is selected, and the keyboard */
 
-/* ================= selection ================= */
-function select(id){
-  selected = id;
-  /* the chip belongs to the plot it is on: picking anything else puts it away */
-  if(mathSel && mathSel.pid !== id){ mathSel = null; repaintPlots(); syncMathBar(); }
-  document.querySelectorAll('.item').forEach(n => {
-    const on = n.dataset.id === id;
-    n.classList.toggle('sel', on);
-    if(!on) n.classList.remove('play');
-  });
-}
-
 /* ================= drawing the sheet ================= */
 async function render(){
   cancelLinking(); deselectString(); closeQuickMenu();
@@ -39,7 +27,7 @@ async function render(){
   if($('#lpanel').classList.contains('open')) renderLayers();
   refit();
   $('#paperBtn').textContent = p.paper || 'grid';
-  if(selected) select(selected);
+  syncSelectionDOM();
 }
 
 /* ================= what the chrome does about the sheet ================= */
@@ -48,7 +36,7 @@ $('#clearPage').addEventListener('click', () => {
   if(!p.items.length && !(p.ink || []).length) return;
   if(!confirm('Clear this canvas? Everything on it, ink included, will be removed.')) return;
   for(const it of p.items) mediaIds(it).forEach(dropMedia);
-  p.items = []; p.links = []; p.ink = []; selected = null;
+  p.items = []; p.links = []; p.ink = []; select(null);
   queueSave(p.id); SND.pluck(); render();
 });
 $('#paperBtn').addEventListener('click', () => {
@@ -98,6 +86,7 @@ window.addEventListener('keydown', e => {
     if(drawMode){ setDraw(false); return; }
     if(selString){ deselectString(); return; }
     if(focusLayer){ focusLayer = null; applyLayerClasses(); return; }
+    if(selectMode || SELECTED.size){ setSelectMode(false, true); select(null); return; }
     select(null); $('#drawer').classList.remove('open');
     $('#lpanel').classList.remove('open'); $('#vidModal').classList.remove('open');
   }
@@ -113,6 +102,7 @@ window.addEventListener('keydown', e => {
         return;
       }
     }
+    if(SELECTED.size > 1){ deleteSelection(); return; }
     if(!selected) return;
     const p = sheet();
     const it = p && p.items.find(x => x.id === selected);

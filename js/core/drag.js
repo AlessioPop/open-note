@@ -46,6 +46,14 @@ function startDrag(e, it, el, page){
      may start — page units, so a big sheet doesn't swallow it whole */
   const offX = pctW(80), offY = pctH(35), inX = 100 - pctW(26), inY = 100 - pctH(26);
   const home = { x: it.x, y: it.y };
+  /* A marquee pick moves as one rigid arrangement. There is deliberately no
+     filing, maths drop, carry tilt or throw here: all four would make only the
+     grabbed member peel away from the set. The group follows the hand 1:1 and
+     settles exactly where it was released. */
+  const group = SELECTED.size > 1 && selectionHas(it.id)
+    ? selectionItems(page).map(x => ({ it: x, x: x.x, y: x.y,
+        el: document.querySelector('#pageHost .item[data-id="' + x.id + '"]') })).filter(x => x.el)
+    : null;
   let moved = false, over = null;
   const mark = t => {
     if((t && t.el) === (over && over.el)) return;
@@ -69,15 +77,28 @@ function startDrag(e, it, el, page){
       hidePeek();                                          // a preview has no business following a drag
       if(wrapEl) wrapEl.classList.add('carry');            // unclip: the item may hang over the edge
     }
-    moved = true; el.classList.add('dragging');
-    it.x = clamp(ox + (ev.clientX - sx) / r.width * 100, -offX, inX);
-    it.y = clamp(oy + (ev.clientY - sy) / r.height * 100, -offY, inY);
-    el.style.left = it.x + '%'; el.style.top = it.y + '%';
-    if(canFile(it)) mark(dropTarget(ev, el));      // …and drop it on another to file them together
-    else if(MATH_CARD[it.type]) mark(mathDrop(ev, el, it));   // …or onto a plot, or another card
+    moved = true;
+    if(group){
+      let dx = (ev.clientX - sx) / r.width * 100;
+      let dy = (ev.clientY - sy) / r.height * 100;
+      dx = clamp(dx, Math.max(...group.map(x => -offX - x.x)), Math.min(...group.map(x => inX - x.x)));
+      dy = clamp(dy, Math.max(...group.map(x => -offY - x.y)), Math.min(...group.map(x => inY - x.y)));
+      group.forEach(x => {
+        x.it.x = x.x + dx; x.it.y = x.y + dy;
+        x.el.style.left = x.it.x + '%'; x.el.style.top = x.it.y + '%';
+        x.el.classList.add('dragging');
+      });
+    } else {
+      el.classList.add('dragging');
+      it.x = clamp(ox + (ev.clientX - sx) / r.width * 100, -offX, inX);
+      it.y = clamp(oy + (ev.clientY - sy) / r.height * 100, -offY, inY);
+      el.style.left = it.x + '%'; el.style.top = it.y + '%';
+      if(canFile(it)) mark(dropTarget(ev, el));    // …and drop it on another to file them together
+      else if(MATH_CARD[it.type]) mark(mathDrop(ev, el, it)); // …or onto a plot, or another card
+    }
     /* carried paper leans into the push — a few degrees, sprung, gone at rest */
     fl.track(ev);
-    if(!SPRING_STILL.matches){
+    if(!group && !SPRING_STILL.matches){
       if(!tsp){
         if(el._tiltStop) el._tiltStop();
         tsp = spring({ response: .3, damping: 1, rest: .04, onUpdate: v => {
@@ -94,10 +115,14 @@ function startDrag(e, it, el, page){
     window.removeEventListener('pointermove', mv);
     window.removeEventListener('pointerup', up);
     window.removeEventListener('pointercancel', up);
-    el.classList.remove('dragging');
+    (group || [{ el }]).forEach(x => x.el.classList.remove('dragging'));
     if(wrapEl) wrapEl.classList.remove('carry');
     const drop = over;
     mark(null);
+    if(moved && group){
+      queueSave(curPage.id); SND.plop(); syncSelectionDOM();
+      return;
+    }
     if(moved && drop && drop.page === curPage){
       if(tsp) el._tiltStop();                   // filing rebuilds the page; the tilt goes with it
       it.x = clamp(it.x, -offX, inX);

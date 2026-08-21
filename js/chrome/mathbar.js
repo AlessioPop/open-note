@@ -17,6 +17,7 @@ function setMath(on){
   $('#mathbar').classList.toggle('open', mathMode);
   if(mathMode){
     if(drawMode) setDraw(false);
+    if(typeof setSelectMode === 'function' && selectMode) setSelectMode(false, true);
     deselectString(); cancelLinking(); closeQuickMenu();
   } else { mathTool = 'pan'; mathAim = null; }
   syncMathBar();

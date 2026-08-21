@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 1120 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 1158 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,12 +22,12 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 1120 assertions, and they should
+It prints a pass/fail count and every failure. 1158 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 69 script files load, in order;
+- nothing throws while the 70 script files load, in order;
 - the app boots, opens a note and draws its sheet — one sheet, 1980 × 1320,
   four rails, and no page furniture of any kind;
 - every entry in the add menu adds the type it claims to;
@@ -137,15 +137,25 @@ all pass — if one doesn't, that is a real regression.
   refuses to be wired into itself, and that an output cannot be wired to an
   output; that a ring is worked out rather than run for ever, that both gates in
   it and everything hanging off it are marked while a gate nowhere near it is
-  untouched, and that cutting one lead lets the whole thing settle; that the four
-  signal states differ by more than their colour; that a lead really can be
+  untouched, and that cutting one lead lets the whole thing settle; that all five
+  signal states differ by more than their colour; that Tri-State emits `z` while
+  disabled and passes both bits while enabled; that a four-bit digit reads 1010
+  as A; that SR, D, JK and T implement their characteristic tables, D changes on
+  a real rising edge and Q-bar is inverse; that the push button holds only until
+  release and the clock scheduler advances without a simulation step; that the
+  Logic palette has its four labelled families and a switch can really change
+  from lever to rocker to plain 0/1; that a lead really can be
   dragged from an output onto an input, from a bare input onto an output, picked
   up off an input it already drives and moved, and dropped on bare paper to come
   out; that clicking one picks it out and `Delete` takes it away; that deleting a
   gate takes every lead on it; that **a gate turned a quarter turn swings its
   output port a quarter turn about its own middle** — nowhere near the edge of
   its box — and that turning it does not stretch the reach of its ports; that
-  moving and resizing a gate move the lead with it; that the truth-table panel
+  moving and resizing a gate move the lead with it; that marquee selection picks
+  exactly what its rectangle crosses, moves the group rigidly, deletes it in one
+  operation, and offers Tidy only for a connected circuit; that Tidy restores
+  signal order, resets rotations and stores orthogonal leads without changing
+  their endpoints; that the truth-table panel
   opens beside the gate rather than on top of it, lights the row the gate is
   standing on, lights none while an input is bare, walks the lit row when a
   switch is flicked, refuses to be typed over on a built-in, and writes itself

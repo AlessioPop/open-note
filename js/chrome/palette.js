@@ -61,7 +61,17 @@ function renderGrid(calm){
     html = found.length ? found.map(t => palTile(t, (TOOL_CATS[t.cat] || {}).label)).join('')
       : '<div class="pnone">nothing called “' + esc(q) + '”</div>';
   } else {
-    html = palTools(curCat).map(t => palTile(t)).join('');
+    const tools = palTools(curCat);
+    const groups = [];
+    for(const t of tools){
+      const name = t.group || '';
+      let g = groups.find(x => x.name === name);
+      if(!g) groups.push(g = { name, order: t.groupOrder == null ? 50 : t.groupOrder, tools: [] });
+      g.tools.push(t);
+    }
+    groups.sort((a, b) => a.order - b.order);
+    html = groups.map(g => (g.name ? '<div class="pgroup">' + esc(g.name) + '</div>' : '') +
+      g.tools.map(t => palTile(t)).join('')).join('');
   }
   grid.innerHTML = html;
   [...grid.children].forEach((el, i) => el.style.setProperty('--i', Math.min(i, 11)));
@@ -197,7 +207,10 @@ addCSS('palette', `
 .ptab{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px 5px;border-radius:9px;color:rgba(233,234,239,.6);font-family:var(--mono);font-size:8.5px;letter-spacing:.15em;text-transform:uppercase;transition:color .15s}
 .ptab .ic{width:17px;height:17px}
 .ptab:hover,.ptab.on{color:#fff}
-.pgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;padding:11px 0 3px;min-height:100px}
+.pgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;padding:11px 0 3px;min-height:100px;
+  max-height:min(56vh,520px);overflow:auto;scrollbar-width:thin}
+.pgroup{grid-column:1/-1;margin:4px 3px -1px;font-size:8px;letter-spacing:.18em;text-transform:uppercase;
+  color:rgba(233,234,239,.42)}
 .ptile{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;height:78px;border-radius:13px;color:rgba(233,234,239,.88);background:rgba(255,255,255,.035);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);transition:background .15s,transform .15s,box-shadow .15s,color .15s;animation:ptin .26s cubic-bezier(.2,.9,.3,1) both;animation-delay:calc(var(--i,0)*16ms)}
 .pgrid.calm .ptile{animation:none}
 @keyframes ptin{from{opacity:0;transform:translateY(9px) scale(.94)}}

@@ -108,7 +108,7 @@ function buildItem(it, page, live, urls, bIdx){
     /* while an item is "playing" — a video, a model being turned, a guide being
        posed — the mouse belongs to it rather than to the page */
     if(el.classList.contains('play') && playAreas() && e.target.closest(playAreas())) return;
-    select(it.id);
+    if(!selectionHas(it.id)) select(it.id);
     if(e.target.classList.contains('rs')) startResize(e, it, el, page);
     else if(!e.target.classList.contains('rot')) startDrag(e, it, el, page);
   });
@@ -173,15 +173,20 @@ function reorder(page, it, toFront){
   });
   queueSave(page.id); SND.plop();
 }
-function removeItem(page, it){
-  page.items = page.items.filter(x => x.id !== it.id);
-  dropLinks(page, it.id);
+function removeItems(page, items){
+  const gone = new Set((items || []).map(it => it.id));
+  if(!gone.size) return;
+  page.items = page.items.filter(x => !gone.has(x.id));
+  for(const id of gone) dropLinks(page, id);
   /* a feature may be holding the item in a set of its own — being edited, being
      moved, being posed — and wants to hear that it has gone */
-  for(const t in ITEMS) if(ITEMS[t].forget) ITEMS[t].forget(it);
-  mediaIds(it).forEach(dropMedia);
+  for(const it of items){
+    for(const t in ITEMS) if(ITEMS[t].forget) ITEMS[t].forget(it);
+    mediaIds(it).forEach(dropMedia);
+  }
   queueSave(page.id); select(null); SND.pluck(); render();
 }
+function removeItem(page, it){ removeItems(page, [it]); }
 
 /* highlight current selection inside a text item */
 function applyHighlight(el, txt, it, page, color){
