@@ -279,7 +279,106 @@ function molShade(hex, k){
   const f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
   return '#' + [f(r), f(g), f(b)].map(c => c.toString(16).padStart(2, '0')).join('');
 }
+const molLen3 = (p, q) => Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) || 1;
 const molLum = hex => { const n = parseInt(hex.slice(1), 16); return (.299 * (n >> 16) + .587 * ((n >> 8) & 255) + .114 * (n & 255)) / 255; };
+/* ---- balls that cut into one another ----
+   Space-filling balls overlap deeply, and painting whole discs back to front makes
+   the nearer one read as a coin stuck on the front: the real edge between two
+   spheres is not an outline but the circle where their surfaces cut, which on
+   screen is an ellipse. Every ball is masked back to the cap that truly stands
+   proud of its neighbours, and one swallowed whole is dropped. */
+function molCaps(vv, rm, s, prj){
+  const n = vv.length, hide = new Set(), cut = new Array(n).fill('');
+  for(let i = 0; i < n; i++){
+    const ri = rm[i], ci = vv[i], Ci = prj(ci), Ri = ri * s * Ci[2];
+    for(let j = 0; j < n; j++){
+      if(j === i || hide.has(i)) continue;
+      /* only a ball painted BEFORE this one needs cutting out of it: one painted after
+         simply covers it. That halves the work, and it makes a gap impossible — the
+         earliest ball over any spot is cut by nothing, so something is always painted
+         there, and every cut edge fades onto solid ball rather than onto the paper. */
+      if(vv[j][2] > ci[2] || (vv[j][2] === ci[2] && j > i)) continue;
+      const rj = rm[j], vx = vv[j][0] - ci[0], vy = vv[j][1] - ci[1], vz = vv[j][2] - ci[2];
+      const D = Math.hypot(vx, vy, vz);
+      if(!D || D >= ri + rj) continue;               /* they never touch */
+      const a0 = (D * D + ri * ri - rj * rj) / (2 * D);   /* the seam, along the centre line */
+      if(a0 >= ri) continue;                         /* j sits inside i: nothing of i is lost */
+      if(a0 <= -ri){ hide.add(i); continue; }        /* i sits inside j */
+      /* A ball that breaks its neighbour's surface by a hair draws a dark thread across
+         the model, because the sliver it shows is all limb. Lean the seam a couple of
+         units towards whichever cap is the thinner and the hairline goes under. */
+      const eps = Math.min(3 / s, .05 * Math.min(ri, rj));
+      const a = a0 + (ri + a0 < D + rj - a0 ? -eps : eps);
+      if(a >= ri - .5 / s) continue;                 /* what j would take is thinner than the paper shows */
+      if(a <= -ri + .5 / s){ hide.add(i); continue; }/* … and what i has left is */
+      const u = [vx / D, vy / D, vz / D], rho = Math.sqrt(ri * ri - a * a);
+      /* a point of i is lost exactly when it lies past the seam — the plane, not the
+         neighbour, since the plane is the one both balls agree on */
+      const bur = q => (q[0] - ci[0]) * u[0] + (q[1] - ci[1]) * u[1] + (q[2] - ci[2]) * u[2] > a;
+      /* a frame across the seam, turned until e2 lies flat in the screen plane — then
+         a seam point stands in front of i's own centre exactly while cos t > c0 */
+      let e1 = Math.abs(u[0]) < .9 ? [0, -u[2], u[1]] : [u[2], 0, -u[0]];
+      const L1 = Math.hypot(e1[0], e1[1], e1[2]); e1 = [e1[0] / L1, e1[1] / L1, e1[2] / L1];
+      let e2 = [u[1] * e1[2] - u[2] * e1[1], u[2] * e1[0] - u[0] * e1[2], u[0] * e1[1] - u[1] * e1[0]];
+      const G = Math.hypot(e1[2], e2[2]);
+      if(G > 1e-9){
+        const cs = e1[2] / G, sn = e2[2] / G, q1 = e1;
+        e1 = [q1[0] * cs + e2[0] * sn, q1[1] * cs + e2[1] * sn, q1[2] * cs + e2[2] * sn];
+        e2 = [e2[0] * cs - q1[0] * sn, e2[1] * cs - q1[1] * sn, e2[2] * cs - q1[2] * sn];
+      }
+      const P = [ci[0] + a * u[0], ci[1] + a * u[1], ci[2] + a * u[2]];
+      const seam = t => [P[0] + rho * (Math.cos(t) * e1[0] + Math.sin(t) * e2[0]),
+        P[1] + rho * (Math.cos(t) * e1[1] + Math.sin(t) * e2[1]),
+        P[2] + rho * (Math.cos(t) * e1[2] + Math.sin(t) * e2[2])];
+      const B0 = rho * G, c0 = B0 > 1e-9 ? -a * u[2] / B0 : (a * u[2] > 0 ? -2 : 2);
+      const pole = bur([ci[0], ci[1], ci[2] + ri]);     /* is the point nearest the eye lost? */
+      if(c0 >= 1){                                     /* the seam misses the near face: all or nothing */
+        if(pole) hide.add(i);
+        continue;
+      }
+      /* a tenth of a unit is a thousandth of a bond: finer than any screen, and fine
+         enough that turning the molecule slides these edges instead of snapping them
+         from one whole unit to the next, which reads as a wobble */
+      const xy = p => p[0].toFixed(1) + ',' + p[1].toFixed(1);
+      const steps = arc => Math.max(4, Math.min(40, Math.round(rho * s * arc / 16)));
+      const off = t => xy(prj(seam(t)));
+      let d = '';
+      if(c0 <= -1){                                    /* the whole seam faces the eye: a closed ring on i */
+        const N = steps(2 * Math.PI);
+        for(let q = 0; q < N; q++) d += (q ? 'L' : 'M') + off(q / N * 2 * Math.PI);
+        d += 'Z';
+        /* the ring cuts the near face in two — the piece the ball loses is the one the
+           near pole falls in, which is the inside of the ring only when the pole is too */
+        if((Math.abs(a) * G < rho * Math.abs(u[2])) !== pole)
+          d = 'M' + xy([Ci[0] - Ri - 2, Ci[1]]) + 'A' + (Ri + 2).toFixed(1) + ',' + (Ri + 2).toFixed(1) + ' 0 1,0 ' +
+            xy([Ci[0] + Ri + 2, Ci[1]]) + 'A' + (Ri + 2).toFixed(1) + ',' + (Ri + 2).toFixed(1) + ' 0 1,0 ' +
+            xy([Ci[0] - Ri - 2, Ci[1]]) + 'Z' + d;
+      } else {
+        const t0 = Math.acos(c0), N = steps(2 * t0);
+        const E1 = prj(seam(-t0)), E2 = prj(seam(t0));
+        d = 'M' + xy(E1);
+        for(let q = 1; q < N; q++) d += 'L' + off(-t0 + 2 * t0 * q / N);
+        d += 'L' + xy(E2);
+        /* home along i's own outline, by the way that runs behind j. Walked, not an arc
+           command: the two ends can sit very nearly a diameter apart, and there SVG's
+           correction for a radius too small to span them throws the centre right off
+           the ball — which quietly bites a crescent out of the cut. */
+        const f1 = Math.atan2(E1[1] - Ci[1], E1[0] - Ci[0]), f2 = Math.atan2(E2[1] - Ci[1], E2[0] - Ci[0]);
+        let dl = ((f1 - f2) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+        const fm = f2 + dl / 2;
+        if(!bur([ci[0] + ri * Math.cos(fm), ci[1] + ri * Math.sin(fm), ci[2]])) dl -= 2 * Math.PI;
+        const M = Math.max(3, Math.min(48, Math.round(Math.abs(dl) * Ri / 16))), RO = Ri + 2;
+        /* a shade outside the outline, so rounding the walk to whole units cannot leave
+           a thread of the ball's own darkest edge standing along the cut */
+        for(let q = 0; q <= M; q++)
+          d += 'L' + xy([Ci[0] + RO * Math.cos(f2 + dl * q / M), Ci[1] + RO * Math.sin(f2 + dl * q / M)]);
+        d += 'L' + xy(E1) + 'Z';
+      }
+      cut[i] += '<path fill="#000" fill-rule="evenodd" d="' + d + '"/>';
+    }
+  }
+  return { hide, cut };
+}
 function molDraw3D(it, live, el){
   const box = it.box || molBox(it), W = molU(box.w), H = molU(box.h);
   const base = { vb: '0 0 ' + W + ' ' + H, width: (box.w * MOL_BL).toFixed(2), cls: 'molsvg m3d', inner: '' };
@@ -290,49 +389,84 @@ function molDraw3D(it, live, el){
   /* rotY(yaw) then rotX(pitch), y down and z towards the eye: dragging down
      tips the top towards you, dragging right turns the front to the right */
   const turn = (x, y, z) => [cy * x + sy * z, -sx * sy * x + cx * y + sx * cy * z, -cx * sy * x - sx * y + cx * cy * z];
+  const vv = A.map(a => turn(a.x, a.y, a.z));
   let R = 0;
-  A.forEach(a => { R = Math.max(R, Math.hypot(a.x, a.y, a.z) + 1.3); });
+  vv.forEach(v => { R = Math.max(R, Math.hypot(v[0], v[1], v[2]) + 1.3); });
   const s = Math.min(W, H) / (2 * R) * .94 * zoom, EYE = 3200;
-  const pts = A.map(a => {
-    const v = turn(a.x, a.y, a.z), k = EYE / (EYE - v[2] * s);
-    return { x: W / 2 + v[0] * s * k, y: H / 2 + v[1] * s * k, z: v[2], k };
-  });
+  const prj = q => { const k = EYE / (EYE - q[2] * s); return [W / 2 + q[0] * s * k, H / 2 + q[1] * s * k, k]; };
+  const pts = vv.map(v => { const p = prj(v); return { x: p[0], y: p[1], z: v[2], k: p[2] }; });
   if(el) el._molPts = pts;
   const col = a => { const e = CHEM_SYM[a.e] || CHEM_SYM.C; return a.e === 'H' ? '#e9e9e9' : e.color; };
   const rad = a => { const e = CHEM_SYM[a.e] || CHEM_SYM.C; return s3 === 'fill' ? e.rvdw * .96 : s3 === 'stick' ? .17 : Math.max(.17, e.rcov * .42); };
-  const bw = (s3 === 'stick' ? .32 : .16) * s;
+  const bw = (s3 === 'stick' ? .32 : .16) * s, rm = A.map(rad);
+  /* only space-filling balls reach into one another; the rest never do, so never pay for it */
+  const caps = s3 === 'fill' ? molCaps(vv, rm, s, prj) : null;
   const seq = ++MOL_SEQ, defs = {}, pick = MOL_PICK && MOL_PICK.id === it.id ? MOL_PICK.atoms : [];
   const grad = a => {
-    const c = col(a), id = 'mg' + seq + (CHEM_SYM[a.e] ? CHEM_SYM[a.e].z : 0);
+    const c = col(a), id = 'mg' + seq + '_' + (CHEM_SYM[a.e] ? CHEM_SYM[a.e].z : 0);
     if(!defs[id]) defs[id] = '<radialGradient id="' + id + '" cx="36%" cy="34%" r="66%"><stop offset="0" stop-color="' +
       molShade(c, .55) + '"/><stop offset=".55" stop-color="' + c + '"/><stop offset="1" stop-color="' + molShade(c, -.38) + '"/></radialGradient>';
     return id;
   };
   const prim = [];
   A.forEach((a, i) => prim.push({ z: pts[i].z, t: 'a', i }));
+  /* a half-stick is depth-sorted on the middle of the piece that shows — the piece
+     outside its own ball — so it lands in front of that ball only when it points at
+     the eye, and behind it when it runs away */
   if(s3 !== 'fill') emb.bonds.forEach((b, k) => {
-    prim.push({ z: (pts[b.a].z * 3 + pts[b.b].z) / 4 - .001, t: 'b', k, from: b.a, to: b.b });
-    prim.push({ z: (pts[b.a].z + pts[b.b].z * 3) / 4 - .001, t: 'b', k, from: b.b, to: b.a });
+    [[b.a, b.b], [b.b, b.a]].forEach(e => {
+      const f = e[0], t = e[1], L3 = molLen3(vv[f], vv[t]);
+      const g = Math.min(rm[f] / L3, .46);
+      prim.push({ z: vv[f][2] + (vv[t][2] - vv[f][2]) * (g + .5) / 2 - .001, t: 'b', k, from: f, to: t });
+    });
   });
   prim.sort((p, q) => p.z - q.z);
   let out = '';
+  /* Space-filling balls fuse into one solid, so an outline round every ball reads as a
+     heap of circles rather than a shape: the only edge that belongs to the thing is the
+     one around the whole of it. Painting each ball once, a hair fat, behind the lot
+     leaves exactly that — the union's rim, in each atom's own colour, and no line
+     anywhere across the middle. Inside, the shading does the work. */
+  const rim = s3 === 'fill' ? 1.6 : 0, mkOf = {};
+  if(rim) for(const p of prim){
+    if(p.t !== 'a' || (caps && caps.hide.has(p.i))) continue;
+    const P = pts[p.i], r = rm[p.i] * s * P.k;
+    /* the rim wears the ball's own mask: a cut can end a hair outside the ball behind
+       it, and an unmasked rim would show through there as a ring in mid-air */
+    const mk = caps.cut[p.i] ? (mkOf[p.i] = 'mk' + seq + '_' + p.i) : '';
+    if(mk) defs[mk] = '<mask id="' + mk + '"><rect x="' + (P.x - r * 1.4).toFixed(0) + '" y="' + (P.y - r * 1.4).toFixed(0) +
+      '" width="' + (r * 2.8).toFixed(0) + '" height="' + (r * 2.8).toFixed(0) + '" fill="#fff"/>' + caps.cut[p.i] + '</mask>';
+    out += (mk ? '<g mask="url(#' + mk + ')">' : '') + '<circle class="rim" cx="' + P.x.toFixed(1) + '" cy="' + P.y.toFixed(1) +
+      '" r="' + (r + rim).toFixed(1) + '" fill="' + molShade(col(A[p.i]), -.45) + '"/>' + (mk ? '</g>' : '');
+  }
   for(const p of prim){
     if(p.t === 'a'){
-      const a = A[p.i], P = pts[p.i], r = rad(a) * s * P.k, c = col(a);
+      if(caps && caps.hide.has(p.i)) continue;
+      const a = A[p.i], P = pts[p.i], r = rm[p.i] * s * P.k, c = col(a);
+      const mk = mkOf[p.i] || '';                 /* built with the rim, which shares it */
+      out += mk ? '<g mask="url(#' + mk + ')">' : '';
       out += '<circle class="ball" cx="' + P.x.toFixed(1) + '" cy="' + P.y.toFixed(1) + '" r="' + r.toFixed(1) +
-        '" fill="url(#' + grad(a) + ')" stroke="' + molShade(c, -.45) + '"/>';
+        '" fill="url(#' + grad(a) + ')" stroke="' + (rim ? 'none' : molShade(c, -.45)) + '"/>';
       if(it.lab && (s3 !== 'ball' || a.e !== 'H'))
         out += '<text class="lb3" x="' + P.x.toFixed(1) + '" y="' + P.y.toFixed(1) + '" font-size="' + Math.max(14, r * 1.1).toFixed(0) +
           '" fill="' + (molLum(c) > .6 ? '#222' : '#fff') + '">' + a.e + '</text>';
+      out += mk ? '</g>' : '';
     } else {
-      const b = emb.bonds[p.k], P = pts[p.from], Q = pts[p.to], a = A[p.from];
-      const mx = (P.x + Q.x) / 2, my = (P.y + Q.y) / 2, c = molShade(col(a), -.12);
+      const b = emb.bonds[p.k], f = p.from, t = p.to, F = vv[f], T = vv[t], a = A[f];
+      const P = pts[f], Q = pts[t], c = molShade(col(a), -.12);
+      const M = prj([(F[0] + T[0]) / 2, (F[1] + T[1]) / 2, (F[2] + T[2]) / 2]);
       const dx = Q.x - P.x, dy = Q.y - P.y, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
-      const n = s3 === 'ball' ? b.o : 1, gap = .2 * s;
-      for(let t = 0; t < n; t++){
-        const off = (t - (n - 1) / 2) * gap;
-        out += '<line class="stick" x1="' + (P.x + nx * off).toFixed(1) + '" y1="' + (P.y + ny * off).toFixed(1) + '" x2="' + (mx + nx * off).toFixed(1) +
-          '" y2="' + (my + ny * off).toFixed(1) + '" stroke="' + c + '" stroke-width="' + (n > 1 ? bw * .62 : bw).toFixed(1) + '"/>';
+      const n = s3 === 'ball' ? b.o : 1, gap = .2 * s, wid = n > 1 ? bw * .62 : bw, L3 = molLen3(F, T);
+      for(let q = 0; q < n; q++){
+        const off = (q - (n - 1) / 2) * gap;
+        /* start the stick where it leaves the ball, in space — a chord, since the
+           line runs wid/2 wide and a double bond sits off to one side */
+        const side = Math.hypot(off, wid / 2) / s;
+        const g = Math.min(Math.sqrt(Math.max(0, rm[f] * rm[f] - side * side)) / L3, .46);
+        const S = prj([F[0] + (T[0] - F[0]) * g, F[1] + (T[1] - F[1]) * g, F[2] + (T[2] - F[2]) * g]);
+        out += '<line class="stick" x1="' + (S[0] + nx * off).toFixed(1) + '" y1="' + (S[1] + ny * off).toFixed(1) +
+          '" x2="' + (M[0] + nx * off).toFixed(1) + '" y2="' + (M[1] + ny * off).toFixed(1) +
+          '" stroke="' + c + '" stroke-width="' + wid.toFixed(1) + '"/>';
       }
     }
   }
