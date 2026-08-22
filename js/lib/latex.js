@@ -315,6 +315,11 @@ function mathNode(hit){
    compiler below and the editor in chrome/mathpad.js work in those offsets. A
    <br> counts as one newline, and maths already compiled as one space — its
    source is on the element, not in the text. */
+/* Something already compiled: its source lives on the element rather than in
+   the text, so it counts as one character and is never walked into. Maths and
+   code ticks both — lib/ticks.js seals a fence the same way. */
+const mathSealed = c => c.hasAttribute('data-tex') || c.hasAttribute('data-tick');
+
 function mathFlat(root){
   const nodes = [];
   let s = '';
@@ -322,7 +327,7 @@ function mathFlat(root){
     for(let c = n.firstChild; c; c = c.nextSibling){
       if(c.nodeType === 3){ nodes.push({ n: c, at: s.length }); s += c.nodeValue; }
       else if(c.nodeType === 1){
-        if(c.hasAttribute('data-tex')){ s += ' '; continue; }   // already compiled
+        if(mathSealed(c)){ s += ' '; continue; }   // already compiled
         const br = /^(BR|DIV|P|LI)$/.test(c.tagName);
         if(br) s += '\n';
         walk(c);
@@ -350,7 +355,7 @@ function mathFlatOff(root, node, off){
         if(got < 0 && c === node) got = s + Math.min(off, c.nodeValue.length);
         s += c.nodeValue.length;
       } else if(c.nodeType === 1){
-        if(c.hasAttribute('data-tex')){ s += 1; continue; }
+        if(mathSealed(c)){ s += 1; continue; }
         const br = /^(BR|DIV|P|LI)$/.test(c.tagName);
         if(br) s += 1;
         walk(c);
@@ -373,7 +378,7 @@ function mathFlatPos(root, off){
         if(!got && off >= s && off <= s + L) got = [c, off - s];
         s += L;
       } else if(c.nodeType === 1){
-        if(c.hasAttribute('data-tex')){ s += 1; continue; }
+        if(mathSealed(c)){ s += 1; continue; }
         const br = /^(BR|DIV|P|LI)$/.test(c.tagName);
         if(br) s += 1;
         walk(c);

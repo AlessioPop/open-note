@@ -15,6 +15,8 @@ defineItem('text', {
     marker: base => ({ ...base, type:'text', st:'marker', w:52, fs:26, html:'', mk:MK_COLORS[0] })
   },
   sizeable: true,
+  autoWidth: it => it.aw !== false,        // as wide as its writing, until it is pinned
+  dropWhenBlank: true,                     // an empty one was an accident: it goes
   html: it => it.st === 'marker'
     ? '<div class="body mkwrap"><div class="txt st-marker" data-ph="highlight something"></div></div>'
     : '<div class="body"><div class="txt st-' + it.st + '" data-ph="type here"></div></div>',

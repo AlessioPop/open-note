@@ -594,7 +594,7 @@ function tbStatText(it, b){
 }
 /* cells compile $$…$$ like every other writing surface in the book */
 defineMathBox('.tc');
-const tbMath = el => el.querySelectorAll('.tc').forEach(mathify);
+const tbMath = (el, live) => el.querySelectorAll('.tc').forEach(n => richify(n, live));
 
 /* ---- working in it ---- */
 function tbWire(el, it, page){
@@ -643,7 +643,7 @@ function tbWire(el, it, page){
       if(!v) return;
       n.textContent = v.t;
       n.classList.toggle('err', !!v.err);
-      mathify(n);
+      richify(n);
     });
     foot();
   }
@@ -1455,7 +1455,7 @@ defineItem('table', {
   sound: 'plop',
   sizeable: true,
   html: (it, c) => tbHTML(it, c),
-  mount: el => tbMath(el),
+  mount: (el, it, c) => tbMath(el, c.live),
   /* a new table is ready to be typed into, like a spreadsheet: the first cell
      is the cursor and whatever you type goes straight into it */
   after: (it, el) => { const g = el && el.querySelector('.tgrid'); if(g) g.focus({ preventScroll:true }); },

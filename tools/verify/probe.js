@@ -1024,6 +1024,402 @@
         'rows=' + ck.querySelectorAll('.ckrow').length);
     });
 
+    /* ---- a writing box is as wide as its writing ----
+       Text, stickies and checklists follow the longest line they hold and `it.w`
+       is only the ceiling they wrap at, so a two-word heading has no invisible
+       acre beside it to swallow a click meant for the paper. Dragging the handle
+       pins the box; the button in its toolbar lets go again. */
+    await stage('hug width', async function () {
+      var page = sheet();
+      var items0 = page.items;
+      page.items = []; await render();
+      var surfW = function () { return Q('#pageHost .surface').offsetWidth; };
+      var el = function (t) { return byType(t); };
+      var put = function (type, html, w, extra) {
+        var it = { id: uid(), x: 6, y: 6, rot: 0, z: 1, lay: curLayerId(),
+          type: type, fs: type === 'text' ? 40 : 20, w: w, html: html };
+        for (var k in (extra || {})) it[k] = extra[k];
+        page.items = [it]; return it;
+      };
+      var wbtn = function (t) {
+        return QA('#pageHost .item[data-type="' + t + '"] .tools button').filter(function (b) {
+          return b.textContent === '▭' || b.textContent === '↔'; })[0];
+      };
+
+      /* ---- which features hand the choice to the reader at all ---- */
+      ['text', 'note', 'check'].forEach(function (t) {
+        ok('hug: ' + t + ' can be pinned', canPin({ type: t }) === true);
+      });
+      ok('hug: a matrix always sizes itself and cannot be pinned',
+        canPin({ type: 'matrix' }) === false && autoWidth({ type: 'matrix' }) === true);
+      ok('hug: a table is plainly `w` wide',
+        canPin({ type: 'table' }) === false && autoWidth({ type: 'table' }) === false);
+
+      /* ---- each of the three: short hugs, long wraps at the ceiling ---- */
+      var CASES = [
+        { type: 'text', st: 'title', short: 'Hi',
+          long: 'A heading long enough that it has to wrap somewhere sensible ' +
+                'instead of running clean off the side of the paper' },
+        { type: 'note', short: 'ok',
+          long: 'a sticky with rather more on it than two letters, enough that it ' +
+                'has to wrap before it runs off the side of the paper' },
+        { type: 'check', short: '- [ ] a',
+          long: '- [ ] a task written out at quite enough length that the box has no ' +
+                'choice but to wrap it somewhere sensible\n- [x] and a second one under it' }
+      ];
+      CASES.forEach(function (c) {
+        var extra = c.st ? { st: c.st } : {};
+        var it = put(c.type, c.short, 40, extra);
+        page.items = [it];
+        /* rendering is async; the checks below re-read the DOM after it */
+        c.it = it; c.extra = extra;
+      });
+      for (var i = 0; i < CASES.length; i++) {
+        var c = CASES[i], t = c.type;
+        page.items = [put(t, c.short, 40, c.extra)];
+        await render();
+        var cap = surfW() * 0.4;
+        var n = el(t);
+        ok('hug: a new ' + t + ' hugs its writing', autoWidth(page.items[0]) === true);
+        ok('hug: ' + t + ' wears the hug class', !!n && n.classList.contains('hug'));
+        ok('hug: ' + t + ' has no width of its own', n.style.width === '',
+          JSON.stringify(n.style.width));
+        ok('hug: ' + t + ' takes it.w as its ceiling', n.style.maxWidth === '40%',
+          JSON.stringify(n.style.maxWidth));
+        c.narrow = n.offsetWidth;
+        ok('hug: a short ' + t + ' is far narrower than the ceiling', c.narrow < cap * 0.6,
+          c.narrow + 'px of a ' + Math.round(cap) + 'px ceiling');
+        ok('hug: and still wide enough to aim at', c.narrow >= 26, c.narrow + 'px');
+
+        page.items = [put(t, c.long, 40, c.extra)];
+        await render();
+        n = el(t);
+        ok('hug: a full ' + t + ' grows to the ceiling', n.offsetWidth > cap * 0.9,
+          n.offsetWidth + 'px of ' + Math.round(cap) + 'px');
+        ok('hug: and never past it', n.offsetWidth <= Math.ceil(cap) + 1,
+          n.offsetWidth + 'px of ' + Math.round(cap) + 'px');
+        ok('hug: so it wrapped rather than ran on', n.offsetHeight > c.narrow / 2 &&
+          n.offsetHeight > 30, n.offsetHeight + 'px tall');
+        ok('hug: ' + t + ' carries the width button', !!wbtn(t));
+      }
+
+      /* ---- an emptied box does not vanish ---- */
+      page.items = [put('text', '', 40, { st: 'body' })];
+      await render();
+      ok('hug: an emptied box keeps a thumb of width', el('text').offsetWidth >= 26,
+        el('text').offsetWidth + 'px');
+
+      /* ---- several lines measure by the longest of them ---- */
+      page.items = [put('text', 'one<br>a much longer second line<br>two', 40, { st: 'title' })];
+      await render();
+      var lw = el('text').offsetWidth;
+      ok('hug: several lines measure by the longest',
+        lw > 40 && lw < surfW() * 0.4, lw + 'px, ceiling ' + Math.round(surfW() * 0.4));
+
+      /* ---- pinning: what the resize handle does, and what the button undoes ---- */
+      var pinIt = put('note', 'ok', 40);
+      page.items = [pinIt]; await render();
+      ok('hug: pinWidth takes', pinWidth(pinIt, 25) === true && pinIt.aw === false,
+        JSON.stringify(pinIt.aw));
+      ok('hug: a pinned box is no longer auto', autoWidth(pinIt) === false);
+      await render();
+      ok('hug: a pinned box wears its width', el('note').style.width === '25%' &&
+        el('note').style.maxWidth === '',
+        el('note').style.width + ' / ' + el('note').style.maxWidth);
+      ok('hug: and drops the hug class', !el('note').classList.contains('hug'));
+      ok('hug: and is really that wide',
+        Math.abs(el('note').offsetWidth - surfW() * 0.25) < 2,
+        el('note').offsetWidth + 'px of ' + Math.round(surfW() * 0.25) + 'px');
+      var b = wbtn('note');
+      ok('hug: pinned, the button offers to let go', !!b && b.textContent === '▭',
+        b && b.textContent);
+      if (b) {
+        b.click(); await sleep(60);
+        ok('hug: clicking it hugs the writing again', pinIt.aw === true &&
+          autoWidth(pinIt) === true, JSON.stringify(pinIt.aw));
+        ok('hug: and the box shrank back to the words',
+          el('note').offsetWidth < surfW() * 0.25 * 0.7 &&
+          el('note').style.maxWidth === '25%',      // pinning moved the ceiling to 25%
+          el('note').offsetWidth + 'px / ' + el('note').style.maxWidth);
+        ok('hug: the button now offers to pin', b.textContent === '↔', b.textContent);
+      }
+
+      /* a feature that always sizes itself refuses to be pinned, and keeps no scar */
+      var mx = { id: uid(), x: 6, y: 30, rot: 0, z: 2, lay: curLayerId(),
+        type: 'matrix', lab: 'M', m: [1, 2, 3, 4], src: ['1', '2', '3', '4'], fs: 22, w: 16 };
+      ok('hug: a matrix refuses to be pinned', pinWidth(mx, 25) === false);
+      ok('hug: and is left exactly as it was',
+        !('aw' in mx) && mx.w === 16, JSON.stringify(mx.aw) + ' / ' + mx.w);
+      page.items = [mx]; await render();
+      ok('hug: and is offered no width button', !wbtn('matrix'));
+
+      /* ---- the print / export path sizes them the same way ---- */
+      page.items = [put('text', 'Hi', 40, { st: 'title' }),
+                    { id: uid(), x: 40, y: 6, rot: 0, z: 2, lay: curLayerId(),
+                      type: 'note', fs: 20, w: 30, html: 'ok' }];
+      var st = buildPage(page, false);
+      var probe = document.createElement('div');
+      probe.style.cssText = 'position:absolute;left:-9999px;top:0';
+      probe.appendChild(st); document.body.appendChild(probe);
+      ['text', 'note'].forEach(function (t) {
+        var sit = st.querySelector('.item[data-type="' + t + '"]');
+        ok('hug: the static path hugs ' + t + ' too',
+          !!sit && sit.style.width === '' && sit.classList.contains('hug') &&
+          /%$/.test(sit.style.maxWidth),
+          sit ? sit.style.width + ' / ' + sit.style.maxWidth : 'no item');
+      });
+      probe.remove();
+
+      page.items = items0; await render();   // the static stage below reads what render live left
+    });
+
+
+    /* ---- the item toolbar, and what came off it ----
+       Six buttons of highlighting, an equation button and two linking buttons
+       used to sit on the front of every toolbar. The highlighting is now one
+       swatch that opens a panel with the colours, a wheel and ⌫; the equation
+       button is gone (the dollars do it); and pins, strings and arrows are two
+       clicks, so they are tiles on the Decor shelf instead. */
+    await stage('toolbar', async function () {
+      var page = sheet();
+      var items0 = page.items;
+      var mk = function (extra) {
+        var b = { id: uid(), x: 8, y: 8, w: 40, rot: 0, z: 1, lay: curLayerId() };
+        for (var k in extra) b[k] = extra[k];
+        return b;
+      };
+      page.items = [mk({ type: 'text', st: 'body', fs: 19, html: 'hello there' })];
+      await render();
+      var el = byType('text');
+      var labels = QA('#pageHost .item[data-type="text"] .tools button').map(function (b) {
+        return b.textContent; });
+
+      ok('toolbar: exactly one highlighter', el.querySelectorAll('.tools .hld').length === 1,
+        el.querySelectorAll('.tools .hld').length + ' of them');
+      ok('toolbar: no separate highlight remover', labels.indexOf('⌫H') < 0, labels.join(' '));
+      ok('toolbar: no equation button', labels.indexOf('∑') < 0, labels.join(' '));
+      ok('toolbar: no pin button', labels.indexOf('📌') < 0, labels.join(' '));
+      ok('toolbar: no arrow button', labels.indexOf('→') < 0, labels.join(' '));
+      ok('toolbar: the highlighter wears the last colour used',
+        el.querySelector('.tools .hld').style.background !== '',
+        el.querySelector('.tools .hld').style.background);
+
+      /* ---- the one control it opens ---- */
+      var hb = el.querySelector('.tools .hld');
+      var txt = el.querySelector('.txt');
+      startEdit(el, txt);
+      var sel = getSelection();
+      sel.selectAllChildren(txt);
+      hb.click();
+      await sleep(60);
+      var panel = Q('#props');
+      ok('highlight: the button opens a panel', !!panel && panel.classList.contains('open'));
+      var row = panel && panel.querySelector('.prswatch');
+      ok('highlight: with a row of swatches', !!row);
+      if (row) {
+        ok('highlight: one chip per colour', row.querySelectorAll('button.prsw:not(.prnone)').length ===
+          HL_COLORS.length, row.querySelectorAll('button.prsw:not(.prnone)').length + ' chips');
+        ok('highlight: a colour wheel for anything else',
+          !!row.querySelector('.prwheel input[type=color]'));
+        ok('highlight: and a ⌫ to take one off', !!row.querySelector('.prnone'));
+
+        /* a chip paints the selection, and remembers itself for next time */
+        sel.selectAllChildren(txt);
+        row.querySelector('button.prsw[data-c="' + HL_COLORS[1] + '"]').click();
+        await sleep(60);
+        ok('highlight: a chip paints the selection',
+          /background-color/i.test(page.items[0].html || ''), page.items[0].html);
+        ok('highlight: and becomes the last colour used', HL_LAST === HL_COLORS[1], HL_LAST);
+        ok('highlight: which the swatch on the toolbar wears',
+          /1|,/.test(hb.style.background), hb.style.background);
+        ok('highlight: and the panel marks as the current one',
+          !!row.querySelector('.prsw.on[data-c="' + HL_COLORS[1] + '"]'));
+
+        /* the wheel is the same control, for a colour nobody listed */
+        sel.selectAllChildren(txt);
+        var wheel = row.querySelector('.prwheel input');
+        wheel.value = '#123456';
+        wheel.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(60);
+        ok('highlight: the wheel paints a colour of its own',
+          /18,\s*52,\s*86|#123456/i.test(page.items[0].html || ''), page.items[0].html);
+
+        /* and ⌫ takes it off again */
+        sel.selectAllChildren(txt);
+        row.querySelector('.prnone').click();
+        await sleep(60);
+        /* the words keep their span and lose their colour — taking the span away
+           would take any bold or italic inside it with it */
+        var h = page.items[0].html || '';
+        ok('highlight: ⌫ leaves the words with no colour on them',
+          !/background-color/i.test(h) || /rgba\(0,\s*0,\s*0,\s*0\)|transparent/i.test(h), h);
+      }
+      closeProps(); await sleep(60);
+
+      /* ---- pins, strings and arrows are on the Decor shelf now ---- */
+      ['string', 'arrow'].forEach(function (k) {
+        ok('decor: ' + k + ' is a registered add-kind', !!ADD_KINDS[k]);
+        var tile = TOOLS.filter(function (t) { return t.kind === k; })[0];
+        ok('decor: ' + k + ' has a tile on the Decor shelf', !!tile && tile.cat === 'decor',
+          tile && tile.cat);
+        ok('decor: ' + k + ' adds nothing on its own', !!ADD_KINDS[k].pick);
+      });
+
+      /* two clicks with nothing selected: the first picks, the second ties */
+      page.items = [mk({ type: 'text', st: 'body', fs: 19, html: 'a' }),
+                    mk({ type: 'text', st: 'body', fs: 19, html: 'b', id: uid(), x: 40, z: 2 })];
+      page.links = [];
+      await render();
+      var A = page.items[0], B = page.items[1];
+      var elOf = function (it) {
+        return Q('#pageHost .item[data-id="' + it.id + '"]'); };
+      select(null);
+      armLinking(page, 'str');
+      ok('decor: the gesture is armed with nothing to start from',
+        !!linking && linking.fromId === null, JSON.stringify(linking));
+      linkClick(page, elOf(A));
+      ok('decor: the first click settles what it starts from',
+        !!linking && linking.fromId === A.id, linking && linking.fromId);
+      linkClick(page, elOf(B));
+      ok('decor: the second ties the knot', (page.links || []).length === 1 &&
+        page.links[0].a === A.id && page.links[0].b === B.id,
+        JSON.stringify(page.links));
+      ok('decor: and the gesture is over', !linking);
+      ok('decor: a string is a string, not an arrow', page.links[0].t !== 'arr');
+
+      /* an arrow, and this time from whatever is already selected */
+      page.links = [];
+      select(A.id);
+      armLinking(page, 'arr');
+      ok('decor: something selected starts the gesture there',
+        !!linking && linking.fromId === A.id, linking && linking.fromId);
+      linkClick(page, elOf(B));
+      ok('decor: an arrow is drawn', (page.links || []).length === 1 &&
+        page.links[0].t === 'arr', JSON.stringify(page.links));
+
+      /* the paper rather than an item: the gesture is simply dropped */
+      page.links = [];
+      select(null);
+      armLinking(page, 'str');
+      linkClick(page, null);
+      ok('decor: clicking the paper gives up on it', !linking && !(page.links || []).length);
+
+      page.links = []; page.items = items0; select(null); await render();
+    });
+
+    /* ---- an empty box is nothing ----
+       A double-click on bare paper makes a text box, so the commonest empty one
+       on a page was never asked for at all. Left with no writing, an item that
+       is nothing but its writing takes itself off again — and an undo brings it
+       straight back, because it went out through the same door as everything
+       else. */
+    await stage('blank items', async function () {
+      var page = sheet();
+      var items0 = page.items;
+      var mk = function (extra) {
+        var b = { id: uid(), x: 8, y: 8, w: 40, rot: 0, z: 1, lay: curLayerId() };
+        for (var k in extra) b[k] = extra[k];
+        return b;
+      };
+      /* Put the caret in and take it out again. Headless never really gives a
+         box the focus, so the focus is cleared by hand and the blur the app
+         listens for is dispatched — which is exactly what it would see. */
+      var leave = async function (it) {
+        var el = Q('#pageHost .item[data-id="' + it.id + '"]');
+        var txt = el && el.querySelector('.txt');
+        if (!txt) return;
+        await blurOut(el, txt);
+      };
+      var blurOut = async function (el, txt) {
+        startEdit(el, txt);
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        txt.dispatchEvent(new FocusEvent('blur'));
+        await sleep(40);
+      };
+
+      ok('blank: whitespace and markup only reads as empty',
+        blankText('') && blankText('   ') && blankText('<br>') &&
+        blankText('<div><br></div>') && blankText('&nbsp;'));
+      ok('blank: a word does not', !blankText('a') && !blankText('<b>a</b>'));
+
+      /* the three that are nothing but their writing */
+      ['text', 'note'].forEach(function (t) {
+        ok('blank: ' + t + ' opted in', specOf({ type: t }).dropWhenBlank === true);
+      });
+      ok('blank: check opted in', specOf({ type: 'check' }).dropWhenBlank === true);
+      ok('blank: a table did not', !specOf({ type: 'table' }).dropWhenBlank);
+
+      /* left empty, it goes */
+      var act = function () {          // a pointerdown is what closes a burst
+        document.body.dispatchEvent(new PointerEvent('pointerdown',
+          { bubbles: true, pointerId: 4, isPrimary: true }));
+      };
+      var gone = mk({ type: 'text', st: 'body', fs: 19, html: '' });
+      page.items = [gone];
+      queueSave(page.id); act(); histCommit();
+      await render();
+      await leave(gone);
+      ok('blank: an empty text box takes itself off', page.items.length === 0,
+        page.items.length + ' left');
+
+      /* an undo brings it back — it left through the same door as everything else */
+      act(); histCommit();
+      await undo();
+      ok('blank: and an undo brings it back', page.items.length === 1 &&
+        page.items[0].type === 'text', page.items.length + ' items');
+      page.items = []; queueSave(page.id); act(); histCommit();
+
+      /* one with writing on it stays put, and so does one emptied but still busy */
+      var kept = mk({ type: 'text', st: 'body', fs: 19, html: 'hello' });
+      page.items = [kept];
+      await render();
+      await leave(kept);
+      ok('blank: a box with writing stays', page.items.length === 1);
+
+      /* a sticky and a checklist follow the same rule */
+      var sticky = mk({ type: 'note', fs: 20, color: '', html: '' });
+      page.items = [sticky];
+      await render();
+      await leave(sticky);
+      ok('blank: an empty sticky takes itself off too', page.items.length === 0,
+        page.items.length + ' left');
+
+      var list = mk({ type: 'check', fs: 20, html: '- [ ] a' });
+      page.items = [list];
+      await render();
+      var lel = Q('#pageHost .item[data-id="' + list.id + '"]');
+      lel.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await sleep(40);
+      var ed = lel.querySelector('.ck .txt');
+      ok('blank: a checklist opens its own editor', !!ed);
+      if (ed) {
+        ed.textContent = '';
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        ed.dispatchEvent(new FocusEvent('blur'));
+        await sleep(40);
+        ok('blank: an emptied checklist takes itself off', page.items.length === 0,
+          page.items.length + ' left');
+      }
+
+      /* it does not vanish out from under its own open panel */
+      var busy = mk({ type: 'text', st: 'body', fs: 19, html: '' });
+      page.items = [busy];
+      await render();
+      var bel = Q('#pageHost .item[data-id="' + busy.id + '"]');
+      bel.querySelector('.tools .hld').click();
+      await sleep(40);
+      var btxt = bel.querySelector('.txt');
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      btxt.dispatchEvent(new FocusEvent('blur'));
+      await sleep(60);
+      ok('blank: an item with a panel open on it is left alone', page.items.length === 1,
+        page.items.length + ' items');
+      closeProps(); await sleep(40);
+
+      page.items = items0; select(null); queueSave(page.id);
+      await render(); act(); histCommit();
+    });
+
     /* ---- what everything actually LOOKS like ----
        Moving a rule to another file changes where it sits in the cascade, so
        this records the computed style of every painted thing and the run is
@@ -1339,6 +1735,288 @@
       tx.remove();
       await sleep(60);
       ok('mathpad: the pad goes with the box', MPAD.on === false);
+    });
+
+    /* ---- what a key does inside code ----
+       cdKey() is the one rule table the cell and a fence in a sentence are both
+       typed under, and it is a plain function over (writing, selection, key). */
+    await stage('code keys', async function () {
+      var L = CD_LANGS.js;                             // two spaces to a level
+      var K = function (s, a, b, key, shift) { return cdKey(s, a, b, { key: key, shiftKey: !!shift }, L); };
+      var E = K('x', 1, 1, 'Tab');
+      ok('code keys: ⇥ writes the language’s own indent', E.text === '  ' && E.caret === 2, JSON.stringify(E));
+      ok('code keys: …four spaces of it in python',
+        cdKey('x', 1, 1, { key: 'Tab' }, CD_LANGS.python).text === '    ');
+      ok('code keys: …and a real tab in go',
+        cdKey('x', 1, 1, { key: 'Tab' }, CD_LANGS.go).text === '\t');
+      E = K('    a', 5, 5, 'Tab', true);
+      ok('code keys: ⇧⇥ takes one level off the line',
+        E.from === 0 && E.to === 5 && E.text === '  a' && E.caret === 3, JSON.stringify(E));
+      E = K('a', 1, 1, 'Tab', true);
+      ok('code keys: …and leaves a line with no indent alone',
+        E.text === '' && E.from === E.to, JSON.stringify(E));
+      E = K('a\nb', 0, 3, 'Tab');
+      ok('code keys: ⇥ over lines indents every one', E.text === '  a\n  b', JSON.stringify(E));
+      ok('code keys: …and hands them back picked out, for the next one',
+        !!E.pick && E.pick[1] === 7, JSON.stringify(E.pick));
+      E = K('  a\n\n  b', 0, 8, 'Tab');
+      ok('code keys: …but a blank line stays blank', E.text === '    a\n\n    b', JSON.stringify(E));
+      E = K('  a\n  b', 0, 7, 'Tab', true);
+      ok('code keys: ⇧⇥ over lines takes the level back off', E.text === 'a\nb', JSON.stringify(E));
+
+      E = K('  a', 3, 3, 'Enter');
+      ok('code keys: ⏎ keeps the line’s indent', E.text === '\n  ' && E.caret === 3, JSON.stringify(E));
+      E = K('f(){}', 4, 4, 'Enter');
+      ok('code keys: ⏎ between braces opens the block out',
+        E.text === '\n  \n' && E.caret === 3, JSON.stringify(E));
+      E = K('', 0, 0, '(');
+      ok('code keys: a bracket brings its own close', E.text === '()' && E.caret === 1, JSON.stringify(E));
+      E = K('()', 1, 1, ')');
+      ok('code keys: …and typing that close steps over it',
+        E.text === '' && E.caret === 1, JSON.stringify(E));
+      E = K('abc', 0, 3, '"');
+      ok('code keys: a quote wraps what is picked out',
+        E.text === '"abc"' && E.caret === 4, JSON.stringify(E));
+      ok('code keys: …but never in the middle of a word', K('ab', 2, 2, '"') === null);
+      E = K('()', 1, 1, 'Backspace');
+      ok('code keys: backspace between an empty pair takes both',
+        E.from === 0 && E.to === 2 && E.text === '', JSON.stringify(E));
+      ok('code keys: an ordinary letter is nobody’s business', K('a', 1, 1, 'x') === null);
+      ok('code keys: a fence names its language the way everything else does',
+        cdLangKey('py') === 'python' && cdLangKey('C++') === 'cpp' && cdLangKey('zsh') === 'bash' &&
+        cdLangKey('klingon') === '', cdLangKey('py') + ' ' + cdLangKey('C++'));
+    });
+
+    /* ---- code ticks: `a phrase` and ```a block``` ----
+       The rules first, with no DOM in sight, then a box compiled and taken
+       apart again, then the keyboard on a real .txt. */
+    await stage('code ticks', async function () {
+      /* what the scanner sees */
+      var H = tickHits('a `x` b');
+      ok('ticks: a phrase in backticks is a hit', H.length === 1 && H[0].code === 'x' && !H[0].blk,
+        JSON.stringify(H));
+      ok('ticks: an unclosed tick is only a backtick', tickHits('a ` b').length === 0);
+      ok('ticks: a phrase does not run over a line', tickHits('a `x\ny` b').length === 0);
+      H = tickHits('```js\nlet a = 1\n```');
+      ok('ticks: three backticks open a block', H.length === 1 && H[0].blk, JSON.stringify(H));
+      ok('ticks: …the word after the fence is the language', H[0].lang === 'js', H[0].lang);
+      ok('ticks: …and the code is what is between them', H[0].code === 'let a = 1', JSON.stringify(H[0].code));
+      H = tickHits('```\nx\n```');
+      ok('ticks: a fence opened with ⏎ has no language', H[0].lang === '' && H[0].code === 'x',
+        JSON.stringify(H[0]));
+      ok('ticks: an unclosed fence is not a block', tickHits('```\nx').length === 0);
+      ok('ticks: a $$ inside a fence is not maths',
+        tickHits('```\n$$x$$\n```')[0].code === '$$x$$');
+      ok('ticks: a backtick inside a formula is the formula’s',
+        tickHits('$$ \\grave{a} ` ` $$').length === 0, JSON.stringify(tickHits('$$ \\grave{a} ` ` $$')));
+      ok('ticks: a fence knows the caret is inside it', tickInFence('```\nab\n```', 6));
+      ok('ticks: …and outside it', !tickInFence('```\nab\n```', 0));
+
+      /* what typing a ` does */
+      var T = tickTick('', 0);
+      ok('ticks: ` pairs itself', T.text === '``' && T.caret === 1, JSON.stringify(T));
+      T = tickTick('``', 1);
+      ok('ticks: a second grows the pair', T.text === '````' && T.caret === 2, JSON.stringify(T));
+      T = tickTick('````', 2);
+      ok('ticks: a third opens the block onto three lines',
+        T.text === '```\n\n```' && T.caret === 4, JSON.stringify(T));
+      T = tickTick('a````b', 3);
+      ok('ticks: …taking a line of its own when it has to',
+        T.text === '\n```\n\n```\n' && T.caret === 5, JSON.stringify(T));
+      T = tickTick('`x`', 2);
+      ok('ticks: ` steps over the closer', T.text === '' && T.caret === 1, JSON.stringify(T));
+      T = tickTick('```\nx\n```', 5);
+      ok('ticks: inside a fence a ` is a `', T.text === '`' && T.caret === 1, JSON.stringify(T));
+      var D = mpadDollar('```\nx\n```', 5);
+      ok('ticks: …and a $ there is a $', D.text === '$' && D.caret === 1, JSON.stringify(D));
+
+      /* a box compiled, and taken apart again */
+      var d = document.createElement('div');
+      d.textContent = 'run `npm i` first';
+      tickify(d);
+      var c = d.querySelector('code.tick');
+      ok('ticks: a phrase compiles to a <code>', !!c && c.textContent === 'npm i',
+        d.innerHTML.slice(0, 90));
+      ok('ticks: …keeping its source', c.getAttribute('data-tick') === '`npm i`',
+        c.getAttribute('data-tick'));
+      ok('ticks: …and sealed against the caret', c.contentEditable === 'false');
+      ok('ticks: what is stored is the backticks, not the markup',
+        sanitize(d.innerHTML) === 'run `npm i` first', sanitize(d.innerHTML));
+      untickify(d);
+      ok('ticks: …which is what taking it apart gives back',
+        d.textContent === 'run `npm i` first', d.textContent);
+
+      var b = document.createElement('div');
+      b.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      b.textContent = 'see:\n```py\nprint(1)\nprint(2)\n```\ndone';
+      document.body.appendChild(b);
+      tickify(b);
+      var blk = b.querySelector('.cbx.cfence');
+      ok('ticks: a fence compiles to a cell', !!blk, b.innerHTML.slice(0, 120));
+      ok('ticks: …wearing the code cell’s own bar, minus its traffic lights',
+        !!blk.querySelector('.cbar .clang') && !!blk.querySelector('.cwin .ced') &&
+        !blk.querySelector('.cdots'), blk.querySelector('.cbar').innerHTML.slice(0, 80));
+      ok('ticks: …the language a label where picking it could not be kept',
+        blk.querySelector('.clang').tagName === 'SPAN', blk.querySelector('.clang').tagName);
+      ok('ticks: …with the language named on it',
+        blk.querySelector('.clang').textContent === 'Python', blk.querySelector('.clang').textContent);
+      ok('ticks: …the code on its own lines',
+        blk.querySelector('.ced').textContent === 'print(1)\nprint(2)',
+        JSON.stringify(blk.querySelector('.ced').textContent));
+      ok('ticks: …coloured by the same scanner',
+        !!blk.querySelector('.ced .tk-fn, .ced .tk-nm, .ced .tk-vr'), blk.querySelector('.ced').innerHTML.slice(0, 90));
+      ok('ticks: …a button to copy it and one for the colours',
+        !!blk.querySelector('.ccopy') && !!blk.querySelector('.csch'));
+      ok('ticks: …and the writing either side untouched',
+        b.textContent.indexOf('see:') === 0 && b.textContent.indexOf('done') > 0,
+        JSON.stringify(b.textContent));
+      ok('ticks: the block is stored as its fence',
+        sanitize(b.innerHTML).indexOf('```py') >= 0, sanitize(b.innerHTML).slice(0, 80));
+      /* the copy button belongs to the block, not to the item under it */
+      var down = new PointerEvent('pointerdown', { bubbles: true, cancelable: true });
+      var reached = false;
+      b.addEventListener('pointerdown', function () { reached = true; });
+      blk.querySelector('.ccopy').dispatchEvent(down);
+      ok('ticks: pressing copy is not the start of a drag', reached === false);
+      blk.querySelector('.ccopy').click();             // must not throw, clipboard or none
+      untickify(b);
+      ok('ticks: the fence comes back whole',
+        b.textContent === 'see:\n```py\nprint(1)\nprint(2)\n```\ndone', JSON.stringify(b.textContent));
+      b.remove();
+
+      /* print, exports and thumbnails take the same block without its controls */
+      var stx = document.createElement('div');
+      stx.textContent = '```py\nprint(1)\n```';
+      tickify(stx, false);
+      ok('ticks: a printed block keeps its colours',
+        !!stx.querySelector('.cbx.cfence .ced .tk-fn'), stx.innerHTML.slice(0, 90));
+      ok('ticks: …and carries no buttons',
+        !stx.querySelector('.ccopy') && !stx.querySelector('.csch'));
+
+      /* the break after the closing fence is the fence's own: a block already
+         ends its line, and left behind it shows as an empty one under the code */
+      var br = document.createElement('div');
+      br.className = 'txt';
+      br.style.cssText = 'position:fixed;left:-9999px;top:0;width:300px;white-space:pre-wrap';
+      br.innerHTML = 'see:<br>```<br>x<br>```<br>after';
+      document.body.appendChild(br);
+      var tall = br.offsetHeight;
+      tickify(br);
+      var blk2 = br.querySelector('.cbx.cfence');
+      ok('ticks: a block built out of <br>s compiles', !!blk2, br.innerHTML.slice(0, 100));
+      ok('ticks: …with no empty line left under it',
+        !(blk2.nextSibling && blk2.nextSibling.nodeName === 'BR'),
+        blk2.nextSibling && blk2.nextSibling.nodeName);
+      ok('ticks: …and the writing after it still there',
+        br.textContent.indexOf('after') > 0, JSON.stringify(br.textContent));
+      untickify(br);
+      ok('ticks: …the break handed straight back',
+        mathFlat(br).s === 'see:\n```\nx\n```\nafter', JSON.stringify(mathFlat(br).s));
+      ok('ticks: …so the box is the height it was', br.offsetHeight === tall,
+        br.offsetHeight + ' was ' + tall);
+      br.remove();
+
+      /* maths and code in the same box, each left to itself */
+      var m = document.createElement('div');
+      m.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      m.textContent = '$$x^2$$ and `x**2`';
+      document.body.appendChild(m);
+      richify(m);
+      ok('ticks: the maths still compiles beside code', !!m.querySelector('math'));
+      ok('ticks: …and the code is not typeset',
+        !!m.querySelector('code.tick') && !m.querySelector('code.tick math'));
+      plainify(m);
+      ok('ticks: both go back to source together',
+        m.textContent === '$$x^2$$ and `x**2`', JSON.stringify(m.textContent));
+      m.remove();
+
+      /* the keyboard, on a real writing box */
+      var tx = document.createElement('div');
+      tx.className = 'txt';
+      tx.contentEditable = 'true';
+      tx.style.cssText = 'position:fixed;left:0;top:0;width:300px;white-space:pre-wrap';
+      document.body.appendChild(tx);
+      tx.focus();
+      var text = function () { return mathFlat(tx).s; };
+      var caretAt = function () {
+        var s = getSelection();
+        return s.rangeCount ? mathFlatOff(tx, s.anchorNode, s.anchorOffset) : -1;
+      };
+      var put = function (off) {
+        var P = mathFlatPos(tx, off), r = document.createRange(), s = getSelection();
+        r.setStart(P[0], P[1]); r.collapse(true);
+        s.removeAllRanges(); s.addRange(r);
+      };
+      var tick = function () {
+        tx.dispatchEvent(new InputEvent('beforeinput',
+          { inputType: 'insertText', data: '`', bubbles: true, cancelable: true }));
+      };
+      put(0); tick();
+      ok('ticks: typing ` writes the pair', text() === '``', JSON.stringify(text()));
+      ok('ticks: …with the caret in the middle', caretAt() === 1, caretAt());
+      tick(); tick();
+      ok('ticks: three of them open the fence', text() === '```\n\n```', JSON.stringify(text()));
+      ok('ticks: …on the middle line of the three', caretAt() === 4, caretAt());
+      await sleep(80);
+      ok('ticks: the maths pad stays out of a fence', MPAD.on === false);
+      document.execCommand('insertText', false, 'a');
+      ok('ticks: what is typed goes inside it', text() === '```\na\n```', JSON.stringify(text()));
+
+      /* …and inside it the keyboard is the code cell's — chrome/tickpad.js */
+      var key = function (k, shift) {
+        return tx.dispatchEvent(new KeyboardEvent('keydown',
+          { key: k, shiftKey: !!shift, bubbles: true, cancelable: true }));
+      };
+      tx.textContent = '```js\n\n```';                 // a fence with a language on it
+      put(6);                                          // the empty line inside it
+      ok('ticks: ⇥ inside a fence is eaten', key('Tab') === false);
+      ok('ticks: …and indents by the language’s own step',
+        text() === '```js\n  \n```', JSON.stringify(text()));
+      ok('ticks: ⇧⇥ is eaten too', key('Tab', true) === false);
+      ok('ticks: …and takes the indent back off',
+        text() === '```js\n\n```', JSON.stringify(text()));
+      ok('ticks: a bracket in a fence brings its close', key('(') === false);
+      ok('ticks: …and lands as the pair', text() === '```js\n()\n```', JSON.stringify(text()));
+      ok('ticks: ⏎ in a fence is the code cell’s ⏎', key('Enter') === false);
+      ok('ticks: …opening the brackets out onto three lines',
+        text() === '```js\n(\n  \n)\n```', JSON.stringify(text()));
+      put(0);
+      ok('ticks: outside a fence ⇥ is nobody else’s business', key('Tab') === true);
+      ok('ticks: …and a bracket is only a bracket', key('(') === true);
+      tickify(tx);
+      ok('ticks: and it compiles when the box is left',
+        !!tx.querySelector('.cbx.cfence .ced') &&
+        tx.querySelector('.ced').textContent === '(\n  \n)',
+        JSON.stringify(tx.querySelector('.ced') && tx.querySelector('.ced').textContent));
+      /* in a box that stores what it holds, the bar picks the language instead */
+      var pk = tx.querySelector('select.clang');
+      ok('ticks: …with a picker on its bar, on the language it was given',
+        !!pk && pk.value === 'js', pk && pk.value);
+      ok('ticks: …offering every language the cell knows, and Plain',
+        pk.options.length === Object.keys(CD_LANGS).length + 1, pk.options.length);
+      var said = 0;
+      tx.addEventListener('input', function () { said++; });
+      pk.value = 'go';
+      pk.dispatchEvent(new Event('change', { bubbles: true }));
+      ok('ticks: picking one rewrites the fence itself',
+        (tx.querySelector('.cbx.cfence').getAttribute('data-tick') || '').indexOf('```go') === 0,
+        tx.querySelector('.cbx.cfence').getAttribute('data-tick'));
+      ok('ticks: …says so on the bar', tx.querySelector('select.clang').value === 'go');
+      ok('ticks: …and leaves the code it holds alone',
+        tx.querySelector('.ced').textContent === '(\n  \n)',
+        JSON.stringify(tx.querySelector('.ced').textContent));
+      var go = document.createElement('div');
+      go.textContent = '```go\nfunc main(){}\n```';
+      tickify(go);
+      ok('ticks: a language on the fence is a language on the colours',
+        !!go.querySelector('.ced .tk-kw'), go.querySelector('.ced').innerHTML.slice(0, 80));
+      ok('ticks: …and asks the box to store itself', said === 1, said);
+      plainify(tx);
+      ok('ticks: …which is the writing it now holds',
+        mathFlat(tx).s.indexOf('```go') === 0, JSON.stringify(mathFlat(tx).s));
+      tx.blur();
+      tx.remove();
+      await sleep(60);
     });
 
     /* ---- the static path: print, thumbnails and export all use this ---- */

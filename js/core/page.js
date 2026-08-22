@@ -64,13 +64,10 @@ function buildPage(page, live, urls, bIdx){
     renderInk(svg, byLay[L.id] || []);
   });
   if(live){
-    wrap.addEventListener('pointerdown', e => {          // finish (or cancel) tying a string
+    wrap.addEventListener('pointerdown', e => {          // pick, tie, or give up
       if(!linking) return;
       e.preventDefault(); e.stopPropagation();
-      const itEl = e.target.closest('.item');
-      if(itEl && itEl.dataset.id !== linking.fromId)
-        createLink(page, linking.fromId, itEl.dataset.id, linking.kind);
-      cancelLinking();
+      linkClick(page, e.target.closest('.item'));
     }, true);
     surf.addEventListener('pointerdown', e => { if(e.target === surf){ select(null); deselectString(); } });
     surf.addEventListener('dblclick', e => { if(e.target === surf) addItem('body', pctFrom(e, surf), page); });

@@ -4,7 +4,7 @@
 /* editing always shows the source; leaving the box compiles it again */
 function startEdit(el, txt){
   el.classList.add('editing');
-  unmathify(txt);
+  plainify(txt);
   txt.contentEditable = 'true';
   txt.focus();
 }

@@ -11,6 +11,25 @@ defineMathBox('figcaption');
    what it owns and how it behaves all come from the registry, so nothing in
    here mentions a note, a plot or a deck of cards by name. See
    core/registry.js for the contract, and js/items/* for the features. */
+/* ---- how wide the box is ----
+   The one place that knows whether `w` is a width or a ceiling. A card that
+   always sizes itself is left alone; one the reader may pin is given `w` as a
+   max-width, so it is as wide as its writing and wraps at the ceiling rather
+   than sitting in an acre of empty box that swallows clicks meant for the paper;
+   anything else is simply `w` wide. See canPin() in core/registry.js. */
+/* the width it has grown to, as a percentage of the sheet. offsetWidth on both
+   sides on purpose: the sheet carries a transform scale while a zoom gesture is
+   in flight, and a measured rectangle would take that in with it. */
+const elWidthPct = el => el.offsetWidth / el.parentElement.offsetWidth * 100;
+
+function applyWidth(el, it){
+  el.style.width = ''; el.style.maxWidth = '';
+  el.classList.toggle('hug', autoWidth(it) && canPin(it));
+  if(typeof it.w !== 'number') return;
+  if(!autoWidth(it)) el.style.width = it.w + '%';
+  else if(canPin(it)) el.style.maxWidth = it.w + '%';
+}
+
 function buildItem(it, page, live, urls, bIdx){
   const idx = bIdx || index;
   const spec = specOf(it);
@@ -20,7 +39,7 @@ function buildItem(it, page, live, urls, bIdx){
   el.className = 'item'; el.dataset.id = it.id; el.dataset.type = it.type;
   el.dataset.lay = layers(idx)[layIdx(idx, it.lay)].id;
   el.style.left = it.x + '%'; el.style.top = it.y + '%';
-  if(!autoWidth(it)) el.style.width = it.w + '%';   // a card is as wide as its numbers
+  applyWidth(el, it);
   el.style.transform = 'rotate(' + (it.rot || 0) + 'deg)';
   el.style.zIndex = zOf(idx, it);
   if(it.fs) el.style.setProperty('--fs', it.fs);
@@ -29,13 +48,14 @@ function buildItem(it, page, live, urls, bIdx){
   el.innerHTML = '<div class="tools"></div>' + (spec.html ? spec.html(it, ctx) : '') +
                  '<div class="rot"></div><div class="rs"></div>';
 
-  /* Anything may carry writing and a caption, and both are stored as LaTeX and
-     shown as typeset maths. A feature gets them simply by putting a .txt or a
-     <figcaption> in its markup. */
+  /* Anything may carry writing and a caption, and both are stored as what was
+     typed — LaTeX, backticks and all — and shown compiled: typeset maths and
+     code set in the typewriter face. A feature gets them simply by putting a
+     .txt or a <figcaption> in its markup. */
   const txt = el.querySelector('.txt');
-  if(txt){ txt.innerHTML = sanitize(it.html); mathify(txt); }
+  if(txt){ txt.innerHTML = sanitize(it.html); richify(txt, ctx.live); }
   const cap = el.querySelector('figcaption');
-  if(cap){ cap.textContent = it.cap || ''; mathify(cap); }
+  if(cap){ cap.textContent = it.cap || ''; richify(cap, ctx.live); }
   if(spec.mount) spec.mount(el, it, ctx);      // print, thumbnails and exports come through here too
 
   if(!live){ el.querySelector('.rot').remove(); el.querySelector('.rs').remove(); return el; }
@@ -54,20 +74,32 @@ function buildItem(it, page, live, urls, bIdx){
     mk('A−', 'Smaller', () => { it.fs = Math.max(9, (it.fs || 18) - 3); el.style.setProperty('--fs', it.fs); queueSave(page.id); });
     mk('A+', 'Bigger',  () => { it.fs = Math.min(140, (it.fs || 18) + 3); el.style.setProperty('--fs', it.fs); queueSave(page.id); });
   }
-  /* selection highlighter dots on any editable text */
+  /* hugging its writing, or pinned at a width — the resize handle pins it too */
+  if(canPin(it)){
+    const say = b => {
+      b.textContent = autoWidth(it) ? '↔' : '▭';
+      b.title = autoWidth(it) ? 'As wide as the writing — click to pin it at this width'
+                              : 'Pinned width — click to let it follow the writing again';
+    };
+    say(mk('', '', b => {
+      if(autoWidth(it)) pinWidth(it, elWidthPct(el));
+      else it.aw = true;
+      applyWidth(el, it); say(b); queueSave(page.id); SND.plop();
+    }));
+  }
+  /* One highlighter on any editable text: the swatches, an RGB wheel for
+     anything else and ⌫ to take a highlight off all live behind it, because six
+     buttons of highlighting on the front of every toolbar was five too many. */
   if(txt){
-    HL_COLORS.forEach(c => {
-      const b = mk('', 'Highlight selection', () => applyHighlight(el, txt, it, page, c), 'hld');
-      b.style.background = c;
-    });
-    mk('⌫H', 'Remove highlight from selection', () => applyHighlight(el, txt, it, page, 'transparent'));
-    mk('∑', 'Equation — wraps the selection in $$…$$', () => insertMath(el, txt, it, page));
+    const hb = mk('', 'Highlight the selection — swatches, a colour wheel, and ⌫',
+      () => openHighlight(hb, el, txt, it, page), 'hld');
+    hb.style.background = HL_LAST;
   }
   if(spec.tools) spec.tools(mk, it, el, page);          // whatever the feature itself offers
 
-  /* ---- the buttons every item has ---- */
-  mk('📌', 'Pin & tie a string to another item', () => startLinking(page, it));
-  mk('→', 'Draw an arrow to another item', () => startLinking(page, it, 'arr'));
+  /* ---- the buttons every item has ----
+     Pins, strings and arrows are not here: they are two clicks rather than one
+     item's property, so they are tiles on the Decor shelf (js/paper/strings.js). */
   if(layers(index).length > 1)
     mk('▤' + (layIdx(index, it.lay) + 1), 'Layer ' + (layIdx(index, it.lay) + 1) +
        ' — click to move this to the next layer', b => {
@@ -93,17 +125,18 @@ function buildItem(it, page, live, urls, bIdx){
     txt.addEventListener('blur', () => {
       el.classList.remove('editing'); txt.contentEditable = 'false';
       it.html = sanitize(txt.innerHTML);
-      txt.innerHTML = it.html; mathify(txt);          // leaving the box compiles the maths
-      queueSave(page.id); });
+      txt.innerHTML = it.html; richify(txt);          // leaving the box compiles the maths and the code
+      queueSave(page.id);
+      dropIfBlank(page, it, el); });
     txt.addEventListener('input', () => { it.html = sanitize(txt.innerHTML); queueSave(page.id); SND.scratch(); });
     txt.addEventListener('pointerdown', e => { if(el.classList.contains('editing')) e.stopPropagation(); });
   }
   if(cap){
     cap.contentEditable = 'true';
     cap.addEventListener('pointerdown', e => e.stopPropagation());
-    cap.addEventListener('focus', () => unmathify(cap));
+    cap.addEventListener('focus', () => plainify(cap));
     cap.addEventListener('input', () => { it.cap = cap.textContent; queueSave(page.id); });
-    cap.addEventListener('blur', () => { cap.textContent = it.cap || ''; mathify(cap); });
+    cap.addEventListener('blur', () => { cap.textContent = it.cap || ''; richify(cap); });
   }
   if(spec.wire) spec.wire(el, it, page);               // the feature's own behaviour
 
@@ -193,14 +226,67 @@ function removeItems(page, items){
 }
 function removeItem(page, it){ removeItems(page, [it]); }
 
-/* highlight current selection inside a text item */
-function applyHighlight(el, txt, it, page, color){
+/* ---- an empty box is nothing ----
+   Whitespace and markup only, however it got that way. A double-click on bare
+   paper makes a text box, so the commonest empty one on a page was never asked
+   for at all; rather than leave an invisible thing there to catch clicks, an
+   item that is nothing but its writing takes itself off when it is left with
+   none. Features opt in with `dropWhenBlank` — see core/registry.js.
+
+   A tick late, on purpose: the rest of the blur has work to finish, and the
+   blur may only be the colour wheel taking the focus for a moment. */
+const blankText = h => !String(h == null ? '' : h)
+  .replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').trim();
+
+function dropIfBlank(page, it, el){
+  if(!specOf(it).dropWhenBlank || !blankText(it.html)) return;
+  setTimeout(() => {
+    if(!el.isConnected || !blankText(it.html) || !page.items.includes(it)) return;
+    if(PROPS_ANCHOR && el.contains(PROPS_ANCHOR)) return;   // a panel of its own is open
+    const a = document.activeElement;
+    if(a && a.closest && a.closest('#props,.item[data-id="' + it.id + '"]')) return;
+    removeItem(page, it);
+  }, 0);
+}
+
+/* ---- the highlighter ----
+   One button on the toolbar, wearing the last colour used, opening a panel with
+   the four swatches, a colour wheel for anything else and ⌫ to take a highlight
+   off again. Clicking inside a glass panel is a click outside the writing, so
+   the selection is remembered as the panel opens and put back to apply. */
+let HL_LAST = HL_COLORS[0];
+function openHighlight(anchor, el, txt, it, page){
+  if(!el.classList.contains('editing')) startEdit(el, txt);   // nothing picked yet: arm the editor
   const sel = getSelection();
-  const inBox = sel.rangeCount && txt.contains(sel.anchorNode) && txt.contains(sel.focusNode);
+  const live = sel.rangeCount && !sel.isCollapsed &&
+               txt.contains(sel.anchorNode) && txt.contains(sel.focusNode);
+  let held = live ? sel.getRangeAt(0).cloneRange() : null;
+  const paint = c => {
+    if(c !== 'transparent'){ HL_LAST = c; anchor.style.background = c; }
+    /* the command rewrites the very nodes the range stood on, so the words that
+       were picked are taken up again from where they ended up */
+    held = applyHighlight(el, txt, it, page, c, held);
+  };
+  openProps(anchor, {
+    title: 'Highlight',
+    rows: [{ t: 'swatch', label: 'Colour', colors: HL_COLORS, wheel: true, none: true,
+             get: () => HL_LAST, pick: paint }]
+  });
+}
+/* Highlight the selection inside a text item. `held` is the range the panel was
+   opened on, since opening it took the caret out of the box; the range that is
+   live afterwards comes back, to paint over the same words again. */
+function applyHighlight(el, txt, it, page, color, held){
   if(!el.classList.contains('editing')) startEdit(el, txt);
-  if(!inBox || sel.isCollapsed){ return; } // nothing selected: dots just arm the editor
+  const sel = getSelection();
+  if(held && txt.contains(held.startContainer) && txt.contains(held.endContainer)){
+    txt.focus(); sel.removeAllRanges(); sel.addRange(held);
+  }
+  const inBox = sel.rangeCount && txt.contains(sel.anchorNode) && txt.contains(sel.focusNode);
+  if(!inBox || sel.isCollapsed) return null;      // nothing picked: the panel just armed the editor
   try{ document.execCommand('styleWithCSS', false, true); }catch(e){}
   document.execCommand('hiliteColor', false, color);
   it.html = sanitize(txt.innerHTML);
   queueSave(page.id); SND.scratch();
+  return sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
 }

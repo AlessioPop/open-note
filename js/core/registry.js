@@ -17,7 +17,11 @@
        add:     { note: base => ({...base, type:'note', w:32}) },  // menu kind → a new item
        sound:   'plop',          // what adding one sounds like: plop | pop | tape
        sizeable: true,           // give it the A− / A+ buttons
-       autoWidth: false,         // true if it sizes itself and ignores it.w
+       dropWhenBlank: true,      // it is nothing but its writing: left with none,
+                                 // it takes itself off the page again
+       autoWidth: false,         // true if it sizes itself and ignores it.w —
+                                 // or a function of the item, and then the reader
+                                 // chooses and it.w is the ceiling it wraps at
        html:    (it, c) => '…',  // its markup. c = {live, urls, page, idx}
        mount:   (el, it, c) => {},          // runs for print and exports too
        tools:   (mk, it, el, page) => {},   // its own toolbar buttons
@@ -94,15 +98,33 @@ const fileTakers = () => Object.keys(ITEMS).filter(t => ITEMS[t].takes)
 
 /* what core asks about an item it has been handed */
 const specOf   = it => ITEMS[it && it.type] || {};
-/* a card sizes itself from its own contents rather than from it.w */
-const autoWidth = it => !!specOf(it).autoWidth;
+/* A card sizes itself from its own contents rather than from it.w. `true` means
+   it always does and it.w means nothing to it — a matrix is as wide as its
+   numbers, and that is not the reader's to argue with. A *function* of the item
+   means the reader chooses, and then it.w is not the width but the ceiling: the
+   box is as wide as its writing and wraps when it reaches it. That is the whole
+   difference between the two forms, and canPin() is the question core asks. */
+const autoWidth = it => {
+  const a = specOf(it).autoWidth;
+  return typeof a === 'function' ? !!a(it) : !!a;
+};
+const canPin = it => typeof specOf(it).autoWidth === 'function';
+/* The resize handle, dragged on something that has been sizing itself: ask the
+   feature to let go and take `w` as given. It may refuse — see above — and then
+   nothing has been changed. */
+function pinWidth(it, w){
+  it.aw = false;
+  if(autoWidth(it)){ delete it.aw; return false; }
+  it.w = w; return true;
+}
 /* the A− / A+ pair belongs to anything whose writing can be resized */
 const sizeable  = it => !!specOf(it).sizeable;
 
-/* Which boxes take LaTeX as you type. A `.txt`, a caption, a table cell and the
-   two faces of a flip card all compile $$…$$, and chrome/mathpad.js hangs the
-   completions, the live proof and the $ pairing off whichever of them has the
-   caret. A feature that puts writing on the page says so once, by selector:
+/* Which boxes take LaTeX and backticks as you type. A `.txt`, a caption, a table
+   cell and the two faces of a flip card all compile $$…$$ and `code`, and
+   chrome/mathpad.js hangs the completions, the live proof and the $ and `
+   pairing off whichever of them has the caret. A feature that puts writing on
+   the page says so once, by selector:
 
      defineMathBox('.tc')
 
@@ -110,6 +132,20 @@ const sizeable  = it => !!specOf(it).sizeable;
 const MATH_BOXES = [];
 const defineMathBox = sel => MATH_BOXES.push(sel);
 const mathBoxSel = () => MATH_BOXES.join(',');
+
+/* ```fenced``` code written in a sentence is the code cell's own trade, not
+   core's: colouring a snippet, and what ⇥ or a bracket does inside one.
+   lib/ticks.js finds the fences, items/write/code.js says what they look like
+   and how they are typed in, and this is where the two meet. One pen, the way
+   there is one list of maths boxes.
+
+     defineCodePen({ node, lang, key, cycle })
+
+   With nothing registered a fence still shows, in plain type — the app works
+   with the feature taken out. */
+let CODE_PEN = null;
+const defineCodePen = pen => { CODE_PEN = pen; };
+const codePen = () => CODE_PEN;
 
 /* Some of what a page shows is drawn BETWEEN items rather than inside one — the
    strings tied across a detective board, the wires between nodes. On screen a

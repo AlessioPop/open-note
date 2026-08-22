@@ -171,7 +171,11 @@ function flingItem(el, it, page, v, r, B){
 }
 function startResize(e, it, el, page){
   e.stopPropagation();
-  const r = surfaceRect(el), sx = e.clientX, ow = it.w;
+  const r = surfaceRect(el), sx = e.clientX;
+  /* Something that has been sizing itself starts the drag at the width it had
+     grown to, and stops sizing itself from here on — if its feature allows it. */
+  let ow = it.w;
+  if(autoWidth(it) && pinWidth(it, elWidthPct(el))){ ow = it.w; applyWidth(el, it); }
   el.setPointerCapture(e.pointerId);
   const mn = minItemW();
   const mv = ev => {

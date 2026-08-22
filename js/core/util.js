@@ -51,9 +51,10 @@ function sanitize(html){
   const t = document.createElement('div');
   t.innerHTML = html == null ? '' : String(html);
   t.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(n => n.remove());
-  /* compiled maths is stored as its LaTeX source, never as markup */
-  t.querySelectorAll('[data-tex]').forEach(n =>
-    n.replaceWith(document.createTextNode(n.getAttribute('data-tex') || '')));
+  /* compiled maths and code are stored as their source, never as markup */
+  t.querySelectorAll('[data-tex],[data-tick]').forEach(n =>
+    n.replaceWith(document.createTextNode(
+      n.getAttribute('data-tex') || n.getAttribute('data-tick') || '')));
   const ok = { B:1, I:1, U:1, S:1, BR:1, SPAN:1, MARK:1, DIV:1, FONT:1 };
   (function walk(n){
     [...n.children].forEach(c => {
@@ -65,4 +66,27 @@ function sanitize(html){
     });
   })(t);
   return t.innerHTML;
+}
+
+/* ---- the clipboard ----
+   One way of putting text on it, for the three or four buttons that offer to.
+   The modern call needs a secure context and a permission, and a book opened
+   off the disk has neither, so the old off-screen textarea is kept behind it —
+   both only work inside the gesture that asked, so neither may be deferred.
+   `done` is called only if the text really landed. */
+function copyText(text, done){
+  const said = () => { if(done) done(); };
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try{ ok = document.execCommand('copy'); }catch(e){}
+    ta.remove();
+    if(ok) said();
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(text).then(said).catch(fallback);
+  else fallback();
 }

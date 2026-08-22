@@ -28,13 +28,13 @@ Things scale to the paper they are on: a sticky note is the size it would be on 
 
 | Tool | What it does |
 |---|---|
-| Heading / Text / Handwriting | Poster type, serif body text, marker-pen handwriting — `$$…$$` compiles to a typeset equation |
+| Heading / Text / Handwriting | Poster type, serif body text, marker-pen handwriting — `$$…$$` compiles to a typeset equation and backticks to code. The box is only as wide as its writing; see **How wide a writing box is** below |
 | Marker | Highlighted handwriting — cycle highlight colour with ◑ |
-| Checklist | Obsidian-style `- [ ]` tasks — click boxes to tick, double-click to edit; Enter adds a new task |
-| Code | A terminal-style code cell, syntax-coloured the way VS Code does it — display only, nothing runs. Python by default, or JavaScript, TypeScript, C, C++, C#, Rust, Go, Java, GDScript, Shell and SQL from the picker in its title bar, which also holds the copy button. ◑ cycles six colour schemes — Dark, Light, Monokai, Dracula, Solarized, and a Theme scheme whose terminal is mixed from the note's own ink and paper, going deeper than the paper when the paper itself is dark. Double-click to type: it recolours under the caret as you go, Tab indents, Enter keeps the line's indent, brackets and quotes close themselves the way the editor's do (type the close and it steps over, backspace an empty pair and both go, Enter between braces opens the block out), and pasting strips any formatting. ⏎ wraps long lines or lets them run; a cell past ~16 lines shows a band of itself with its own scrollbar, and ⊞ shows the whole thing. Drop one on another icon and it files into a folder, wearing a little terminal with its language on the tag — click it in there and it opens highlighted, with copy in the title bar |
+| Checklist | Obsidian-style `- [ ]` tasks — click boxes to tick, double-click to edit; Enter adds a new task. As wide as its longest task; see **How wide a writing box is** below |
+| Code | A terminal-style code cell, syntax-coloured the way VS Code does it — display only, nothing runs. Python by default, or JavaScript, TypeScript, C, C++, C#, Rust, Go, Java, GDScript, Shell and SQL from the picker in its title bar, which also holds the copy button. ◑ cycles six colour schemes — Dark, Light, Monokai, Dracula, Solarized, and a Theme scheme whose terminal is mixed from the note's own ink and paper, going deeper than the paper when the paper itself is dark. Double-click to type: it recolours under the caret as you go, Tab indents and Shift+Tab un-indents (over a selection, every line at once), Enter keeps the line's indent, brackets and quotes close themselves the way the editor's do (type the close and it steps over, backspace an empty pair and both go, Enter between braces opens the block out), and pasting strips any formatting. ⏎ wraps long lines or lets them run; a cell past ~16 lines shows a band of itself with its own scrollbar, and ⊞ shows the whole thing. Drop one on another icon and it files into a folder, wearing a little terminal with its language on the tag — click it in there and it opens highlighted, with copy in the title bar. The same cell turns up inside a sentence wherever you write ```` ```fenced ```` code — see **Code in a sentence** |
 | Table | A spreadsheet on the page — cells, four styles, `=SUM(A2:B4)` formulas, sorting, a live readout of what you have picked, and drag it onto a coordinate system to plot it; see **Tables** below |
 | Spreadsheet | The same table, read straight out of an `.xlsx`, `.ods` or `.csv` — or just drop the file on the page. A long one shows a band of itself and folds down to an icon; see **Tables** below |
-| Sticky | Sticky notes in 5 colours, with a folded corner |
+| Sticky | Sticky notes in 5 colours, with a folded corner — as wide as what is written on them; see **How wide a writing box is** below |
 | Flip cards | A deck of index cards — question on the front, answer on the back, laid out how you like and marked ✓ or ✗ as you go |
 | Coordinate system | Axes you can drag around, with functions, vectors and a table's points drawn in them — see **Maths** below |
 | Node | A small card you wire between a table and a plot: keep some columns, do arithmetic on whole columns, put every number through a formula, or hand in a number on a slider or a colour — see **Nodes** below |
@@ -348,7 +348,7 @@ custom gate, or folding a group of gates into one reusable gate of its own.
 
 ## Equations
 
-Write LaTeX between `$$…$$` in any text box, sticky note, checklist task or picture caption. **When you leave the box it compiles** into a properly set equation; double-click back in and your LaTeX source is there again to edit. The **∑** button in a text item's toolbar wraps whatever you've selected in `$$…$$` (or drops an empty pair at the caret) if you'd rather not type the dollars.
+Write LaTeX between `$$…$$` in any text box, sticky note, checklist task or picture caption. **When you leave the box it compiles** into a properly set equation; double-click back in and your LaTeX source is there again to edit. Typing a single `$` writes the pair for you and puts the caret between them, so the dollars are never something you have to count out — see **While you are typing it** below.
 
 - `$$…$$` (or `\[…\]`) puts the equation on its own centred line; `\(…\)` keeps it running inside the sentence. A bare `$…$` is inline maths too, but only when it holds a TeX signal — a `\`, `^`, `_`, `{` or `}` — so "costs $5 to $10" stays a price while `$v^2$` becomes maths.
 - Understood: fractions and `\binom`, roots, sub- and superscripts, primes, Greek and the usual symbols, `\sum \prod \int \lim` (limits go above and below in display maths, beside it inline), `\left(…\right)` brackets that grow with what they hold, `\begin{pmatrix}` / `bmatrix` / `vmatrix` / `cases` / `aligned` / `array`, `\text{…}`, `\mathrm \mathbf \mathbb \mathcal \mathfrak \mathsf \mathtt`, accents (`\hat \bar \vec \tilde \dot \overline`), spacing (`\, \; \quad`), and `\\` to stack several lines.
@@ -374,6 +374,36 @@ A small panel opens under the caret whenever it is inside a formula. It sits cen
 The list is built from the compiler's own tables, so every symbol the app understands is in it.
 
 This is maths *set on the page*. For maths you can pull about — axes, plotted functions, vectors and matrices — see **Maths** below.
+
+## Code in a sentence
+
+Backticks work the way they do everywhere else, in every box that takes writing — text, sticky notes, checklist tasks, table cells, flip cards and picture captions. They compile when you leave the box, exactly as equations do, and double-clicking back in gives you the backticks again.
+
+- **`` `like this` ``** sets a phrase in the typewriter face on a tinted panel — a filename, a flag, a key to press. Two backticks either side do the same, for a phrase that has a backtick of its own in it.
+- **Three backticks open a block, and the block *is* the Code cell** — the same terminal, the same scanner, the same colours, sitting in the middle of your paragraph. Its bar is the cell's, pared back to what a block in a sentence needs: the language on the left, **◑** for the colours and **⧉** to copy the code — just the code, no fences. No traffic lights: three dots on every block in a paragraph is decoration by the third one.
+- **Pick the language off the bar.** It is a picker like the cell's — Plain, then Python, JavaScript, TypeScript, C, C++, C#, Rust, Go, Java, GDScript, Shell and SQL — and choosing one **rewrites the fence's own opening line**, because that word is where a fence keeps it. So it survives the file, the backup and the export, and you can equally set it by typing: ` ```py ` is Python, and `js` `ts` `c` `cpp` `cs` `rust` `go` `java` `gd` `sh` `sql` and the usual aliases (`python3`, `javascript`, `c++`, `zsh`, `psql`…) all land where you'd expect. Open the fence with ⏎ and you get **Plain** — uncoloured, but still set as code.
+- The picker only appears where it can be *kept*: in a text box, a sticky note or a flip card. In a picture caption or a table cell — which store their writing as plain text — the language is a label, and the word after the fence is how you set it.
+- **◑ sets the scheme for every block in the note** — Dark, Light, Monokai, Dracula, Solarized, and the Theme scheme mixed from the note's own ink and paper. One note, one look: a paragraph with three code blocks in three different colourings is a mess. (The Code cell on the Write shelf still keeps its own, per cell.)
+- **Nothing inside a fence is anything else.** A `$$` in there stays two dollars, the maths panel keeps out of the way, and a backtick you type inside is just a backtick.
+
+### While you are typing it
+
+Typing a **`** writes the pair for you with the caret between them, so a phrase never goes unclosed. **A second one grows the pair**, and **a third opens the block out onto three lines** with the caret waiting on the middle one — which is the only way to get inside a fence that has already closed:
+
+    ```
+    |
+    ```
+
+Typing **`** where a closing one is already sitting steps over it rather than adding another, and a **`** typed with something selected wraps the selection.
+
+**Inside the fence the keyboard is the Code cell's**, key for key — it is the same rule table, so the two are typed exactly the same way:
+
+- **⇥ indents** by that language's own step (four spaces in Python, two in JavaScript, a real tab in Go), and **⇧⇥ takes a level back off**. With more than one line picked out both move every line at once and leave the block selected, so ⇥ ⇥ ⇥ keeps going; blank lines are left blank.
+- **⏎ keeps the line's indent**, and pressed between `{` and `}` opens the block out onto three lines with the caret in the middle.
+- **Brackets and quotes close themselves.** An opener brings its close along and leaves the caret between them, typing the close that is already there steps over it, backspace between an empty pair takes both, and a bracket typed with something selected wraps it. Which quotes pair is the language's business — a backtick pairs in JavaScript, not in Python.
+
+Outside a fence none of that happens: ⇥ still walks the maths pad's empty slots, and a bracket in a sentence is only a bracket.
+
 
 ## Maths
 
@@ -670,7 +700,27 @@ In **print** a deck shows the card it is on, question side up. In an **export th
 
 **Arrows (connectors):** the **→** button in any item's toolbar draws an arrow to another item — click the target and the arrow snaps between the two, attached to their edges like a PowerPoint connector, following them when they move. Click an arrow to select it: **↝** cycles the shape (straight / curved / bézier — the last used becomes the default for new arrows), **⇄** flips the direction, **◑** recolours, **✕** removes.
 
-**Pins & strings (detective board):** the 📌 button in any item's toolbar pins the item and lets you tie a string to another item — click the second item to knot it (Esc cancels). Strings are simulated: they drape under gravity and swing when you drag whatever they're pinned to. Click a string to select it — ◑ recolours it, ✕ (or `Delete`) cuts it. Strings also show up on the shelf, in print and in exports. Double-click any text to edit it. **Select words with your mouse, then tap a coloured dot in the item's toolbar to highlight them** (⌫H removes a highlight). Videos have a ▶ toggle that switches between *move* mode and *play* mode.
+**How wide a writing box is.** A text box, a sticky note and a checklist are
+each as wide as their longest line and no wider — a two-word heading is a
+two-word heading, with nothing but paper beside it, so a click next to it lands
+on the sheet rather than on an invisible box. The box grows as you type and wraps
+when it reaches its ceiling, which is where it would have ended before. Drag the
+dot on its corner and it is **pinned** at that width: it wraps there and stays
+put however much you write. The **↔** button in its toolbar tells you which it
+is — ↔ means the box follows the writing and clicking it pins the box at its
+current width, **▭** means it is pinned and clicking it hands the width back to
+the writing.
+
+**An empty box is nothing.** A double-click on bare paper makes a text box, so
+the commonest empty one on a page was never asked for at all. Leave a text box,
+a sticky or a checklist with nothing written on it and it takes itself off the
+page rather than sitting there as an invisible thing to catch clicks. It went
+out through the same door as everything else, so `Ctrl`+`Z` brings it straight
+back if you meant it.
+
+**Pins & strings (detective board):** **Pin & string** and **Arrow** are tiles on the palette's **Decor** shelf. Pick one and click the item it starts from, then the item it goes to — or select an item first and it starts there, so it is a single click. `Esc` cancels. Strings are simulated: they drape under gravity and swing when you drag whatever they're pinned to. Click a string to select it — ◑ recolours it, ✕ (or `Delete`) cuts it. Strings also show up on the shelf, in print and in exports.
+
+**Highlighting:** double-click any text to edit it, select the words you want, then tap the **coloured swatch** in the item's toolbar. It opens one small panel: the four inks, a **colour wheel** for anything else, and **⌫** to take a highlight off again. The swatch on the toolbar wears whatever colour you used last, so the next highlight is two clicks. Videos have a ▶ toggle that switches between *move* mode and *play* mode.
 
 ## Adding things — the palette
 

@@ -277,7 +277,7 @@ function renderDeck(fig, it, page){
     '<button data-a="add">Write the first one</button></div>';
   else stage.innerHTML = (run.length > 1 ? '<div class="dstack"><i></i><i></i></div>' : '') +
     cardHTML(c, true, MEDIA_URL, edit, !!it.side);
-  stage.querySelectorAll('.dtxt,.dot').forEach(mathify);
+  stage.querySelectorAll('.dtxt,.dot').forEach(richify);
   deckChrome(fig, it);
   deckModels(fig, it, page);
   ensureMedia(page);                                 // a card's video may still want its blob url
@@ -393,7 +393,7 @@ function caretInto(ev, el){
   const ed = (ev.target.closest && ev.target.closest('[contenteditable="true"]')) ||
              el.querySelector('[contenteditable="true"]');
   if(!ed) return;
-  if(document.activeElement !== ed){ unmathify(ed); ed.focus(); }
+  if(document.activeElement !== ed){ plainify(ed); ed.focus(); }
   let r = null;
   if(document.caretPositionFromPoint){
     const p = document.caretPositionFromPoint(ev.clientX, ev.clientY);
@@ -681,7 +681,7 @@ function deckFocus(it, side){
   const f = deckViews(it)[0];
   if(!f) return;
   const t = f.querySelector('.dface.' + (side ? 'dback' : 'dfront') + ' .dtxt');
-  if(t && t.isContentEditable){ unmathify(t); t.focus(); }
+  if(t && t.isContentEditable){ plainify(t); t.focus(); }
 }
 function deckAddCard(it, page){
   const cards = cardsOf(it), run = deckRun(it), c = newCard();
@@ -853,7 +853,7 @@ function deckAct(a, it, page, el){
   if(a === 'math'){
     const t = bel && bel.querySelector('.dtxt');
     if(!t) return;
-    if(document.activeElement !== t){ unmathify(t); t.focus(); }
+    if(document.activeElement !== t){ plainify(t); t.focus(); }
     insertMath(fig, t, it, page, v => { b.html = v; });
   }
 }
@@ -927,7 +927,7 @@ function wireDeck(fig, it, page){
     const t = e.target;
     if(!t.classList) return;
     if(t.classList.contains('dtxt') || t.classList.contains('dot')){
-      unmathify(t);
+      plainify(t);
       if(item) item.classList.add('editing');
     }
   });
@@ -939,13 +939,13 @@ function wireDeck(fig, it, page){
       const blkEl = t.closest('.dblk'), b = blkEl && blkOf(c, blkEl.dataset.b);
       if(!b) return;
       b.html = sanitize(t.innerHTML);
-      t.innerHTML = b.html; mathify(t);
+      t.innerHTML = b.html; richify(t);
       queueSave(page.id); deckOthers(it, page, fig);
     }else if(t.classList.contains('dot')){
       const li = t.closest('.dopt'), blk = mcOf(c);
       if(li && blk && blk.opts[+li.dataset.o]){
         blk.opts[+li.dataset.o].t = sanitize(t.innerHTML);
-        mathify(t); queueSave(page.id); deckOthers(it, page, fig);
+        richify(t); queueSave(page.id); deckOthers(it, page, fig);
       }
     }
   });
@@ -1058,7 +1058,7 @@ defineItem('deck', {
   html: (it, c) => c.live ? deckShell('page') : deckStatic(it, c.urls),
   /* in print and in exports the cards are markup rather than a live deck, so
      their writing has to be typeset here */
-  mount(el, it, c){ if(!c.live) el.querySelectorAll('.dtxt,.dot').forEach(mathify); },
+  mount(el, it, c){ if(!c.live) el.querySelectorAll('.dtxt,.dot').forEach(n => richify(n, false)); },
   parts: it => deckMedia(it),        // a card's picture, video or file is the deck's to keep
   forget: it => DECK_EDIT.delete(it.id),
   after(it, el, page){ deckEdit(it, page, true); deckFocus(it, 0); },

@@ -13,7 +13,9 @@
          { t:'angle', label:'Sweep', min:15, get:() => …, set:v => {…} },
          { t:'steps', label:'Rows', min:1, max:8, get, set },      // a − n + stepper
          { t:'btn', label:'', text:'M² on the page'|() => '…',     // one deed
-           hint:'…', act(){} }
+           hint:'…', act(){} },
+         { t:'swatch', label:'Colour', colors:['#f5e04b', …],     // a row of chips,
+           wheel:true, none:true, get:() => '#f5e04b', pick(c){} } //  a wheel, and ⌫
        ],
        onchange(){},   // after every set — repaint the thing being measured
        onsave(){},     // a gesture ended, or the panel closed — persist
@@ -120,6 +122,12 @@ function syncProps(){
     } else if(r.t === 'btn'){
       const b = r.el.querySelector('.prgo');
       b.textContent = typeof r.text === 'function' ? r.text() : (r.text || 'go');
+    } else if(r.t === 'swatch'){
+      const cur = String(r.get() || '').toLowerCase();
+      r.el.querySelectorAll('.prsw').forEach(b =>
+        b.classList.toggle('on', (b.dataset.c || '').toLowerCase() === cur));
+      const w = r.el.querySelector('.prwheel input');
+      if(w && document.activeElement !== w && /^#[0-9a-f]{6}$/.test(cur)) w.value = cur;
     }
   }
 }
@@ -129,6 +137,8 @@ function openProps(anchor, spec){
   if(el.classList.contains('open') && PROPS_ANCHOR === anchor) return closeProps();
   PROPS_SPEC = spec; PROPS_ANCHOR = anchor;
   el.querySelector('.prtitle').textContent = spec.title || '';
+  /* ↺ is only offered by a panel that has somewhere to go back to */
+  el.querySelector('.prreset').style.display = spec.onreset ? '' : 'none';
   const rows = el.querySelector('.prrows');
   rows.innerHTML = '';
   for(const r of spec.rows){
@@ -164,6 +174,39 @@ function openProps(anchor, spec){
       };
       d.querySelector('.prdec').addEventListener('click', () => go(-1));
       d.querySelector('.princ').addEventListener('click', () => go(1));
+    } else if(r.t === 'swatch'){
+      /* Every control in here is armed on pointerdown and does nothing on the
+         default action, because the thing being coloured is a selection in a
+         contenteditable and letting the mouse land would throw it away. The
+         colour wheel is the one exception: it is the browser's own picker and
+         has to be clicked to open, which is why the caller keeps a copy of the
+         range rather than trusting the live one. */
+      d.className = 'prrow prswatch';
+      d.innerHTML = '<label>' + esc(r.label || '') + '</label><span class="prsws">' +
+        (r.colors || []).map(c => '<button class="prsw" data-c="' + esc(c) +
+          '" title="' + esc(c) + '" style="background:' + esc(c) + '"></button>').join('') +
+        (r.wheel ? '<label class="prsw prwheel" title="Any colour you like">' +
+          '<input type="color"></label>' : '') +
+        (r.none ? '<button class="prsw prnone" title="Take the colour off">⌫</button>' : '') +
+        '</span>';
+      d.querySelectorAll('.prsw').forEach(b =>
+        b.addEventListener('pointerdown', e => { if(!b.classList.contains('prwheel')) e.preventDefault(); }));
+      d.querySelectorAll('button.prsw').forEach(b => b.addEventListener('click', e => {
+        e.preventDefault();
+        r.pick(b.classList.contains('prnone') ? 'transparent' : b.dataset.c);
+        syncProps();
+        if(PROPS_SPEC && PROPS_SPEC.onchange) PROPS_SPEC.onchange();
+        if(PROPS_SPEC && PROPS_SPEC.onsave) PROPS_SPEC.onsave();
+      }));
+      const wheel = d.querySelector('.prwheel input');
+      if(wheel) wheel.addEventListener('input', () => {
+        r.pick(wheel.value);
+        if(PROPS_SPEC && PROPS_SPEC.onchange) PROPS_SPEC.onchange();
+      });
+      if(wheel) wheel.addEventListener('change', () => {
+        syncProps();
+        if(PROPS_SPEC && PROPS_SPEC.onsave) PROPS_SPEC.onsave();
+      });
     } else if(r.t === 'btn'){
       d.className = 'prrow prbtn';
       d.innerHTML = '<label>' + esc(r.label || '') + '</label><button class="prgo"' +
@@ -262,6 +305,20 @@ addCSS('props', `
 .prstep button:hover{background:rgba(255,255,255,.13);color:#fff}
 .prstep button.dim{opacity:.3;pointer-events:none}
 .prstep .prn{min-width:2.2ch;text-align:center;font-size:11px;font-weight:400;font-variant-numeric:tabular-nums}
+.prswatch{grid-template-columns:1fr auto}
+.prsws{display:flex;align-items:center;gap:6px;justify-self:end}
+.prsw{width:22px;height:22px;border-radius:50%;padding:0;flex:none;cursor:pointer;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.28),0 0 0 1px rgba(255,255,255,.10)}
+.prsw:hover{box-shadow:inset 0 0 0 1px rgba(0,0,0,.28),0 0 0 2px rgba(255,255,255,.55)}
+.prsw.on{box-shadow:inset 0 0 0 1px rgba(0,0,0,.28),0 0 0 2px var(--accent)}
+/* the wheel: the native picker, wearing a conic ring instead of its own chrome */
+.prwheel{position:relative;overflow:hidden;display:block;
+  background:conic-gradient(#f24,#fd2,#4d4,#2df,#44f,#f3d,#f24)}
+.prwheel input{position:absolute;inset:-25%;width:150%;height:150%;padding:0;border:0;
+  opacity:0;cursor:pointer}
+.prnone{background:rgba(255,255,255,.07);color:rgba(233,234,239,.85);font-family:var(--mono);
+  font-size:11px;line-height:1;display:grid;place-items:center}
+.prnone:hover{color:#fff}
 .prbtn{grid-template-columns:1fr}
 .prbtn label:empty{display:none}
 .prbtn .prgo{justify-self:stretch;padding:6px 10px;border-radius:8px;font-size:10.5px;

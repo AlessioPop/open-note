@@ -310,6 +310,90 @@ function cdDarkPaper(){
     new MutationObserver(kick).observe(document.body, { attributes: true, attributeFilter: ['style', 'data-theme'] }));
 })();
 
+/* ================= what a key does inside code =================
+   One rule table, used twice: by the cell's own editor below, and by a fenced
+   block written inside a sentence (chrome/tickpad.js). Written the way the
+   maths rules are — over the writing and the selection in it, with no DOM in
+   sight — so the two are typed exactly the same way and the harness can drive
+   them without a caret.
+
+   The answer replaces [from, to) with `text` and then puts the caret `caret`
+   characters into what was written; `pick` instead picks out that pair of
+   absolute offsets, which is how a re-indented block stays selected for the
+   next ⇥. `null` means the key was not ours. */
+const CD_PAIR = { '(': ')', '[': ']', '{': '}' };
+const cdLineStart = (s, off) => s.lastIndexOf('\n', Math.max(0, off - 1)) + 1;
+const cdLineEnd = (s, off) => { const i = s.indexOf('\n', off); return i < 0 ? s.length : i; };
+/* one step of indent off the front of a line: a tab, or up to a level of spaces */
+function cdUnindent(line, ind){
+  if(line[0] === '\t') return 1;
+  const w = ind === '\t' ? 4 : ind.length;
+  let n = 0;
+  while(n < w && line[n] === ' ') n++;
+  return n;
+}
+function cdKey(s, a, b, e, L){
+  const one = a === b;                               // nothing picked out
+  const nxt = one ? (s[a] || '') : '';
+  const prv = one && a > 0 ? s[a - 1] : '';
+  const ind = L.ind || '    ';
+  const q = L.q || ['"', "'"];
+  const okNext = !nxt || ' \t\n)]}>,;:.'.indexOf(nxt) >= 0;
+
+  if(e.key === 'Enter'){
+    const ls = cdLineStart(s, a);
+    const keep = (s.slice(ls, a).match(/^[ \t]*/) || [''])[0];        // a new line keeps its indent
+    if(one && CD_PAIR[prv] && nxt === CD_PAIR[prv])                   // …and opens a block out
+      return { from: a, to: b, text: '\n' + keep + ind + '\n' + keep, caret: 1 + keep.length + ind.length };
+    return { from: a, to: b, text: '\n' + keep, caret: 1 + keep.length };
+  }
+  if(e.key === 'Tab'){
+    /* ⇧⇥, or ⇥ over lines, moves whole lines rather than writing anything */
+    if(e.shiftKey || s.slice(a, b).indexOf('\n') >= 0){
+      const ls = cdLineStart(s, a), le = cdLineEnd(s, b);
+      const lines = s.slice(ls, le).split('\n');
+      let first = 0, all = 0;
+      const out = lines.map((ln, i) => {
+        if(e.shiftKey){
+          const cut = cdUnindent(ln, ind);
+          if(i === 0) first = cut;
+          all += cut;
+          return ln.slice(cut);
+        }
+        if(!ln.trim() && lines.length > 1) return ln;                 // a blank line stays blank
+        if(i === 0) first = ind.length;
+        all += ind.length;
+        return ind + ln;
+      }).join('\n');
+      if(out === s.slice(ls, le)) return { from: a, to: a, text: '', caret: 0 };
+      const move = e.shiftKey ? -1 : 1;
+      return { from: ls, to: le, text: out,
+               pick: one ? null : [Math.max(ls, a + move * first), Math.max(ls, b + move * all)],
+               caret: Math.max(0, a - ls + move * first) };
+    }
+    return { from: a, to: b, text: ind, caret: ind.length };
+  }
+  if(!one && (CD_PAIR[e.key] || q.indexOf(e.key) >= 0)){              // wrap what is picked out
+    const close = CD_PAIR[e.key] || e.key;
+    const t = e.key + s.slice(a, b) + close;
+    return { from: a, to: b, text: t, caret: t.length - 1 };
+  }
+  if(!one) return null;
+  if(CD_PAIR[e.key])
+    return okNext ? { from: a, to: a, text: e.key + CD_PAIR[e.key], caret: 1 } : null;
+  if((e.key === ')' || e.key === ']' || e.key === '}') && nxt === e.key)
+    return { from: a, to: a, text: '', caret: 1 };                    // step over the one already there
+  if(q.indexOf(e.key) >= 0){
+    if(nxt === e.key) return { from: a, to: a, text: '', caret: 1 };
+    if(okNext && !/[\w"'`]/.test(prv)) return { from: a, to: a, text: e.key + e.key, caret: 1 };
+    return null;
+  }
+  if(e.key === 'Backspace' && a > 0 &&
+     (CD_PAIR[prv] === nxt || (prv === nxt && q.indexOf(prv) >= 0)))  // an empty pair goes as one
+    return { from: a - 1, to: a + 1, text: '', caret: 0 };
+  return null;
+}
+
 /* ================= the editor ================= */
 /* Reading the text back out of the contenteditable, by walking it. Not
    innerText: the browser keeps a padding <br> at the end of an editable box (so
@@ -392,6 +476,21 @@ function cdSelectSpan(root, a, b){
   const sel = getSelection();
   sel.removeAllRanges(); sel.addRange(r);
 }
+/* an edit out of cdKey(), written into the box: what it replaces is picked out
+   first and the browser's own insertText does the writing, so undo still works
+   and the `input` the cell listens on still fires. Then the caret goes back —
+   or the block stays picked out, ready for the next ⇥. */
+function cdPut(root, k){
+  if(k.from !== k.to) cdSelectSpan(root, k.from, k.to);
+  else cdSetCaret(root, k.from);
+  try{
+    if(k.text) document.execCommand('insertText', false, k.text);
+    else if(k.from !== k.to) document.execCommand('delete');
+  }catch(e){}
+  if(k.pick) cdSelectSpan(root, k.pick[0], k.pick[1]);
+  else cdSetCaret(root, k.from + (k.caret || 0));
+}
+
 /* a caret that lands under the fold of a clipped window is scrolled back in */
 function cdSeeCaret(el){
   const w = el.querySelector('.cwin'), sel = getSelection();
@@ -414,24 +513,11 @@ function cdEdit(el, it){
 }
 
 function cdCopy(text, btn){
-  const done = () => {
+  copyText(text, () => {
     btn.classList.add('did'); SND.tick();
     clearTimeout(btn._t);
     btn._t = setTimeout(() => btn.classList.remove('did'), 1300);
-  };
-  const fallback = () => {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.cssText = 'position:fixed;left:-9999px;top:0';
-    document.body.appendChild(ta); ta.select();
-    let ok = false;
-    try { ok = document.execCommand('copy'); } catch(e){}
-    ta.remove();
-    if(ok) done();
-  };
-  if(navigator.clipboard && navigator.clipboard.writeText)
-    navigator.clipboard.writeText(text).then(done).catch(fallback);
-  else fallback();
+  });
 }
 
 /* ================= the item ================= */
@@ -506,71 +592,25 @@ defineItem('code', {
       cdSeeCaret(el);
       queueSave(page.id); SND.scratch();
     });
-    /* Enter keeps the line's indent, Tab indents, and brackets close themselves
-       the way the editor's do: an opener brings its close along and leaves the
-       caret between, typing the close that is already there steps over it,
-       backspace between an empty pair takes both, a selection gets wrapped, and
-       Enter between { } opens the block out a line */
-    const CD_PAIR = { '(': ')', '[': ']', '{': '}' };
+    /* Everything a key does in here is cdKey() above — Enter keeping the
+       indent, ⇥ and ⇧⇥ moving it, and the brackets and quotes that close
+       themselves. All this does is measure the selection, hand it over, and
+       write back what comes out. */
     ced.addEventListener('keydown', e => {
       if(!el.classList.contains('editing')) return;
-      const L = CD_LANGS[it.lang] || CD_LANGS.python;
-      const code = it.code || '';
+      if(e.key === 'Escape'){ e.stopPropagation(); ced.blur(); return; }
+      if(e.ctrlKey || e.metaKey || e.altKey) return;
       const sel = getSelection();
-      const flat = !sel.rangeCount || sel.isCollapsed;
-      const off = cdCaretOff(ced);
-      const nxt = flat && off >= 0 ? code[off] || '' : '';
-      const prv = flat && off > 0 ? code[off - 1] : '';
-      const okNext = !nxt || ' \t\n)]}>,;:.'.indexOf(nxt) >= 0;
-      const wrap = (open, close) => {
-        const r = sel.getRangeAt(0);
-        const a = cdOffOf(ced, r.startContainer, r.startOffset);
-        const b = cdOffOf(ced, r.endContainer, r.endOffset);
-        if(a < 0 || b < a) return false;
-        e.preventDefault();
-        document.execCommand('insertText', false, open + code.slice(a, b) + close);
-        cdSetCaret(ced, b + 1);
-        return true;
-      };
-      if(e.key === 'Enter'){
-        e.preventDefault();
-        const ls = code.lastIndexOf('\n', Math.max(0, off - 1)) + 1;
-        const ind = (code.slice(ls).match(/^[ \t]*/) || [''])[0];    // a new line keeps its indent
-        if(flat && CD_PAIR[prv] && nxt === CD_PAIR[prv]){
-          document.execCommand('insertText', false, '\n' + ind + (L.ind || '    ') + '\n' + ind);
-          cdSetCaret(ced, off + 1 + ind.length + (L.ind || '    ').length);
-        } else document.execCommand('insertText', false, '\n' + ind);
-        cdSeeCaret(el);
-      } else if(e.key === 'Tab'){
-        e.preventDefault();
-        document.execCommand('insertText', false, L.ind || '    ');
-      } else if(e.key === 'Escape'){
-        e.stopPropagation();
-        ced.blur();
-      } else if(CD_PAIR[e.key]){
-        if(!flat) wrap(e.key, CD_PAIR[e.key]);
-        else if(okNext){
-          e.preventDefault();
-          document.execCommand('insertText', false, e.key + CD_PAIR[e.key]);
-          cdSetCaret(ced, off + 1);
-        }
-      } else if((e.key === ')' || e.key === ']' || e.key === '}') && flat && nxt === e.key){
-        e.preventDefault();
-        cdSetCaret(ced, off + 1);
-      } else if((e.key === '"' || e.key === "'" || e.key === '`') && L.q.indexOf(e.key) >= 0){
-        if(!flat) wrap(e.key, e.key);
-        else if(nxt === e.key){ e.preventDefault(); cdSetCaret(ced, off + 1); }
-        else if(okNext && !/[\w"'`]/.test(prv)){
-          e.preventDefault();
-          document.execCommand('insertText', false, e.key + e.key);
-          cdSetCaret(ced, off + 1);
-        }
-      } else if(e.key === 'Backspace' && flat && off > 0 &&
-                (CD_PAIR[prv] === nxt || (prv === nxt && L.q.indexOf(prv) >= 0))){
-        e.preventDefault();
-        cdSelectSpan(ced, off - 1, off + 1);
-        document.execCommand('delete');
-      }
+      if(!sel.rangeCount) return;
+      const r = sel.getRangeAt(0);
+      const a = cdOffOf(ced, r.startContainer, r.startOffset);
+      const b = cdOffOf(ced, r.endContainer, r.endOffset);
+      if(a < 0 || b < a) return;
+      const ed = cdKey(it.code || '', a, b, e, CD_LANGS[it.lang] || CD_LANGS.python);
+      if(!ed) return;
+      e.preventDefault();
+      cdPut(ced, ed);
+      cdSeeCaret(el);
     });
     ced.addEventListener('paste', e => {
       e.preventDefault();
@@ -720,6 +760,103 @@ defineItem('code', {
 .cgp{stroke:#4ec9b0;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
 `
 });
+
+/* ================= the same cell, inside a sentence =================
+   ```fenced``` code written in a text box is this feature's trade too: the
+   scanner colours it, the schemes below dress it, and cdKey() above says what
+   ⇥ or a bracket does while it is being written. lib/ticks.js finds the fences
+   and hands them here — a language is named the way it is everywhere else, by
+   the word after the opening fence.
+
+   The one thing a fence does not carry is the cell's own toolbar: its language
+   is the word you typed, and its colours are the note's rather than its own,
+   since a paragraph with three code blocks in three different schemes reads as
+   a mess. `◑` on the bar cycles that one setting for the whole note. */
+const CD_ALIAS = {
+  py:'python', python:'python', py3:'python', python3:'python',
+  js:'js', javascript:'js', jsx:'js', mjs:'js', cjs:'js', node:'js',
+  ts:'ts', typescript:'ts', tsx:'ts',
+  c:'c', h:'c', cpp:'cpp', 'c++':'cpp', cc:'cpp', cxx:'cpp', hpp:'cpp',
+  cs:'cs', csharp:'cs', 'c#':'cs', dotnet:'cs',
+  rust:'rust', rs:'rust', go:'go', golang:'go', java:'java',
+  gd:'gd', gdscript:'gd', godot:'gd',
+  sh:'bash', bash:'bash', shell:'bash', zsh:'bash', console:'bash', terminal:'bash',
+  sql:'sql', psql:'sql', mysql:'sql', sqlite:'sql'
+};
+/* the word after the fence → one of CD_LANGS, or '' for a block of plain text */
+const cdLangKey = w => CD_ALIAS[String(w || '').toLowerCase().replace(/^\.+/, '')] || '';
+/* …and the table a fence is *typed* under: an unnamed block still wants its
+   brackets closing, so it borrows the cell's own default */
+const cdFenceLang = w => CD_LANGS[cdLangKey(w)] || CD_LANGS.python;
+
+/* every fence in the note wears the same scheme, kept on the sheet itself */
+const cdFenceSch = () => { const p = sheet(); return (p && p.csch) || 'auto'; };
+function cdFenceDress(bx){
+  const sch = cdFenceSch();
+  bx.dataset.sch = sch;
+  bx.classList.toggle('cdk', sch === 'auto' && cdDarkPaper());
+  const b = bx.querySelector('.csch');
+  if(b) b.title = 'Colour scheme — ' + CD_SCH_NAME[sch] + ', for every code block in this note';
+}
+function cdFenceCycle(){
+  const p = sheet();
+  if(!p) return;
+  p.csch = CD_SCHEMES[(CD_SCHEMES.indexOf(p.csch || 'auto') + 1) % CD_SCHEMES.length];
+  document.querySelectorAll('.cbx.cfence').forEach(cdFenceDress);
+  queueSave(p.id); SND.tick();
+}
+/* The picker only appears where picking can be *kept*: the language is the word
+   after the opening fence, so changing it rewrites the writing itself, and only
+   a box that stores what it holds as rich text can take that back. Everywhere
+   else — a caption, a table cell — the language is a label, and typing the word
+   after the fence is how it is set. */
+const CD_FENCE_BOX = '.txt,.dtxt,.dot';
+/* one fenced block, built the way the cell is built — but without the cell's
+   traffic lights: three dots on every block in a paragraph is decoration the
+   third time you see it */
+function cdFenceNode(hit, live, box){
+  const key = cdLangKey(hit.lang), L = key ? CD_LANGS[key] : null;
+  const out = [];
+  if(L) cdScan(hit.code, L, out); else out.push(esc(hit.code));
+  const pick = live && box && box.closest && box.closest(CD_FENCE_BOX)
+    ? '<span class="clwrap"><select class="clang" title="Language — what it is coloured as">' +
+        '<option value=""' + (L ? '' : ' selected') + '>Plain</option>' +
+        Object.keys(CD_LANGS).map(k => '<option value="' + k + '"' + (k === key ? ' selected' : '') +
+          '>' + esc(CD_LANGS[k].name) + '</option>').join('') +
+      '</select></span>'
+    : '<span class="clang">' + esc(L ? L.name : (hit.lang || 'code')) + '</span>';
+  const d = document.createElement('div');
+  d.className = 'cbx cfence';
+  d.setAttribute('data-tick', hit.src);
+  d.contentEditable = 'false';
+  d.innerHTML = '<div class="cbar">' + pick +
+    (live ? '<button class="csch" type="button">◑</button>' +
+            '<button class="ccopy" type="button" title="Copy the code">' +
+            icn('copy') + '<span class="cok">copied</span></button>' : '') +
+    '</div><pre class="cwin"><code class="ced">' + out.join('') + '</code></pre>';
+  cdFenceDress(d);
+  return d;
+}
+defineCodePen({ node: cdFenceNode, lang: cdFenceLang, key: cdKey, cycle: cdFenceCycle });
+
+addCSS('codefence', `
+/* a cell in a sentence: the same terminal, sized off the writing around it
+   rather than off an item's own --fs, and never wider than the paragraph */
+.cbx.cfence{display:block;max-width:100%;margin:.5em 0;font-size:.86em;
+  text-align:left;text-transform:none;letter-spacing:normal;font-weight:400;font-style:normal;
+  -webkit-user-select:text;user-select:text;box-shadow:0 3px 10px rgba(0,0,0,.22)}
+.cbx.cfence .cbar{padding:.3em .5em .3em .7em}
+/* no traffic lights on a fence: the language takes the left of the bar */
+.cbx.cfence .clang,.cbx.cfence .clwrap{margin-right:auto}
+.cbx.cfence .cwin{padding:.55em .75em;min-height:0}
+.cbx.cfence .ced{white-space:pre-wrap;overflow-wrap:break-word}
+.csch{background:transparent;border:0;padding:.1em .35em;border-radius:.35em;cursor:pointer;
+  color:color-mix(in srgb,var(--c-fg) 78%,var(--c-bar));font-family:var(--mono);font-size:.9em}
+.csch:hover{background:color-mix(in srgb,var(--c-fg) 14%,transparent);color:var(--c-fg)}
+/* handwriting on a highlighter runs inline: a block inside one takes what it needs */
+.st-marker .cbx.cfence{display:inline-block;vertical-align:top}
+@media print{ .cbx.cfence .csch,.cbx.cfence .ccopy{display:none} }
+`);
 
 /* its own drawings, and its tile on the Write shelf */
 defineIcon('codecell', '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 8.5h17"/><path d="M7 12l2.5 2L7 16M11.5 16h4"/>');

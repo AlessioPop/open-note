@@ -53,6 +53,8 @@ const ICONS = {
   /* ---- decoration ---- */
   washi:   '<path d="M4.6 11.2l12.6-6a1.6 1.6 0 0 1 2.2.8l1 2.2a1.6 1.6 0 0 1-.8 2.2l-12.6 6a1.6 1.6 0 0 1-2.2-.8l-1-2.2a1.6 1.6 0 0 1 .8-2.2z"/><path d="M9.2 12.4l.9 2M13.2 10.5l.9 2"/>',
   sticker: '<path d="M12 4.4l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L4.8 9.7l5-.7z"/>',
+  pin:     '<circle cx="12" cy="7.2" r="3.1"/><path d="M12 10.3v9.4"/><path d="M12 12.9c-3.4.8-5.9 2.8-5.9 2.8"/>',
+  arrow:   '<path d="M4.8 19.2L19.2 4.8"/><path d="M11.6 4.8h7.6v7.6"/>',
 
   /* ---- page actions, and the palette's own furniture ---- */
   eraser:  '<path d="M13.6 5.4l5 5L11 18H7.4l-2-2z"/><path d="M10.6 8.4l5 5M13 18h7"/>',

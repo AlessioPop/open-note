@@ -7,6 +7,8 @@ defineItem('note', {
   add: { note: base => ({ ...base, type:'note', w:32, fs:22, color:'', html:'',
                           rot: 0 }) },
   sizeable: true,
+  autoWidth: it => it.aw !== false,        // as wide as its writing, until it is pinned
+  dropWhenBlank: true,                     // an empty one was an accident: it goes
   html: it => '<div class="body note ' + (it.color || '') +
     '" style="font-size:calc(var(--fs)*var(--scale)*1px)"><div class="txt" data-ph="quick note"></div></div>',
   tools(mk, it, el, page){

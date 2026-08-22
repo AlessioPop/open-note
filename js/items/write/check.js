@@ -37,13 +37,15 @@ function renderCk(bodyEl, it, page, live){
   });
   if(!rows.length || (rows.length === 1 && !rows[0].text))
     bodyEl.innerHTML = '<div class="plainln" style="opacity:.4">double-click to add tasks</div>';
-  mathify(bodyEl);
+  richify(bodyEl, live);
 }
 
 defineItem('check', {
   add: { check: base => ({ ...base, type:'check', w:38, fs:22,
                            html:'- [ ] first task\n- [ ] second task' }) },
   sizeable: true,
+  autoWidth: it => it.aw !== false,        // as wide as its longest task, until it is pinned
+  dropWhenBlank: true,                     // an empty one was an accident: it goes
   html: () => '<div class="body ck"></div>',
   mount(el, it, c){ renderCk(el.querySelector('.ck'), it, c.page, c.live); },
   /* double-click edits the markdown behind the boxes, rather than one task */
@@ -70,6 +72,7 @@ defineItem('check', {
         el.classList.remove('editing');
         queueSave(page.id);
         renderCk(ckBody, it, page, true);
+        dropIfBlank(page, it, el);          // a list with nothing on it is nothing
       });
     });
   }

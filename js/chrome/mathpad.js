@@ -6,7 +6,9 @@
    Three things, one panel:
 
      $     pairs itself — $|$ — and a second $ inside that pair opens it out
-           into a display block on three lines, the caret on the middle one.
+           into a display block on three lines, the caret on the middle one. A
+           ` pairs itself the same way, by the rules in lib/ticks.js — the pad
+           itself stays out of it, since code is not typeset.
      \…    a list of every command the compiler knows, narrowed as the letters
            come in, walked with ↑ ↓ and taken with ⏎ or ⇥. \frac arrives as
            \frac{}{} with the caret in the first pair, and ⇥ walks the rest.
@@ -27,6 +29,8 @@ const MPAD_MARK = '\u0001';                  // where the caret lands in a snipp
 /* what typing a $ does */
 function mpadDollar(s, off){
   const b1 = s[off - 1], b2 = s[off - 2], a1 = s[off], a2 = s[off + 1];
+  /* inside a code fence nothing is maths, so nothing pairs */
+  if(tickInFence(s, off)) return { from: off, to: off, text: '$', caret: 1 };
   /* the second $ inside the pair the first one made: open it out onto three
      lines, and take the line to itself if there is writing either side */
   if(b1 === '$' && a1 === '$' && b2 !== '$' && a2 !== '$'){
@@ -216,6 +220,13 @@ function mpadTo(box, off){
   r.collapse(true);
   sel.removeAllRanges(); sel.addRange(r);
 }
+/* …and the same for a run of it, which is what a re-indented block needs so
+   that the next ⇥ still has it picked out */
+function mpadPick(box, a, b){
+  const A = mathFlatPos(box, a), B = mathFlatPos(box, b), r = document.createRange(), sel = getSelection();
+  try{ r.setStart(A[0], A[1]); r.setEnd(B[0], B[1]); }catch(e){ return mpadTo(box, b); }
+  sel.removeAllRanges(); sel.addRange(r);
+}
 
 /* ================= the panel ================= */
 function mpadEl(){
@@ -343,6 +354,7 @@ function mpadSync(){
   const c = mpadCaret(box);
   if(!c || c.a !== c.b) return mpadHide();
   const flat = mathFlat(box);
+  if(tickInFence(flat.s, c.a)) return mpadHide();      // that is code, not a formula
   const reg = mpadRegion(flat.s, c.a);
   if(!reg) return mpadHide();
   if(c.a !== MPAD.off || box !== MPAD.box) MPAD.mute = false;   // a moved caret is asking again
@@ -425,9 +437,11 @@ document.addEventListener('keydown', e => {
   }
 }, true);
 
-/* $ is intercepted before it is typed, so that what lands is the pair */
+/* $ and ` are intercepted before they are typed, so that what lands is the
+   pair. The rule for each is its own — mpadDollar() here, tickTick() in
+   lib/ticks.js — but putting it into the box is the same job either way. */
 document.addEventListener('beforeinput', e => {
-  if(e.inputType !== 'insertText' || e.data !== '$') return;
+  if(e.inputType !== 'insertText' || (e.data !== '$' && e.data !== '`')) return;
   const box = mpadBox();
   if(!box) return;
   const c = mpadCaret(box);
@@ -436,9 +450,9 @@ document.addEventListener('beforeinput', e => {
   const s = mathFlat(box).s;
   if(c.a !== c.b){                                   // a pair around what is picked
     const t = s.slice(c.a, c.b);
-    mpadPut(box, c.a, c.b, '$' + t + '$', t.length + 2);
+    mpadPut(box, c.a, c.b, e.data + t + e.data, t.length + 2);
   } else {
-    const d = mpadDollar(s, c.a);
+    const d = e.data === '$' ? mpadDollar(s, c.a) : tickTick(s, c.a);
     mpadPut(box, d.from, d.to, d.text, d.caret);
   }
   MPAD.mute = false;

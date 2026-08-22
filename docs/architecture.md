@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1265 assertions, driven in headless Firefox
+tools/verify/       the harness: 1442 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -136,20 +136,20 @@ right up until it loses the session.
 
 | File | Lines | What it does |
 |---|---:|---|
-| `registry.js` | 152 | `defineItem()`, `defineTool()`, `defineSelectionAction()`, `defineMathBox()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
+| `registry.js` | 188 | `defineItem()`, `defineTool()`, `defineSelectionAction()`, `defineMathBox()`, `defineCodePen()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
 | `store.js` | 68 | IndexedDB for the note, its sheet and its blobs, with an in-memory fallback |
-| `util.js` | 68 | `uid` `$` `clamp` `esc`, sheet sizes and page units, the theme palettes, the stored-HTML sanitiser |
+| `util.js` | 92 | `uid` `$` `clamp` `esc` `copyText`, sheet sizes and page units, the theme palettes, the stored-HTML sanitiser |
 | `state.js` | 39 | the open note, its sheet, the selection, the zoom — and `sheet()`, the only way to ask for the paper |
 | `save.js` | 41 | debounced writes back to the store — the two doors every change goes through, which is what undo listens at |
 | `history.js` | 252 | **`undo()` / `redo()`** — what the sheet said before a change and what it says after, including rebasing live clock state, and where one step ends and the next begins |
 | `theme.js` | 89 | the theme presets, the colour overrides and the paper grain |
 | `zoom.js` | 153 | zoom, panning the desk, and holding the paper still while either changes |
-| `richtext.js` | 34 | editing text in place, and the ∑ button |
+| `richtext.js` | 34 | editing text in place, and wrapping a selection in `$$…$$` — the compiling itself is `richify()`/`plainify()` in `lib/ticks.js` |
 | `media.js` | 21 | handing stored blobs to the page as object URLs |
-| `item.js` | 206 | **`buildItem()`** — builds any item from its spec; also what an item owns and deleting one or a selection |
-| `drag.js` | 184 | rotate, drag and resize — the throw for one item and rigid movement for a selected group |
+| `item.js` | 267 | **`buildItem()`** — builds any item from its spec; also what an item owns and deleting one or a selection |
+| `drag.js` | 188 | rotate, drag and resize — the throw for one item and rigid movement for a selected group |
 | `select.js` | 156 | the toolbar's one-shot marquee, the selected-id set, bulk deletion and feature-owned group actions |
-| `page.js` | 104 | **`buildPage()`** — the paper, its items and its ink, live or static |
+| `page.js` | 101 | **`buildPage()`** — the paper, its items and its ink, live or static |
 | `sheet.js` | 207 | **`growSheet()`** — the rails, and every stored fraction remapped so nothing moves when the paper does |
 | `add.js` | 58 | **`addItem()`** — makes whatever the palette asked for, at the size this paper wants |
 | `keys.js` | 116 | **`render()`** and the keyboard |
@@ -161,18 +161,19 @@ right up until it loses the session.
 |---|---:|---|
 | `layers.js` | 187 | the layer stack and the panel |
 | `ink.js` | 331 | the stylus, the nib, and the ink on the sheet |
-| `strings.js` | 430 | pins, strings and arrows between items |
+| `strings.js` | 478 | pins, strings and arrows between items, and the two Decor tiles that start one |
 
 ### `js/chrome/` — the tools around the sheet
 
 | File | Lines | What it does |
 |---|---:|---|
-| `icons.js` | 70 | the line-icon set — `icn('table')` — and `defineIcon()` for a feature's own. Loads ahead of the items so they can register icons while loading |
+| `icons.js` | 72 | the line-icon set — `icn('table')` — and `defineIcon()` for a feature's own. Loads ahead of the items so they can register icons while loading |
 | `glass.js` | 69 | the glass material and the warp that every floating panel shares |
 | `palette.js` | 229 | the palette — shelves, labelled groups, tiles and search, drawn from the registry |
-| `props.js` | 271 | the properties popover — glass sliders, steppers, the sweep dial and a deed button; `openProps()` for any feature with measurements, and `placePanel()`, the above-then-beside-then-below rule every panel an item opens off its toolbar follows |
+| `props.js` | 328 | the properties popover — glass sliders, steppers, the sweep dial, a deed button and a row of colour swatches with a wheel; `openProps()` for any feature with measurements, and `placePanel()`, the above-then-beside-then-below rule every panel an item opens off its toolbar follows |
 | `mathbar.js` | 101 | the maths toolbar |
-| `mathpad.js` | 500 | writing maths: the `$` that pairs itself and opens out into a display block, the completion list built from the compiler's own tables, and the formula typeset under the caret as it is written. The rules are plain functions over (text, offset), so the harness can drive them without a caret |
+| `mathpad.js` | 514 | writing maths: the `$` that pairs itself and opens out into a display block (and the `` ` `` that pairs itself by `lib/ticks.js`'s rules), the completion list built from the compiler's own tables, and the formula typeset under the caret as it is written. The rules are plain functions over (text, offset), so the harness can drive them without a caret |
+| `tickpad.js` | 45 | typing inside a ```fence``` in any writing box: ⇥ and ⇧⇥, ⏎ keeping the indent, brackets and quotes closing themselves. None of the rules are here — they are the code cell's, reached through the registry's code pen |
 | `map.js` | 174 | the map: the whole sheet, and where you are standing on it |
 | `shelf.js` | 100 | the shelf of notes |
 | `print.js` | 32 | print / PDF |
@@ -192,7 +193,7 @@ shelf** — a new file under `items/science/` had better call
 | `write/text.js` | 47 | `text` — five styles: heading, text, handwriting, mono, marker |
 | `write/note.js` | 30 | `note` |
 | `write/check.js` | 93 | `check` |
-| `write/code.js` | 728 | `code` — the terminal-style code cell: one hand-rolled scanner driven by a table per language (12 of them), the editor schemes as CSS variables plus a Theme scheme mixed from the note's colours, the copy button, typing that recolours under the caret with brackets that close themselves, the band a long one clips to, and the folder glyph and viewer |
+| `write/code.js` | 865 | `code` — the terminal-style code cell: one hand-rolled scanner driven by a table per language (12 of them), the editor schemes as CSS variables plus a Theme scheme mixed from the note's colours, the copy button, typing that recolours under the caret with brackets that close themselves, the band a long one clips to, and the folder glyph and viewer. `cdKey()` is that keyboard as a plain function over (writing, selection, key), and the code pen it registers is the same cell built into a ```fence``` in a sentence — bar, picker, colours and all, less the traffic lights |
 | `write/deck.js` | 1317 | `deck` — flip cards, the scope, the scoreboard |
 | `math/table.js` | 1659 | `table` — the grid, the formula compiler, rows and columns, the band a long one shows, folding it to an icon, reading a workbook in, and handing two columns to a plot |
 | `math/plot.js` | 1277 | `plot` — the expression compiler, the grid, the vectors, and a table's points |
@@ -218,15 +219,18 @@ shelf** — a new file under `items/science/` had better call
 
 ### `js/lib/` — owes nothing to this app
 
-No DOM in any of them, with one stated exception: `latex.js` calls `addCSS()`
-for the stylesheet its markup needs, which is why `core/registry.js` is the one
-thing loaded ahead of this whole layer.
+No DOM in any of them, with two stated exceptions: `latex.js` and `ticks.js`
+call `addCSS()` for the stylesheet their markup needs, which is why
+`core/registry.js` is the one thing loaded ahead of this whole layer. `ticks.js`
+also reaches the DOM for the same reason `latex.js` does — it compiles writing
+in place — and hangs one delegated listener for its copy buttons.
 
 | File | Lines | What it does |
 |---|---:|---|
 | `sound.js` | 81 | the studio sounds, generated live. No audio files |
 | `spring.js` | 125 | springs and momentum: analytic springs, release velocity, flick projection. What the throws, spins and card-tosses all move on |
-| `latex.js` | 454 | LaTeX → MathML. No library, nothing downloaded — plus the flatten/scan pair that tells a caret which formula it is standing in, which `chrome/mathpad.js` writes with |
+| `latex.js` | 459 | LaTeX → MathML. No library, nothing downloaded — plus the flatten/scan pair that tells a caret which formula it is standing in, which `chrome/mathpad.js` writes with |
+| `ticks.js` | 294 | code ticks: `` `a phrase` `` and ```` ```a block``` ````, compiled and taken apart the way `latex.js` does formulas — plus what typing a backtick does, and `richify()`/`plainify()`, the pair every writing surface in the app goes through. A fenced block itself is built by whatever registered the code pen — the code cell does — and setting its language from the bar rewrites the fence's own opening line, then leaves the box to save itself on the `input` that follows |
 | `matrix.js` | 255 | the n×m arithmetic the cards lean on: multiply, transpose, determinant, inverse, powers, and eigen (Hessenberg + shifted QR, null-space eigenvectors) |
 | `fits.js` | 477 | a `.fits` → its HDUs, their headers, and the shape of every data unit; the walk steps over the data without touching it, so a four-gigabyte cube opens as fast as a small one. Then one column of a binary table, on request — planned before it is read, so what comes back is bounded whatever the file weighs |
 | `workbook.js` | 518 | `.xlsx`, `.ods` and `.csv` → plain rows of plain strings. No library: a workbook is a zip of XML, and the browser has an unzipper |
@@ -255,7 +259,12 @@ defineItem('note', {
   add:     { note: base => ({ ...base, type:'note', w:32 }) },  // menu kind → a new item
   sound:   'plop',           // adding one sounds like: plop | pop | tape
   sizeable: true,            // give it the A− / A+ buttons
-  autoWidth: false,          // true if it sizes itself and ignores it.w
+  dropWhenBlank: true,       // it is nothing but its writing: left with none,
+                             // it takes itself off the page again
+  autoWidth: false,          // true if it sizes itself and ignores it.w — or a
+                             // function of the item, and then the reader chooses
+                             // and it.w is the ceiling it wraps at: a writing box
+                             // hugs its writing until the handle pins it
   playArea: '.vwrap',        // inner surface that takes the mouse in play mode
 
   html:    (it, c) => '…',   // its markup. c = {live, urls, page, idx}
@@ -322,13 +331,15 @@ to the document icon and the file's name.
 Three things every item gets for free, with no field to set:
 
 - **Writing.** Put a `<div class="txt">` in your markup and you get in-place
-  editing, the highlighter dots, the ∑ equation button, `$$…$$` compiling on
-  blur, and storage in `it.html`.
+  editing, the highlighter — one swatch opening a panel of colours, a wheel and
+  ⌫ — `$$…$$` compiling on blur, and storage in `it.html`.
 - **A caption.** Put a `<figcaption>` in it and you get an editable caption in
   `it.cap`, typeset the same way.
-- **The rest of the toolbar** — pin, arrow, layer, front, back, delete — and
-  dragging, rotating, resizing, layers, ink over the top, print, backup and
-  export.
+- **The rest of the toolbar** — layer, front, back, delete, and a width button
+  if the feature lets its boxes be pinned — and dragging, rotating, resizing,
+  layers, ink over the top, print, backup and export. Pins, strings and arrows
+  are *not* here: they are two clicks between two items rather than a property
+  of one, so they are tiles on the Decor shelf (`js/paper/strings.js`).
 
 ### A group is still ordinary items
 
@@ -709,14 +720,24 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1265 assertions**, and they are the real specification of this app. Among them:
-that all 72 script files load without throwing; that a fresh note is one empty
+**1442 assertions**, and they are the real specification of this app. Among them:
+that all 74 script files load without throwing; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a
 third on the real one; that every add-menu entry adds the type it claims to;
 that the palette and the registry agree in both directions — every tile a
 registered kind, every public kind a tile; that nothing tilts on its way onto the
-paper; that growing the sheet leaves every item and every stroke exactly where
+paper; that a text box, a sticky and a checklist are each as wide as their
+longest line with `it.w` only the ceiling they wrap at, that the resize handle
+pins one there and the ↔ button hands it back, and that a card which always
+sizes itself refuses to be pinned and is offered no button; that a writing box
+carries exactly one highlighter and no equation, pin or arrow button, that the
+panel behind it paints from a chip and from the wheel and takes a highlight off
+again, and that pins, strings and arrows are Decor tiles whose two clicks pick
+the ends and tie the knot; that a text box, a sticky or a checklist left with no
+writing takes itself off the page, that one still holding a word does not, that
+an item with a panel open on it is left alone, and that an undo brings a
+vanished one straight back; that growing the sheet leaves every item and every stroke exactly where
 the eye had it, that one `Ctrl`+`Z` puts the paper *and* everything on it back,
 and that there is a ceiling; that a zoom gesture scales rather than relays out
 and holds the point you aimed at; that every item type builds both live and

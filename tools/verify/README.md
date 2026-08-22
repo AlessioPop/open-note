@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 1265 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 1442 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,12 +22,12 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 1265 assertions, and they should
+It prints a pass/fail count and every failure. 1442 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 72 script files load, in order;
+- nothing throws while the 74 script files load, in order;
 - the app boots, opens a note and draws its sheet — one sheet, 1980 × 1320,
   four rails, and no page furniture of any kind;
 - every entry in the add menu adds the type it claims to;
@@ -51,6 +51,32 @@ all pass — if one doesn't, that is a real regression.
   and that the pad is as wide as the equation in it — at its floor for a short one,
   grown but under its ceiling for a long one, with nothing cut off, and back down
   again when the formula shrinks;
+- **code ticks**: that a phrase in backticks is a hit and an unclosed one is not,
+  that a phrase does not run over a line, that three backticks open a block and
+  the word after the fence names its language, that a `$$` inside a fence is not
+  maths and a backtick inside a formula is the formula's; that a `` ` `` writes
+  the pair, a second grows it, a third opens the fence onto three lines and takes
+  a line of its own when there is writing beside it, that it steps over a closer,
+  and that inside a fence a `` ` `` and a `$` are only themselves; then a box
+  compiled and taken apart again — the `<code>`, the block with its language, its
+  code and its copy button, the writing either side left alone, what `sanitize()`
+  stores (the backticks, never the markup), that pressing copy is not the start of
+  a drag, and that maths and code in one box each leave the other alone; that a
+  block is the code cell — its bar with no traffic lights on it, its language
+  named in full, its colours off the same scanner — that the language is a
+  picker where picking it can be kept and a label where it cannot, that picking
+  one rewrites the fence's own opening line and asks the box to store itself,
+  and that a printed block keeps the colours and loses the buttons. Then the keyboard end to end on a real `.txt`, ⇥ ⇧⇥ ⏎ and a bracket
+  inside the fence and none of them outside it;
+- **what a key does inside code**: `cdKey()`, the one rule table the cell and a
+  fence in a sentence are both typed under — ⇥ writing the language's own step
+  (four spaces in python, a tab in go), ⇧⇥ taking one off, both of them moving
+  every line of a selection and handing it back picked out for the next ⇥, a
+  blank line left blank, ⏎ keeping the indent and opening a block out between
+  braces, brackets and quotes closing themselves, stepping over a close already
+  there, wrapping what is picked out, backspace taking an empty pair, and an
+  ordinary letter left to whoever else wants it; and that a fence names its
+  language the way everything else does (`py`, `C++`, `zsh`, and nonsense → none);
 - the table: that its formulas come out right, that inserting a row carries
   every reference with it and deleting a column leaves `#REF` behind, that a
   circular formula is caught rather than hanging, that the rails and the header

@@ -86,6 +86,9 @@ body.nograin .grain{display:none}
 .empty::after{content:"an endless sheet — put anything anywhere, then pull the edges out"}
 /* ---------- items ---------- */
 .item{position:absolute;z-index:6;user-select:none;touch-action:none}
+/* a box that is as wide as its writing (core/item.js applyWidth) — emptied, it
+   still keeps a thumb's worth of width to aim the caret at */
+.item.hug{min-width:calc(var(--scale)*26px)}
 .item.dragging{cursor:grabbing;filter:drop-shadow(0 10px 14px rgba(0,0,0,.3))}
 .item .tools{position:absolute;left:0;bottom:100%;margin-bottom:calc(var(--scale)*7px);display:none;gap:3px;background:var(--ink);border-radius:4px;padding:calc(var(--scale)*3px);z-index:20;align-items:center;box-shadow:0 calc(var(--scale)*4px) calc(var(--scale)*12px) rgba(0,0,0,.34)}
 .item.sel .tools{display:flex}
@@ -359,6 +362,7 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <script src="js/lib/sound.js"></script>
 <script src="js/lib/spring.js"></script>
 <script src="js/lib/latex.js"></script>
+<script src="js/lib/ticks.js"></script>
 <script src="js/lib/matrix.js"></script>
 <script src="js/lib/workbook.js"></script>
 <script src="js/lib/fits.js"></script>
@@ -429,6 +433,7 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <script src="js/chrome/props.js"></script>
 <script src="js/chrome/mathbar.js"></script>
 <script src="js/chrome/mathpad.js"></script>
+<script src="js/chrome/tickpad.js"></script>
 <script src="js/chrome/map.js"></script>
 <script src="js/chrome/shelf.js"></script>
 <script src="js/chrome/print.js"></script>

@@ -336,15 +336,47 @@ function deleteString(rope){
   SND.pluck();
 }
 
+/* what the corner of the screen says while the gesture is in the air */
+function linkSay(msg){
+  const t = $('#saveTag');
+  t.textContent = msg;
+  t.classList.add('show');
+}
+/* ---- arming the gesture from the Decor shelf ----
+   A tile has no item to start from, so the first click picks one — unless
+   something is already selected, in which case that is obviously the one. */
+function armLinking(page, kind){
+  const one = selectionItems(page);
+  if(one.length === 1) return startLinking(page, one[0], kind);
+  cancelLinking(); deselectString();
+  linking = { page, pageId: page.id, fromId: null, kind: kind === 'arr' ? 'arr' : 'str' };
+  document.body.classList.add('linking');
+  linkSay(kind === 'arr' ? 'click the item the arrow starts from — esc cancels'
+                         : 'click the item to pin — esc cancels');
+}
+/* A click on the page while the gesture is armed. The first one settles what it
+   starts from and hands over to startLinking, so the ghost follows the hand from
+   there; the second ties the knot. */
+function linkClick(page, itEl){
+  if(!linking) return;
+  if(!linking.fromId){
+    const it = itEl && page.items.find(x => x.id === itEl.dataset.id);
+    if(it) startLinking(page, it, linking.kind);
+    else cancelLinking();                       // the paper, not an item: give up
+    return;
+  }
+  if(itEl && itEl.dataset.id !== linking.fromId)
+    createLink(page, linking.fromId, itEl.dataset.id, linking.kind);
+  cancelLinking();
+}
+
 function startLinking(page, it, kind){
   cancelLinking(); deselectString();
   linking = { page, pageId: page.id, fromId: it.id, kind: kind === 'arr' ? 'arr' : 'str' };
   document.body.classList.add('linking');
-  const t = $('#saveTag');
-  t.textContent = kind === 'arr'
+  linkSay(kind === 'arr'
     ? 'click the item the arrow should point at — esc cancels'
-    : 'click another item to tie the string — esc cancels';
-  t.classList.add('show');
+    : 'click another item to tie the string — esc cancels');
   if(BOARD && BOARD.wraps[page.id]){
     if(kind !== 'arr'){
       const itEl = BOARD.wraps[page.id].querySelector('.item[data-id="' + it.id + '"]');
@@ -411,6 +443,22 @@ function rebuildRopes(){
       addRope({ page: en.page, link: l, ap: en.page.id, a: l.a, bp: en.page.id, b: l.b }));
   wakeRopes();
 }
+/* ---- the two tiles on the Decor shelf ----
+   Neither makes an item: a string and an arrow are a record in page.links drawn
+   between two items, so both entries are `pick` — they arm the gesture and let
+   the clicks that follow decide what gets tied to what. `link` is therefore a
+   type that never has an item of it, which is why there is no html() here. */
+defineItem('link', {
+  add: {
+    string: { pick: (at, page) => armLinking(page, 'str') },
+    arrow:  { pick: (at, page) => armLinking(page, 'arr') }
+  }
+});
+defineTool({ kind:'string', cat:'decor', label:'Pin & string', icon:'pin', order:30,
+  hint:'Pin an item and tie a string to another — click one, then the other' });
+defineTool({ kind:'arrow', cat:'decor', label:'Arrow', icon:'arrow', order:32,
+  hint:'Draw an arrow between two items — click the one it starts from, then the one it points at' });
+
 /* ---- how it looks ---- */
 addCSS('strings', `
 /* pins & strings (detective board) */
