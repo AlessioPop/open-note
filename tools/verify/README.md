@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 1199 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 1265 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,12 +22,12 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 1199 assertions, and they should
+It prints a pass/fail count and every failure. 1265 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 71 script files load, in order;
+- nothing throws while the 72 script files load, in order;
 - the app boots, opens a note and draws its sheet — one sheet, 1980 × 1320,
   four rails, and no page furniture of any kind;
 - every entry in the add menu adds the type it claims to;
@@ -35,6 +35,22 @@ all pass — if one doesn't, that is a real regression.
 - and builds again through `buildPage(page, false)` — the path print and
   exports both take;
 - `$$…$$` compiles to MathML, and a bad formula stays visible;
+- **writing maths**: that a box flattens to one string with its breaks and that
+  every offset in it round-trips back into the DOM; that a `$` writes the pair,
+  that a second one inside that pair opens out three tidy lines and takes a line
+  of its own when there is writing beside it, that it steps over a closer rather
+  than doubling it, and that well inside a formula a `$` is only a `$`; that an
+  unclosed `$` is not a formula and `\$` is not a delimiter; that `\fra` offers
+  `\frac{}{}` first and `\begin{pm` offers `pmatrix`, that everything the list
+  offers really compiles, and that the writing surfaces declared themselves to
+  the registry. Then the keyboard end to end on a real `.txt` with the caret in
+  it: the `$` arriving as a `beforeinput`, ↑ ↓ walking the list, ⏎ writing the
+  snippet with the caret in its first pair, ⇥ walking to the next empty one, ⇥
+  handed back to whoever else wants it outside a formula, Escape putting the
+  list away without stopping the typing, and the pad going when the box does;
+  and that the pad is as wide as the equation in it — at its floor for a short one,
+  grown but under its ceiling for a long one, with nothing cut off, and back down
+  again when the formula shrinks;
 - the table: that its formulas come out right, that inserting a row carries
   every reference with it and deleting a column leaves `#REF` behind, that a
   circular formula is caught rather than hanging, that the rails and the header

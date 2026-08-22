@@ -355,6 +355,24 @@ Write LaTeX between `$$…$$` in any text box, sticky note, checklist task or pi
 - A formula that doesn't compile stays on the page in red with the reason in its tooltip — hover it to see *"\\wat is not one I know"* and fix it. Nothing is ever swallowed.
 - Equations are **stored as LaTeX**, so they travel in backups and stay editable forever. They are **drawn as MathML**, so print and exports show them with no library, no script and nothing to download — your system's maths font does the typesetting.
 
+### While you are typing it
+
+A small panel opens under the caret whenever it is inside a formula. It sits centred on the box you are writing in, so it holds still while the line grows rather than sliding along with every letter, and it is exactly as wide as the equation in it — growing and shrinking about that same centre as the formula does. It does three things:
+
+- **Typing `$` writes the pair** — `$|$`, with the caret between them, so an inline formula never goes unclosed. **Type `$` a second time inside that pair** and it opens out into a display block on three lines, the caret waiting on the middle one:
+
+  ```
+  $$
+  |
+  $$
+  ```
+
+  Typing `$` where a closing `$` is already sitting steps over it instead of adding another, and a `$` typed with something selected wraps the selection. Well inside a formula a `$` is just a `$`.
+- **`\` opens the list of commands.** Keep typing and it narrows — `\fra` offers `\frac{}{}`, `\dfrac{}{}` and `\mathfrak{}` — each with what it is for and a little picture of what it makes. **↑ ↓** walk it, **⏎** or **⇥** takes one, **Esc** puts it away without leaving the box. `\frac` arrives as `\frac{}{}` with the caret in the first pair; **⇥** walks to the next empty pair, so `\frac` `⏎` `1` `⇥` `2` is the whole fraction. Inside `\begin{` the list offers the environments instead.
+- **The formula is typeset as you write it**, at the top of the same panel. A half-typed command doesn't compile, so the last picture that did stays up, dimmed, with the reason underneath — you always see either the equation or what is wrong with it, and never a flicker between them.
+
+The list is built from the compiler's own tables, so every symbol the app understands is in it.
+
 This is maths *set on the page*. For maths you can pull about — axes, plotted functions, vectors and matrices — see **Maths** below.
 
 ## Maths

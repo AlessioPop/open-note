@@ -14,6 +14,10 @@
    type in cqh, hundredths of its height — so one card reads the same taped to the
    page, zoomed in, filling the screen, and printed. */
 
+/* both faces of a card take LaTeX, so both take the maths editor */
+defineMathBox('.dtxt');
+defineMathBox('.dot');
+
 const DECK_EDIT = new Set();                       // decks being written rather than studied
 let SELB = null;                                   // the thing on the card being worked on
 const MC_KEYS = 'ABCDEFGHI';

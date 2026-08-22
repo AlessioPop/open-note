@@ -1084,6 +1084,263 @@
       ok('mxCompile: rejects nonsense', !!mxCompile('wat(').err);
     });
 
+    /* ---- writing maths: the pad's rules ----
+       Headless never gives the caret focus, so these drive the rules rather
+       than the keyboard; the DOM half below moves a selection by hand. */
+    await stage('mathpad rules', async function () {
+      /* the flattened box, and the way back into it */
+      var d = document.createElement('div');
+      d.innerHTML = 'a<b>bc</b><br>d';
+      var f = mathFlat(d);
+      ok('mathpad: a box flattens with its breaks', f.s === 'abc\nd', JSON.stringify(f.s));
+      var okRound = true;
+      for (var i = 0; i <= f.s.length; i++) {
+        var P = mathFlatPos(d, i);
+        if (mathFlatOff(d, P[0], P[1]) !== i) { okRound = false; break; }
+      }
+      ok('mathpad: every offset round-trips through the DOM', okRound, 'broke at ' + i);
+
+      /* which formula the caret is standing in */
+      ok('mathpad: finds the display formula', !!mathRegion('a $$x$$ b', 5) &&
+        mathRegion('a $$x$$ b', 5).disp === true);
+      ok('mathpad: an unclosed $ is not a formula', !mpadRegion('costs $5 and', 8));
+      ok('mathpad: a fresh empty pair is a formula', !!mpadRegion('$$', 1));
+      ok('mathpad: \\$ is not a delimiter', mathScan('\\$5').length === 0, mathScan('\\$5').length);
+
+      /* what a $ does */
+      var D = mpadDollar('', 0);
+      ok('mathpad: $ pairs itself', D.text === '$$' && D.caret === 1, JSON.stringify(D));
+      D = mpadDollar('$$', 1);
+      ok('mathpad: a second $ opens out three lines',
+        D.from === 0 && D.to === 2 && D.text === '$$\n\n$$' && D.caret === 3, JSON.stringify(D));
+      D = mpadDollar('a$$b', 2);
+      ok('mathpad: …taking a line of its own when it has to',
+        D.text === '\n$$\n\n$$\n' && D.caret === 4, JSON.stringify(D));
+      D = mpadDollar('$x$', 2);
+      ok('mathpad: $ steps over the closer', D.text === '' && D.caret === 1, JSON.stringify(D));
+      D = mpadDollar('$$x$$', 3);
+      ok('mathpad: …both of them, on a display', D.text === '' && D.caret === 2, JSON.stringify(D));
+      D = mpadDollar('$$ x $$', 3);
+      ok('mathpad: inside a formula a $ is a $', D.text === '$', JSON.stringify(D));
+
+      /* the word being completed */
+      var W = mpadWord('$\\fra$', 5);
+      ok('mathpad: reads the half-typed command', !!W && W.kind === 'cs' && W.at === 1 && W.word === 'fra',
+        JSON.stringify(W));
+      W = mpadWord('$$\\begin{pm', 11);
+      ok('mathpad: \\begin{ asks for an environment', !!W && W.kind === 'env' && W.word === 'pm',
+        JSON.stringify(W));
+      ok('mathpad: plain letters are not a command', !mpadWord('$abc$', 4));
+
+      /* what it offers, and what it writes */
+      var m = mpadMatch('fra', 'cs');
+      ok('mathpad: fra offers \\frac{}{} first', m.length && m[0].lab === '\\frac{}{}',
+        m.length ? m[0].lab : 'nothing');
+      ok('mathpad: alp offers alpha', mpadMatch('alp', 'cs')[0].cs === 'alpha');
+      ok('mathpad: a bare \\ offers the whole list', mpadMatch('', 'cs').length > 20);
+      ok('mathpad: nonsense offers nothing', mpadMatch('zzqq', 'cs').length === 0);
+      ok('mathpad: \\begin{pm offers pmatrix', mpadMatch('pm', 'env')[0].cs === 'pmatrix');
+      var C = mpadCut('\\frac{}{}');
+      ok('mathpad: the caret lands in the first pair', C.caret === 6, JSON.stringify(C));
+      C = mpadCut('\\left(\u0001\\right)');
+      ok('mathpad: …or where the snippet says', C.text === '\\left(\\right)' && C.caret === 6,
+        JSON.stringify(C));
+      ok('mathpad: tab walks to the next empty pair', mpadSlot('\\frac{}{}', 6, 9) === 8,
+        mpadSlot('\\frac{}{}', 6, 9));
+      ok('mathpad: …and stops when there are none', mpadSlot('\\frac{a}{b}', 7, 11) === -1);
+      /* every snippet and every preview in the list really compiles */
+      var bad = mpadAll().filter(function (e) {
+        try { texCompile(e.pv || mpadCut(e.ins).text.replace(/\{\}/g, '{x}').replace(/\[\]/g, '[2]'), false); }
+        catch (err) { return true; }
+        return false;
+      });
+      ok('mathpad: everything it offers compiles', bad.length === 0,
+        bad.slice(0, 4).map(function (e) { return e.lab; }).join(' '));
+
+      /* the boxes that take it */
+      var sel = mathBoxSel();
+      ok('mathpad: the writing surfaces declared themselves',
+        /\.txt/.test(sel) && /figcaption/.test(sel) && /\.tc/.test(sel) && /\.dtxt/.test(sel), sel);
+    });
+
+    /* ---- writing maths: the pad on a real box ---- */
+    await stage('mathpad in a box', async function () {
+      var host = document.createElement('div');
+      host.contentEditable = 'true';
+      host.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      host.textContent = 'ab';
+      document.body.appendChild(host);
+      var put = function (from, to, text, caret) {
+        var rg = document.createRange(), s = getSelection();
+        rg.setStart(host.firstChild || host, 0); rg.collapse(true);
+        s.removeAllRanges(); s.addRange(rg);
+        mpadPut(host, from, to, text, caret);
+      };
+      put(1, 1, '$$', 1);
+      ok('mathpad: a pair really lands in the box', mathFlat(host).s === 'a$$b', mathFlat(host).s);
+      var s2 = getSelection();
+      ok('mathpad: …with the caret between the two',
+        s2.rangeCount && mathFlatOff(host, s2.anchorNode, s2.anchorOffset) === 2,
+        s2.rangeCount ? mathFlatOff(host, s2.anchorNode, s2.anchorOffset) : 'no selection');
+      var D = mpadDollar(mathFlat(host).s, 2);
+      put(D.from, D.to, D.text, D.caret);
+      ok('mathpad: the second $ leaves three tidy lines',
+        mathFlat(host).s === 'a\n$$\n\n$$\nb', JSON.stringify(mathFlat(host).s));
+      host.remove();
+
+      /* the panel itself */
+      var el = mpadEl();
+      ok('mathpad: the panel is built once', el === mpadEl() && el.parentNode === document.body);
+      ok('mathpad: it has a preview and a list',
+        !!el.querySelector('.mppv') && !!el.querySelector('.mplist'));
+      ok('mathpad: it starts shut', !el.classList.contains('open'));
+      mpadDraw('\\frac{1}{2}', true);
+      ok('mathpad: the preview typesets', !!el.querySelector('.mppv math'));
+      mpadDraw('\\wat', true);
+      ok('mathpad: a half-typed command keeps the last good picture',
+        el.querySelector('.mppv').classList.contains('stale') &&
+        el.querySelector('.mpmsg').textContent.length > 0,
+        el.querySelector('.mpmsg').textContent);
+
+      /* the pad is as wide as the equation, and shrinks back again */
+      el.classList.add('open');
+      mpadDraw('x', true);
+      var wSmall = el.offsetWidth;
+      ok('mathpad: a short formula leaves it at its floor', wSmall === MPAD_W, wSmall);
+      mpadDraw('\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi} ' +
+               '\\quad\\text{and also}\\quad \\sum_{n=1}^{\\infty} \\frac{1}{n^2} = ' +
+               '\\frac{\\pi^2}{6}', true);
+      var wBig = el.offsetWidth;
+      ok('mathpad: a long one grows it', wBig > wSmall, wSmall + ' -> ' + wBig);
+      ok('mathpad: …but never past the ceiling', wBig <= Math.min(860, innerWidth - 32),
+        wBig + ' of ' + Math.min(860, innerWidth - 32));
+      ok('mathpad: …and the picture is not cut off',
+        el.querySelector('.mppv').scrollWidth <= el.querySelector('.mppv').clientWidth + 1,
+        el.querySelector('.mppv').scrollWidth + ' in ' + el.querySelector('.mppv').clientWidth);
+      mpadDraw('x', true);
+      ok('mathpad: …and it comes back down', el.offsetWidth === wSmall, el.offsetWidth);
+      el.classList.remove('open');
+      mpadHide();
+    });
+
+    /* ---- writing maths: the keyboard, end to end ----
+       A real .txt with the caret in it, driven the way a hand drives it: the
+       $ arrives as a beforeinput, the letters through the editor, and the list
+       is walked and taken with the keys it claims. */
+    await stage('mathpad typing', async function () {
+      var tx = document.createElement('div');
+      tx.className = 'txt';
+      tx.contentEditable = 'true';
+      tx.style.cssText = 'position:fixed;left:0;top:0;width:300px;white-space:pre-wrap';
+      document.body.appendChild(tx);
+      tx.focus();
+      ok('mathpad: the box is the one with the caret', mpadBox() === tx,
+        document.activeElement && document.activeElement.className);
+
+      var text = function () { return mathFlat(tx).s; };
+      var caretAt = function () {
+        var s = getSelection();
+        return s.rangeCount ? mathFlatOff(tx, s.anchorNode, s.anchorOffset) : -1;
+      };
+      var put = function (off) {
+        var P = mathFlatPos(tx, off), r = document.createRange(), s = getSelection();
+        r.setStart(P[0], P[1]); r.collapse(true);
+        s.removeAllRanges(); s.addRange(r);
+      };
+      var dollar = function () {
+        tx.dispatchEvent(new InputEvent('beforeinput',
+          { inputType: 'insertText', data: '$', bubbles: true, cancelable: true }));
+      };
+      var key = function (k) {
+        return tx.dispatchEvent(new KeyboardEvent('keydown',
+          { key: k, bubbles: true, cancelable: true }));
+      };
+      var type = function (t) {
+        document.execCommand('insertText', false, t);
+        tx.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      };
+
+      put(0); dollar();
+      ok('mathpad: typing $ writes the pair', text() === '$$', JSON.stringify(text()));
+      ok('mathpad: …with the caret in the middle', caretAt() === 1, caretAt());
+      dollar();
+      ok('mathpad: typing it again opens the display block',
+        text() === '$$\n\n$$', JSON.stringify(text()));
+      ok('mathpad: …on the middle line of the three', caretAt() === 3, caretAt());
+
+      await sleep(80);
+      ok('mathpad: the pad is up while the caret is in a formula', MPAD.on === true);
+      type('\\fra');
+      await sleep(80);
+      ok('mathpad: the list narrows to what was typed',
+        MPAD.list.length > 0 && MPAD.list[0].lab === '\\frac{}{}',
+        MPAD.list.length ? MPAD.list[0].lab : 'nothing');
+      ok('mathpad: it starts on the first of them', MPAD.i === 0);
+      key('ArrowDown');
+      ok('mathpad: ↓ walks the list', MPAD.i === 1, MPAD.i);
+      key('ArrowUp');
+      ok('mathpad: ↑ walks it back', MPAD.i === 0, MPAD.i);
+      ok('mathpad: ⏎ is eaten while the list is up', key('Enter') === false);
+      await sleep(80);
+      ok('mathpad: …and writes the snippet',
+        text() === '$$\n\\frac{}{}\n$$', JSON.stringify(text()));
+      ok('mathpad: …with the caret in the first pair', caretAt() === 9, caretAt());
+      type('1');
+      await sleep(80);
+      ok('mathpad: ⇥ walks to the next empty pair', key('Tab') === false);
+      ok('mathpad: …and lands in it', caretAt() === 12, caretAt());
+      type('2');
+      ok('mathpad: the formula is what was asked for',
+        text() === '$$\n\\frac{1}{2}\n$$', JSON.stringify(text()));
+
+      /* the pad follows the caret out of the formula, and lets go of ⇥ */
+      put(0);
+      await sleep(80);
+      ok('mathpad: outside a formula the pad goes away', MPAD.on === false);
+      ok('mathpad: …and ⇥ is nobody else’s business', key('Tab') === true);
+
+      /* Escape puts the list away without leaving the box */
+      put(text().length - 3);
+      type('\\al');
+      await sleep(80);
+      ok('mathpad: the list is up again', MPAD.list.length > 0);
+      ok('mathpad: Escape is eaten by the list', key('Escape') === false);
+      ok('mathpad: …and puts it away', MPAD.list.length === 0);
+      ok('mathpad: …but leaves the picture up', MPAD.on === true);
+      type('pha');                                     // dismissed, not disabled
+      ok('mathpad: the letters still go in',
+        text() === '$$\n\\frac{1}{2}\\alpha\n$$', JSON.stringify(text()));
+
+      /* an environment arrives with its \end and a line to write on */
+      put(text().length);
+      type('\n');
+      dollar(); dollar();
+      await sleep(80);
+      type('\\begin');
+      await sleep(80);
+      key('Enter');
+      await sleep(80);
+      type('pm');
+      await sleep(80);
+      ok('mathpad: \\begin{ offers the environments',
+        MPAD.list.length > 0 && MPAD.list[0].cs === 'pmatrix',
+        MPAD.list.length ? MPAD.list[0].cs : 'nothing');
+      key('Enter');
+      await sleep(80);
+      ok('mathpad: …and it arrives with its \\end',
+        text().indexOf('\\begin{pmatrix}\n\n\\end{pmatrix}') >= 0, JSON.stringify(text()));
+
+      /* what was written compiles the moment the box is left */
+      var src = text();
+      mathify(tx);
+      ok('mathpad: what it wrote is what compiles', !!tx.querySelector('math'),
+        JSON.stringify(src) + ' -> ' + tx.innerHTML.slice(0, 90));
+      tx.blur();
+      tx.remove();
+      await sleep(60);
+      ok('mathpad: the pad goes with the box', MPAD.on === false);
+    });
+
     /* ---- the static path: print, thumbnails and export all use this ---- */
     await stage('static buildPage', async function () {
       var page = sheet();

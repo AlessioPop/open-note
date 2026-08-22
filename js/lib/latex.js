@@ -309,11 +309,13 @@ function mathNode(hit){
   }
   return box;
 }
-/* compile every formula sitting in this element's text, in place */
-function mathify(root){
-  if(!root) return root;
-  const all = root.textContent || '';
-  if(all.indexOf('$') < 0 && all.indexOf('\\[') < 0 && all.indexOf('\\(') < 0) return root;
+/* ---- a box read as one string, and the way back ----
+   A text box is a tree; a formula is a run of characters that pays the tree no
+   attention at all. These four flatten one to the other and back, and both the
+   compiler below and the editor in chrome/mathpad.js work in those offsets. A
+   <br> counts as one newline, and maths already compiled as one space — its
+   source is on the element, not in the text. */
+function mathFlat(root){
   const nodes = [];
   let s = '';
   (function walk(n){
@@ -328,14 +330,101 @@ function mathify(root){
       }
     }
   })(root);
-  const hits = mathHits(s);
+  return { s, nodes };
+}
+/* the text node an offset falls in — the later one, where two of them meet */
+function mathSpot(nodes, off){
+  for(let i = nodes.length - 1; i >= 0; i--)
+    if(off >= nodes[i].at && off <= nodes[i].at + nodes[i].n.nodeValue.length)
+      return [nodes[i].n, off - nodes[i].at];
+  return null;
+}
+/* where a caret standing at (node, off) lands in that string */
+function mathFlatOff(root, node, off){
+  let s = 0, got = -1;
+  (function walk(n){
+    for(let i = 0, c = n.firstChild; ; i++, c = c && c.nextSibling){
+      if(got < 0 && n === node && i === off) got = s;           // the gap before child i
+      if(!c) break;
+      if(c.nodeType === 3){
+        if(got < 0 && c === node) got = s + Math.min(off, c.nodeValue.length);
+        s += c.nodeValue.length;
+      } else if(c.nodeType === 1){
+        if(c.hasAttribute('data-tex')){ s += 1; continue; }
+        const br = /^(BR|DIV|P|LI)$/.test(c.tagName);
+        if(br) s += 1;
+        walk(c);
+        if(br && c.tagName !== 'BR') s += 1;
+      }
+    }
+  })(root);
+  return got < 0 ? s : got;
+}
+/* …and the position that offset names, preferring a text node to the gap
+   beside it, so a caret put there is a caret you can type at */
+function mathFlatPos(root, off){
+  let s = 0, got = null;
+  (function walk(n){
+    for(let i = 0, c = n.firstChild; ; i++, c = c && c.nextSibling){
+      if(!got && s === off && !(c && c.nodeType === 3)) got = [n, i];
+      if(!c) break;
+      if(c.nodeType === 3){
+        const L = c.nodeValue.length;
+        if(!got && off >= s && off <= s + L) got = [c, off - s];
+        s += L;
+      } else if(c.nodeType === 1){
+        if(c.hasAttribute('data-tex')){ s += 1; continue; }
+        const br = /^(BR|DIV|P|LI)$/.test(c.tagName);
+        if(br) s += 1;
+        walk(c);
+        if(br && c.tagName !== 'BR') s += 1;
+      }
+    }
+  })(root);
+  return got || [root, root.childNodes.length];
+}
+
+/* ---- every delimiter in a string, closed or not ----
+   mathHits() reports the formulas worth compiling; this reports where the
+   delimiters are, which is what a caret needs to know it is inside one. */
+function mathScan(s){
+  const out = [];
+  let i = 0;
+  while(i < s.length){
+    const c = s[i];
+    if(c === '\\' && (s[i + 1] === '(' || s[i + 1] === '[')){
+      const shut = s[i + 1] === '(' ? '\\)' : '\\]';
+      const j = s.indexOf(shut, i + 2);
+      out.push({ a: i, o: i + 2, c: j < 0 ? s.length : j, b: j < 0 ? s.length : j + 2,
+                 open: 2, close: 2, shut: j >= 0, disp: s[i + 1] === '[' });
+      i = j < 0 ? s.length : j + 2;
+    } else if(c === '$'){
+      const two = s[i + 1] === '$', n = two ? 2 : 1;
+      const j = s.indexOf(two ? '$$' : '$', i + n);
+      out.push({ a: i, o: i + n, c: j < 0 ? s.length : j, b: j < 0 ? s.length : j + n,
+                 open: n, close: n, shut: j >= 0, disp: two });
+      i = j < 0 ? s.length : j + n;
+    } else if(c === '\\') i += 2;                    // \$ is a dollar sign, not a delimiter
+    else i++;
+  }
+  return out;
+}
+/* the formula an offset is standing in — o…c is its body */
+function mathRegion(s, off){
+  for(const r of mathScan(s))
+    if(off >= r.o && off <= r.c) return r;
+  return null;
+}
+
+/* compile every formula sitting in this element's text, in place */
+function mathify(root){
+  if(!root) return root;
+  const all = root.textContent || '';
+  if(all.indexOf('$') < 0 && all.indexOf('\\[') < 0 && all.indexOf('\\(') < 0) return root;
+  const flat = mathFlat(root);
+  const hits = mathHits(flat.s);
   if(!hits.length) return root;
-  const spot = off => {
-    for(let i = nodes.length - 1; i >= 0; i--)
-      if(off >= nodes[i].at && off <= nodes[i].at + nodes[i].n.nodeValue.length)
-        return [nodes[i].n, off - nodes[i].at];
-    return null;
-  };
+  const spot = off => mathSpot(flat.nodes, off);
   for(let i = hits.length - 1; i >= 0; i--){         // back to front, so earlier offsets hold
     const a = spot(hits[i].at), b = spot(hits[i].at + hits[i].len);
     if(!a || !b) continue;

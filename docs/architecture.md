@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1199 assertions, driven in headless Firefox
+tools/verify/       the harness: 1265 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -45,7 +45,7 @@ name — it asks the registry.
    what a phone's WebView will want. They share one scope: a `const` or
    `function` in one file is visible in every file loaded after it, and (at run
    time) in the ones before it too. Nothing is on `window`.
-3. **One scope, so names are the contract.** 1350-odd top-level names across 68
+3. **One scope, so names are the contract.** 1400-odd top-level names across 69
    files and no two collide, because every file prefixes what it owns —
    `chem*`, `nuc*`, `tb*`, `nd*`. A new file must do the same. Nothing enforces
    it, which is exactly why it is written down here.
@@ -136,7 +136,7 @@ right up until it loses the session.
 
 | File | Lines | What it does |
 |---|---:|---|
-| `registry.js` | 140 | `defineItem()`, `defineTool()`, `defineSelectionAction()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
+| `registry.js` | 152 | `defineItem()`, `defineTool()`, `defineSelectionAction()`, `defineMathBox()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
 | `store.js` | 68 | IndexedDB for the note, its sheet and its blobs, with an in-memory fallback |
 | `util.js` | 68 | `uid` `$` `clamp` `esc`, sheet sizes and page units, the theme palettes, the stored-HTML sanitiser |
 | `state.js` | 39 | the open note, its sheet, the selection, the zoom — and `sheet()`, the only way to ask for the paper |
@@ -146,7 +146,7 @@ right up until it loses the session.
 | `zoom.js` | 153 | zoom, panning the desk, and holding the paper still while either changes |
 | `richtext.js` | 34 | editing text in place, and the ∑ button |
 | `media.js` | 21 | handing stored blobs to the page as object URLs |
-| `item.js` | 201 | **`buildItem()`** — builds any item from its spec; also what an item owns and deleting one or a selection |
+| `item.js` | 206 | **`buildItem()`** — builds any item from its spec; also what an item owns and deleting one or a selection |
 | `drag.js` | 184 | rotate, drag and resize — the throw for one item and rigid movement for a selected group |
 | `select.js` | 156 | the toolbar's one-shot marquee, the selected-id set, bulk deletion and feature-owned group actions |
 | `page.js` | 104 | **`buildPage()`** — the paper, its items and its ink, live or static |
@@ -172,6 +172,7 @@ right up until it loses the session.
 | `palette.js` | 229 | the palette — shelves, labelled groups, tiles and search, drawn from the registry |
 | `props.js` | 271 | the properties popover — glass sliders, steppers, the sweep dial and a deed button; `openProps()` for any feature with measurements, and `placePanel()`, the above-then-beside-then-below rule every panel an item opens off its toolbar follows |
 | `mathbar.js` | 101 | the maths toolbar |
+| `mathpad.js` | 500 | writing maths: the `$` that pairs itself and opens out into a display block, the completion list built from the compiler's own tables, and the formula typeset under the caret as it is written. The rules are plain functions over (text, offset), so the harness can drive them without a caret |
 | `map.js` | 174 | the map: the whole sheet, and where you are standing on it |
 | `shelf.js` | 100 | the shelf of notes |
 | `print.js` | 32 | print / PDF |
@@ -192,8 +193,8 @@ shelf** — a new file under `items/science/` had better call
 | `write/note.js` | 30 | `note` |
 | `write/check.js` | 93 | `check` |
 | `write/code.js` | 728 | `code` — the terminal-style code cell: one hand-rolled scanner driven by a table per language (12 of them), the editor schemes as CSS variables plus a Theme scheme mixed from the note's colours, the copy button, typing that recolours under the caret with brackets that close themselves, the band a long one clips to, and the folder glyph and viewer |
-| `write/deck.js` | 1313 | `deck` — flip cards, the scope, the scoreboard |
-| `math/table.js` | 1655 | `table` — the grid, the formula compiler, rows and columns, the band a long one shows, folding it to an icon, reading a workbook in, and handing two columns to a plot |
+| `write/deck.js` | 1317 | `deck` — flip cards, the scope, the scoreboard |
+| `math/table.js` | 1659 | `table` — the grid, the formula compiler, rows and columns, the band a long one shows, folding it to an icon, reading a workbook in, and handing two columns to a plot |
 | `math/plot.js` | 1277 | `plot` — the expression compiler, the grid, the vectors, and a table's points |
 | `math/chart.js` | 967 | `chart` — pie / donut / 3D / sketch, plain bars and a stacked bar; the legend that edits the rows, validated palettes (ten slots) and the note-coloured ramps, and the label engine: four placements, cornered leader lines, and labels you drag anywhere that remember their offset |
 | `math/cards.js` | 397 | `matrix`, `vecbox` — any size through the ✎ panel, the label algebra (`M⁻¹` undone is `M`), determinants between bars, eigen rows |
@@ -225,7 +226,7 @@ thing loaded ahead of this whole layer.
 |---|---:|---|
 | `sound.js` | 81 | the studio sounds, generated live. No audio files |
 | `spring.js` | 125 | springs and momentum: analytic springs, release velocity, flick projection. What the throws, spins and card-tosses all move on |
-| `latex.js` | 365 | LaTeX → MathML. No library, nothing downloaded |
+| `latex.js` | 454 | LaTeX → MathML. No library, nothing downloaded — plus the flatten/scan pair that tells a caret which formula it is standing in, which `chrome/mathpad.js` writes with |
 | `matrix.js` | 255 | the n×m arithmetic the cards lean on: multiply, transpose, determinant, inverse, powers, and eigen (Hessenberg + shifted QR, null-space eigenvectors) |
 | `fits.js` | 477 | a `.fits` → its HDUs, their headers, and the shape of every data unit; the walk steps over the data without touching it, so a four-gigabyte cube opens as fast as a small one. Then one column of a binary table, on request — planned before it is read, so what comes back is bounded whatever the file weighs |
 | `workbook.js` | 518 | `.xlsx`, `.ods` and `.csv` → plain rows of plain strings. No library: a workbook is a zip of XML, and the browser has an unzipper |
@@ -708,8 +709,8 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1199 assertions**, and they are the real specification of this app. Among them:
-that all 71 script files load without throwing; that a fresh note is one empty
+**1265 assertions**, and they are the real specification of this app. Among them:
+that all 72 script files load without throwing; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a
 third on the real one; that every add-menu entry adds the type it claims to;
@@ -722,7 +723,10 @@ and holds the point you aimed at; that every item type builds both live and
 through `buildPage(page, false)` — the path print and exports take; that a code
 cell colours a python line the way the editor would and reparses it as rust;
 that a table works out its formulas, reads a real `.xlsx` built in the harness,
-and hands two columns to a plot; that a chart draws one slice per positive row
+and hands two columns to a plot; that a `$` typed in a writing box comes back as
+a pair and a second one opens it out onto three tidy lines, that `\fra` offers
+`\frac{}{}` first and ⏎ writes it with the caret in its first pair, and that
+everything the completion list offers really compiles; that a chart draws one slice per positive row
 with the labels the label engine promises; that a node graph works out each card
 once and says so rather than hanging when it is wired in a circle; that every one
 of the eight built-in truth tables comes out right on every row of it, that an

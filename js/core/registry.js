@@ -99,6 +99,18 @@ const autoWidth = it => !!specOf(it).autoWidth;
 /* the A− / A+ pair belongs to anything whose writing can be resized */
 const sizeable  = it => !!specOf(it).sizeable;
 
+/* Which boxes take LaTeX as you type. A `.txt`, a caption, a table cell and the
+   two faces of a flip card all compile $$…$$, and chrome/mathpad.js hangs the
+   completions, the live proof and the $ pairing off whichever of them has the
+   caret. A feature that puts writing on the page says so once, by selector:
+
+     defineMathBox('.tc')
+
+   Core does not keep the list — this is the only place that knows there is one. */
+const MATH_BOXES = [];
+const defineMathBox = sel => MATH_BOXES.push(sel);
+const mathBoxSel = () => MATH_BOXES.join(',');
+
 /* Some of what a page shows is drawn BETWEEN items rather than inside one — the
    strings tied across a detective board, the wires between nodes. On screen a
    feature can put that up itself, but a print, an export, a thumbnail and a

@@ -1,6 +1,11 @@
 /* Open Note — core/item.js
    building one item on the page */
 
+/* A `.txt` and a <figcaption> are the two writing surfaces core itself puts on
+   an item, and both compile $$…$$ — so both take the maths editor. */
+defineMathBox('.txt');
+defineMathBox('figcaption');
+
 /* ================= item rendering =================
    Generic from top to bottom. What an item looks like, what its toolbar holds,
    what it owns and how it behaves all come from the registry, so nothing in

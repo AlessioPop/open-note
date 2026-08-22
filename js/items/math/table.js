@@ -7,6 +7,9 @@
    drawn, so print, the overview and an exported book all show the answers
    without any of them knowing a formula exists.
 
+   A cell compiles $$…$$ like every other writing surface, so an open cell
+   gets the maths editor too.
+
    The layout is a CSS grid rather than a <table> because the row numbers and
    column letters have to line up with rows whose height comes from their own
    wrapped text: in a grid they simply share a track. The first track of each
@@ -590,6 +593,7 @@ function tbStatText(it, b){
          ' · s ' + tbSig(Math.sqrt(tbVar(n, 1))) + ' · ' + tbSig(lo) + '…' + tbSig(hi);
 }
 /* cells compile $$…$$ like every other writing surface in the book */
+defineMathBox('.tc');
 const tbMath = el => el.querySelectorAll('.tc').forEach(mathify);
 
 /* ---- working in it ---- */
