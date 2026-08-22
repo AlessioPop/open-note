@@ -3105,6 +3105,17 @@
         +getComputedStyle(envEl.querySelector('.lgb')).fillOpacity < 1,
         getComputedStyle(envEl.querySelector('.lgb')).fillOpacity);
       select(env.id);
+      var nestedInput = envEl.querySelector('.lcnode[data-id="' + cGate.id + '"] .lgp-in .lghit');
+      var nestedRect = nestedInput.getBoundingClientRect(), nestedBefore = env.wires.length;
+      nestedInput.dispatchEvent(new PointerEvent('pointerdown', { bubbles:true, pointerId:47, isPrimary:true,
+        clientX:nestedRect.left+nestedRect.width/2, clientY:nestedRect.top+nestedRect.height/2 }));
+      lcPaint(envEl,env,page);
+      ok('circuit: live signal repaint preserves a lead that is still under the pointer',
+        !!envEl.querySelector('.lcghost') && LC_DRAG && LC_DRAG.ghost.isConnected);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }));
+      ok('circuit: Escape cancels a nested rewire and restores its original lead',
+        env.wires.length === nestedBefore && !!lgFindWire(lcModel(env,page),cGate.id,'a') && !LC_DRAG,
+        env.wires.length + ' of ' + nestedBefore);
       var railHeads = [].slice.call(envEl.querySelectorAll('.lcrail section>b'))
         .map(function (x) { return x.textContent; });
       ok('circuit: its side rail is divided into the four named families',
@@ -3216,16 +3227,22 @@
       ok('circuit: Inspector mode turns a body tap into a local component selection',
         envEl.dataset.lcMode === 'inspect' && LC_PICK.get(env.id).id === addedGate.id &&
         !envEl.querySelector('.lcinspect').hidden);
+      var heldInspectorButton = envEl.querySelector('.lcinspect [data-act="copy"]');
+      heldInspectorButton.focus(); lcPaint(envEl,env,page);
+      ok('circuit: a live signal repaint preserves focus in the local Inspector',
+        document.activeElement === heldInspectorButton);
       var tableButton = envEl.querySelector('.lcinspect [data-act="table"]');
       tableButton.click();
       ok('circuit: a nested gate retains its truth-table inspector',
         !!Q('#lgtt.open') && /AND/.test(Q('#lgtt .lgttn').textContent),
         Q('#lgtt .lgttn').textContent);
-      lgTTClose();
       window.dispatchEvent(new KeyboardEvent('keydown', { key:'Delete', bubbles:true }));
       ok('circuit: Delete removes the locally picked component, not its environment',
         env.nodes.length === nodeCount && page.items.length === 1 && page.items[0] === env,
         env.nodes.length + ' nested, ' + page.items.length + ' page items');
+      await sleep(220);
+      ok('circuit: deleting a nested component closes the truth table that belonged to it',
+        !Q('#lgtt.open') && !LG_TT);
       envEl.querySelector('.lcrail [data-gate="cust"]').click();
       var custom = env.nodes[env.nodes.length - 1];
       envEl.querySelector('.lcinspect [data-act="table"]').click();
@@ -3258,9 +3275,9 @@
         LC_PRESETS.length >= 8 && ['half-adder','full-adder','mux-2','d-register','t-counter']
           .every(function (id) { return LC_PRESETS.some(function (p) { return p.id === id; }); }) &&
         LC_PRESETS.every(function (p) {
-          return lcPresetBuild(p,env).nodes.every(function (n) {
-            return n.x >= 0 && n.y >= 0 && n.x + lcNodeWidth(env,n) <= 100.01 &&
-              n.y + lcNodeHeight(env,n) <= 100.01;
+          return lcPresetBuild(p).nodes.every(function (n) {
+            return n.x >= 0 && n.y >= 0 && n.x + lcNodeWidth(n) <= 100.01 &&
+              n.y + lcNodeHeight(n) <= 100.01;
           });
         }),
         LC_PRESETS.map(function (p) { return p.name; }).join(', '));
@@ -3314,6 +3331,17 @@
       ok('tri-state: and enabled passes a nought without changing it',
         tv.get(tri.id) === 0 && tv.get(tb.id) === 0,
         tv.get(tri.id) + ',' + tv.get(tb.id));
+
+      var la = mk('not'), lb = mk('not'), isolated = mk('tri'), low = mk('zero'), afterIso = mk('buf');
+      page.items = [la,lb,isolated,low,afterIso]; page.wires = [];
+      join(page,la,'q',lb,'a'); join(page,lb,'q',la,'a'); join(page,lb,'q',isolated,'a');
+      join(page,low,'q',isolated,'en'); join(page,isolated,'q',afterIso,'a');
+      var isolatedVals = lgEval(page);
+      ok('tri-state: disabling it really isolates a loop in the evaluated graph',
+        isolatedVals.get(la.id) === 'e' && isolatedVals.get(lb.id) === 'e' &&
+        isolatedVals.get(isolated.id) === 'z' && isolatedVals.get(afterIso.id) === 'x',
+        [isolatedVals.get(la.id),isolatedVals.get(lb.id),isolatedVals.get(isolated.id),
+          isolatedVals.get(afterIso.id)].join(','));
 
       var bits = [mk('sw', { on: 1 }), mk('sw', { on: 0 }),
                   mk('sw', { on: 1 }), mk('sw', { on: 0 })];
@@ -3530,6 +3558,10 @@
       ok('switch: and the leads out of it say one',
         [].slice.call(Q('#pageHost svg.lgwires').querySelectorAll('g[data-w]'))
           .every(function (g) { return g.getAttribute('data-v') === '1'; }));
+      ok('switch: live repaint also updates the screen-reader value on every port',
+        /one/.test(el(sw).querySelector('.lgp-out').getAttribute('aria-label')) &&
+        /one/.test(el(gate).querySelector('.lgp-in').getAttribute('aria-label')),
+        el(sw).querySelector('.lgp-out').getAttribute('aria-label'));
       /* a drag across it is not a click */
       var r0 = swEl.getBoundingClientRect();
       swEl.querySelector('.lgsw').dispatchEvent(new PointerEvent('pointerdown', mid(swEl.querySelector('.lgsw'))));
@@ -3632,6 +3664,13 @@
       var extra = mk('or', { x: 34, y: 40, w: 12 });
       page.items.push(extra);
       await render(); await sleep(40);
+      var heldInput = el(gate).querySelector('.lgp-in[data-p="a"] .lghit');
+      var heldBefore = page.wires.length, heldAt = mid(heldInput);
+      heldInput.dispatchEvent(new PointerEvent('pointerdown', heldAt));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }));
+      ok('wire drag: Escape cancels a rewire and puts the original lead back',
+        page.wires.length === heldBefore && !!lgFindWire(page,gate.id,'a') && !LG_DRAG,
+        page.wires.length + ' of ' + heldBefore);
       pull(el(sw).querySelector('.lgp-out .lghit'),
            el(extra).querySelector('.lgp-in[data-p="a"] .lghit'));
       ok('wire drag: dragged from an output onto an input, it connects',

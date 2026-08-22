@@ -41,7 +41,8 @@
    Two levels and three other states. `x` is "this value is not known" — an
    input with no lead in it, or anything downstream of one. `z` is the distinct
    high-impedance state a disabled tri-state gate drives. `e` is "this circuit
-   cannot settle" — a loop, or anything fed by one. Keeping them apart matters:
+   cannot settle" — a loop, or anything it reaches without being electrically
+   isolated. Keeping them apart matters:
    an unfinished circuit, an intentionally disconnected bus and a wrong loop
    must not quietly look like the same nought. They are deliberately not
    booleans, and every evaluator and renderer carries the value as-is. */
@@ -155,18 +156,20 @@ function lgOwnDef(it){
 }
 
 /* ================= working the circuit out =================
-   One pass, in dependency order, over everything on one sheet.
+   One dependency-order pass over an ordinary sheet. A circuit containing a
+   loop gets two additional linear graph walks to distinguish the cycle itself
+   from components merely fed by it.
 
    The order comes from Kahn's algorithm: start with the gates nothing feeds,
-   and let a gate join the queue once every input it has is settled. What the
-   walk never reaches is exactly what is in a loop — or downstream of one — and
-   that is the whole of the cycle detection. There is no recursion and no visit
-   flag, so a circuit wired in a ring cannot hang, blow the stack, or take a
-   different amount of time than one that is fine.
+   and let a gate join the queue once every input it has is settled. Its remainder
+   contains the cycles and their downstream tails. Two iterative graph walks
+   identify the strongly connected cores; one final dependency pass evaluates
+   the tails from those errors. There is no recursion, so a circuit wired in a
+   ring cannot hang or blow the stack.
 
-   Nothing is cached. Working a sheet out is one Map and one sweep, and a stale
-   answer after an undo would be a wrong picture on the paper — which is a far
-   worse trade than the microseconds it saves. */
+   Nothing is cached. Working a sheet out remains linear in its components and
+   leads, and a stale answer after an undo would be a wrong picture on the paper
+   — a far worse trade than the microseconds it saves. */
 const lgWires = page => (page && Array.isArray(page.wires)) ? page.wires : [];
 const lgIsGate = it => !!(it && it.type === 'logic');
 /* A circuit environment is page-shaped — items plus wires — but nested inside
@@ -178,39 +181,44 @@ const defineLogicSync = fn => { if(typeof fn === 'function') LG_SYNCERS.push(fn)
 const defineLogicRedraw = fn => { if(typeof fn === 'function') LG_REDRAWERS.push(fn); };
 const lgModels = () => openPages().concat(LG_MODEL_PROVIDERS.flatMap(fn => fn() || []));
 
-/* which item drives each input of `id` — the map every reader wants */
-function lgDrivers(page, id){
-  const m = new Map();
-  for(const w of lgWires(page)) if(w && w.from && w.to && w.to.item === id)
-    m.set(w.to.port, { item: w.from.item, port: w.from.port });
-  return m;
+/* Every valid input driver, built once when a caller needs more than one gate. */
+function lgDriverMap(page, items, defs){
+  items = items || new Map((((page && page.items) || []).filter(lgIsGate)).map(it => [it.id, it]));
+  defs = defs || new Map([...items].map(([id, it]) => [id, lgDef(it)]));
+  const out = new Map();
+  for(const w of lgWires(page)){
+    if(!w || !w.from || !w.to) continue;
+    const src = items.get(w.from.item), dst = items.get(w.to.item);
+    if(!src || !dst || defs.get(src.id).outs.indexOf(w.from.port) < 0 ||
+       defs.get(dst.id).ins.indexOf(w.to.port) < 0) continue;
+    let m = out.get(dst.id);
+    if(!m) out.set(dst.id, m = new Map());
+    m.set(w.to.port, { item:w.from.item, port:w.from.port });
+  }
+  return out;
 }
+/* which item drives each input of `id` — the small map one-gate readers want */
+function lgDrivers(page, id){ return lgDriverMap(page).get(id) || new Map(); }
 function lgFindWire(page, id, port){
-  return lgWires(page).find(w => w && w.to && w.to.item === id && w.to.port === port) || null;
+  return lgWires(page).find(w => w && w.from && w.to && w.to.item === id && w.to.port === port) || null;
 }
 
-function lgEval(page){
+function lgEval(page, drivers){
   const out = new Map();
   const items = ((page && page.items) || []).filter(lgIsGate);
   if(!items.length) return out;
   const by = new Map(items.map(it => [it.id, it]));
+  const defs = new Map(items.map(it => [it.id, lgDef(it)]));
 
   /* one driver per input is enforced when a lead is made; a file edited by hand
      could still carry two, and then the last one written is the one that counts */
-  const drv = new Map();                       // item id → Map(port → source item id)
-  for(const w of lgWires(page)){
-    if(!w || !w.from || !w.to) continue;
-    if(!by.has(w.from.item) || !by.has(w.to.item)) continue;
-    let m = drv.get(w.to.item);
-    if(!m) drv.set(w.to.item, m = new Map());
-    m.set(w.to.port, { item: w.from.item, port: w.from.port });
-  }
+  const drv = drivers || lgDriverMap(page, by, defs);  // item id → Map(port → source item id)
 
   const need = new Map(), feeds = new Map();
   for(const it of items){ need.set(it.id, 0); feeds.set(it.id, []); }
   for(const [dst, m] of drv) for(const src of m.values()){
     /* a port a gate does not actually have is not a dependency */
-    if(lgDef(by.get(dst)).seq || !feeds.has(src.item)) continue;
+    if(defs.get(dst).seq || !feeds.has(src.item)) continue;
     need.set(dst, need.get(dst) + 1);
     feeds.get(src.item).push(dst);
   }
@@ -218,15 +226,71 @@ function lgEval(page){
   for(const it of items) if(!need.get(it.id)) queue.push(it.id);
   for(let i = 0; i < queue.length; i++){
     const id = queue[i];
-    const it = by.get(id), g = lgDef(it);
+    const it = by.get(id), g = defs.get(id);
     out.set(id, lgOne(it, g, drv.get(id), out));
     for(const nx of feeds.get(id)){
       need.set(nx, need.get(nx) - 1);
       if(need.get(nx) === 0) queue.push(nx);
     }
   }
-  /* whatever the walk never reached is in a loop, or fed by one */
-  for(const it of items) if(!out.has(it.id)) out.set(it.id, LG_E);
+  /* Kahn leaves both the actual cycle and everything downstream of it behind.
+     Mark only the strongly connected core as a loop, then finish the remaining
+     acyclic tail. This matters for components that can deliberately isolate a
+     bad input: a disabled tri-state fed by a loop is Z, not itself in a loop. */
+  const left = items.map(it => it.id).filter(id => !out.has(id));
+  if(left.length){
+    /* Kosaraju's two walks, both iterative: a very large malformed circuit must
+       still not be able to overflow the JavaScript call stack. */
+    const allowed = new Set(left), graph = new Map(), back = new Map(), seen = new Set(), order = [];
+    left.forEach(id => { graph.set(id, []); back.set(id, []); });
+    left.forEach(id => (feeds.get(id) || []).forEach(nx => {
+      if(allowed.has(nx)){ graph.get(id).push(nx); back.get(nx).push(id); }
+    }));
+    for(const start of left){
+      if(seen.has(start)) continue;
+      seen.add(start);
+      const walk = [{ id:start, at:0 }];
+      while(walk.length){
+        const top = walk[walk.length - 1], edge = graph.get(top.id);
+        if(top.at < edge.length){
+          const nx = edge[top.at++];
+          if(!seen.has(nx)){ seen.add(nx); walk.push({ id:nx, at:0 }); }
+        } else { order.push(top.id); walk.pop(); }
+      }
+    }
+    const put = new Set(), cycles = new Set();
+    for(let i = order.length - 1; i >= 0; i--){
+      const start = order[i]; if(put.has(start)) continue;
+      const part = [], walk = [start]; put.add(start);
+      while(walk.length){
+        const id = walk.pop(); part.push(id);
+        for(const nx of back.get(id)) if(!put.has(nx)){ put.add(nx); walk.push(nx); }
+      }
+      if(part.length > 1 || graph.get(start).indexOf(start) >= 0) part.forEach(id => cycles.add(id));
+    }
+    cycles.forEach(id => out.set(id, LG_E));
+
+    const tail = new Set(left.filter(id => !cycles.has(id))), wait = new Map(), next = new Map();
+    tail.forEach(id => { wait.set(id, 0); next.set(id, []); });
+    for(const id of tail){
+      const m = drv.get(id);
+      if(!m) continue;
+      for(const src of m.values()) if(tail.has(src.item)){
+        wait.set(id, wait.get(id) + 1); next.get(src.item).push(id);
+      }
+    }
+    const rest = [...tail].filter(id => wait.get(id) === 0);
+    for(let i = 0; i < rest.length; i++){
+      const id = rest[i], it = by.get(id);
+      out.set(id, lgOne(it, defs.get(id), drv.get(id), out));
+      for(const nx of next.get(id)){
+        wait.set(nx, wait.get(nx) - 1);
+        if(wait.get(nx) === 0) rest.push(nx);
+      }
+    }
+    /* Defensive fallback for corrupt graphs; valid tails are acyclic by construction. */
+    tail.forEach(id => { if(!out.has(id)) out.set(id, LG_E); });
+  }
   return out;
 }
 /* one gate, given what is already settled. The only place a truth table is read */
@@ -261,6 +325,7 @@ function lgOne(it, g, drv, out){
 const lgVal = (page, id) => lgOrX(lgEval(page).get(id));
 /* what a lead is carrying: its source's value, unless either end is in a loop */
 function lgWireVal(vals, w){
+  if(!w || !w.from || !w.to) return LG_X;
   const a = lgOutput(vals, w.from.item, w.from.port), b = lgOrX(vals.get(w.to.item));
   return (a === LG_E || b === LG_E) ? LG_E : a;
 }
@@ -270,8 +335,8 @@ function lgWireVal(vals, w){
    stored q is a source for this evaluation, so feedback through it is not a
    combinational loop. All flip-flops sample the old circuit together, then take
    their next states together, which is the distinction synchronous logic needs. */
-function lgInputs(page, vals, it){
-  const drv = lgDrivers(page, it.id), out = {};
+function lgInputs(page, vals, it, drivers){
+  const drv = drivers ? (drivers.get(it.id) || new Map()) : lgDrivers(page, it.id), out = {};
   for(const p of lgDef(it).ins) out[p] = lgSignal(vals, drv.get(p));
   return out;
 }
@@ -296,10 +361,10 @@ function lgSeqNext(kind, v, q){
   return q;
 }
 function lgAdvance(page){
-  const vals = lgEval(page), pending = [], clocks = [];
+  const drivers = lgDriverMap(page), vals = lgEval(page, drivers), pending = [], clocks = [];
   for(const it of (page.items || []).filter(lgIsGate)){
     const g = lgDef(it); if(!g.seq) continue;
-    const v = lgInputs(page, vals, it);
+    const v = lgInputs(page, vals, it, drivers);
     const clk = lgIsBit(v.clk) ? v.clk : LG_0;
     const before = lgIsBit(it.clk) ? it.clk : LG_0;
     clocks.push({ it, clk });
@@ -558,9 +623,9 @@ function lgSym(it, plain, v){
   return s;
 }
 /* the ports, on top of everything, each with a hit area far bigger than its dot */
-function lgPortSVG(it, page, vals){
-  const g = lgDef(it), drv = page ? lgDrivers(page, it.id) : new Map();
-  const mine = lgOrX(vals && vals.get(it.id));
+function lgPortSVG(it, page, vals, drivers){
+  const g = lgDef(it), drv = drivers ? (drivers.get(it.id) || new Map()) :
+    page ? lgDrivers(page, it.id) : new Map();
   return lgPorts(it).map(p => {
     const v = p.dir === 'out' ? lgOutput(vals || new Map(), it.id, p.port)
       : lgSignal(vals || new Map(), drv.get(p.port));
@@ -578,7 +643,7 @@ function lgPortSVG(it, page, vals){
    the value comes out of the page record rather than off the screen */
 function lgHTML(it, c){
   const g = lgDef(it), h = lgH(it);
-  const vals = lgEval(c.page);
+  const vals = c.vals || lgEval(c.page);
   const v = lgOrX(vals.get(it.id));
   const body = g.shape.body;
   let symbol = lgSym(it, false, v);
@@ -592,7 +657,7 @@ function lgHTML(it, c){
     '<svg class="lgsvg" viewBox="0 0 ' + LG_VBW + ' ' + h + '" role="img" aria-label="' +
       esc(lgLabel(it, v)) + '">' +
       symbol +
-      lgPortSVG(it, c.page, vals) +
+      lgPortSVG(it, c.page, vals, c.drivers) +
     '</svg><figcaption></figcaption></div>';
 }
 
@@ -601,19 +666,21 @@ function lgHTML(it, c){
    reads, the lever of a switch, and the one character written on it. Writing
    those in place is what lets a lead be dragged, a port be focused and a
    tooltip stay open while the circuit changes underneath. */
-function lgPaint(el, it, page, vals){
+function lgPaint(el, it, page, vals, drivers){
   const w = el.querySelector('.lgw');
   if(!w) return;
   const v = lgOrX(vals.get(it.id));
   w.setAttribute('data-v', v);
-  const drv = lgDrivers(page, it.id);
+  const drv = drivers ? (drivers.get(it.id) || new Map()) : lgDrivers(page, it.id);
   w.querySelectorAll('.lgp').forEach(p => {
     const pv = p.dataset.dir === 'out' ? lgOutput(vals, it.id, p.dataset.p)
       : lgSignal(vals, drv.get(p.dataset.p));
     p.setAttribute('data-v', pv);
     const t = p.querySelector('title');
-    if(t) t.textContent = (p.dataset.dir === 'out' ? 'Output ' : 'Input ') + p.dataset.p +
+    const tip = (p.dataset.dir === 'out' ? 'Output ' : 'Input ') + p.dataset.p +
       ' — ' + lgWord(pv) + '. Drag from here to another port.';
+    if(t) t.textContent = tip;
+    p.setAttribute('aria-label', tip);
   });
   const lev = w.querySelector('.lglev');
   if(lev) lev.setAttribute('d', lgLever(it, lgH(it)));
@@ -639,15 +706,15 @@ function lgPaint(el, it, page, vals){
 /* every gate on screen, then every lead, then the panel that is watching one */
 function lgSync(){
   const cache = new Map();
-  const valsOf = p => {
-    let v = cache.get(p);
-    if(!v) cache.set(p, v = lgEval(p));
-    return v;
+  const ctxOf = p => {
+    let c = cache.get(p);
+    if(!c){ const drivers = lgDriverMap(p); c = { drivers, vals:lgEval(p, drivers) }; cache.set(p, c); }
+    return c;
   };
   document.querySelectorAll('#pageHost .item[data-type="logic"]').forEach(el => {
     const pg = pageOfEl(el);
     const it = pg && pg.items.find(x => x.id === el.dataset.id);
-    if(it) lgPaint(el, it, pg, valsOf(pg));
+    if(it){ const c = ctxOf(pg); lgPaint(el, it, pg, c.vals, c.drivers); }
   });
   lgLay();
   LG_SYNCERS.forEach(fn => fn());
@@ -867,7 +934,10 @@ function lgCircuitRanks(c){
   const next = new Map(c.items.map(it => [it.id, []]));
   /* A flip-flop samples its inputs and starts a new combinational run at Q. */
   for(const w of c.wires){
-    if(lgDef(by.get(w.to.item)).seq) continue;
+    if(!w || !w.from || !w.to || !by.has(w.from.item) || !by.has(w.to.item)) continue;
+    const src = by.get(w.from.item), dst = by.get(w.to.item);
+    if(lgDef(src).outs.indexOf(w.from.port) < 0 || lgDef(dst).ins.indexOf(w.to.port) < 0 ||
+       lgDef(dst).seq) continue;
     next.get(w.from.item).push(w.to.item);
     indeg.set(w.to.item, indeg.get(w.to.item) + 1);
   }
@@ -982,7 +1052,8 @@ function lgConnect(page, from, to){
   if(!src || !dst) return false;
   if(lgDef(src).outs.indexOf(from.port) < 0 || lgDef(dst).ins.indexOf(to.port) < 0) return false;
   if(from.item === to.item){ lgSay('a gate cannot be wired into itself'); SND.nope(); return false; }
-  const same = lgWires(page).find(w => w.from.item === from.item && w.from.port === from.port &&
+  const same = lgWires(page).find(w => w && w.from && w.to &&
+    w.from.item === from.item && w.from.port === from.port &&
     w.to.item === to.item && w.to.port === to.port);
   if(same) return false;                                  /* the same lead twice is nothing new */
   page.wires = lgWires(page).slice();
@@ -990,7 +1061,7 @@ function lgConnect(page, from, to){
      one takes the socket — the same rule as plugging a cable into a jack — and
      the app says so rather than silently dropping one of the two. */
   const had = lgFindWire(page, to.item, to.port);
-  if(had) page.wires = page.wires.filter(w => w.id !== had.id);
+  if(had) page.wires = page.wires.filter(w => !w || w.id !== had.id);
   page.wires.push({ id: uid(), from: { item: from.item, port: from.port },
                     to: { item: to.item, port: to.port } });
   lgAdvance(page);
@@ -1002,7 +1073,7 @@ function lgConnect(page, from, to){
   return true;
 }
 function lgDisconnect(page, w, quiet){
-  page.wires = lgWires(page).filter(x => x.id !== w.id);
+  page.wires = lgWires(page).filter(x => !x || x.id !== w.id);
   lgAdvance(page);
   queueSave(page.id);
   if(LG_SEL && LG_SEL.w.id === w.id) lgDeselect();
@@ -1011,7 +1082,8 @@ function lgDisconnect(page, w, quiet){
 }
 function lgUnplugAll(page, it){
   const before = lgWires(page).length;
-  page.wires = lgWires(page).filter(w => w.from.item !== it.id && w.to.item !== it.id);
+  page.wires = lgWires(page).filter(w => !w || !w.from || !w.to ||
+    (w.from.item !== it.id && w.to.item !== it.id));
   if(page.wires.length === before) return;
   lgAdvance(page);
   queueSave(page.id); lgDeselect(); lgSync(); lgWake(); SND.pluck();
@@ -1052,16 +1124,18 @@ function lgCycleSwitchLook(it, page){
    backwards and looks for an output. */
 let LG_DRAG = null;
 function lgStartWire(e, it, port, dir, page){
+  if(e.button) return;
   e.preventDefault(); e.stopPropagation();
   const svg = lgBoard();
   if(!svg) return;
+  if(LG_DRAG) lgCancelWire();
   lgDeselect();
-  let anchor = null, want = '';
+  let anchor = null, want = '', detached = null;
   if(dir === 'out'){ anchor = { item: it.id, port }; want = 'in'; }
   else {
     const had = lgFindWire(page, it.id, port);
     if(had){ anchor = { item: had.from.item, port: had.from.port }; want = 'in';
-             lgDisconnect(page, had, true); }
+             detached = had; lgDisconnect(page, had, true); }
     else { anchor = { item: it.id, port }; want = 'out'; }
   }
   const ghost = document.createElementNS(SVGNS, 'path');
@@ -1074,9 +1148,11 @@ function lgStartWire(e, it, port, dir, page){
     if(p.dataset.dir === want && !p.closest('.item[data-id="' + anchor.item + '"]'))
       p.classList.add('lgok');
   });
-  LG_DRAG = { page, anchor, want, ghost, aim: null };
+  const pid = e.pointerId;
+  LG_DRAG = { page, anchor, want, ghost, aim: null, detached, pid };
 
   const mv = ev => {
+    if(ev.pointerId !== pid) return;
     const sr = svg.getBoundingClientRect();
     if(!sr.width) return;
     const cur = { x: (ev.clientX - sr.left) / sr.width * BOARD.vw,
@@ -1100,19 +1176,24 @@ function lgStartWire(e, it, port, dir, page){
                                           : lgPath(end, a, rotB, lgRotOf(page, anchor.item)));
   };
   const up = ev => {
+    if(ev.pointerId !== pid) return;
     window.removeEventListener('pointermove', mv);
     window.removeEventListener('pointerup', up);
-    window.removeEventListener('pointercancel', up);
+    window.removeEventListener('pointercancel', cancel);
     const aim = LG_DRAG && LG_DRAG.aim;
     lgEndWire();
     if(!aim) return;                                   /* let go over bare paper: nothing joined */
     if(want === 'in') lgConnect(page, anchor, { item: aim.it.id, port: aim.port });
     else lgConnect(page, { item: aim.it.id, port: aim.port }, anchor);
   };
-  LG_DRAG.up = up; LG_DRAG.mv = mv;
+  const cancel = ev => {
+    if(ev.pointerId !== pid) return;
+    lgCancelWire();
+  };
+  LG_DRAG.up = up; LG_DRAG.mv = mv; LG_DRAG.cancel = cancel;
   window.addEventListener('pointermove', mv);
   window.addEventListener('pointerup', up);
-  window.addEventListener('pointercancel', up);
+  window.addEventListener('pointercancel', cancel);
   mv(e);
 }
 const lgRotOf = (page, id) => {
@@ -1143,10 +1224,18 @@ function lgEndWire(){
 }
 function lgCancelWire(){
   if(!LG_DRAG) return false;
-  window.removeEventListener('pointermove', LG_DRAG.mv);
-  window.removeEventListener('pointerup', LG_DRAG.up);
-  window.removeEventListener('pointercancel', LG_DRAG.up);
+  const drag = LG_DRAG;
+  window.removeEventListener('pointermove', drag.mv);
+  window.removeEventListener('pointerup', drag.up);
+  window.removeEventListener('pointercancel', drag.cancel);
   lgEndWire();
+  /* Escape and pointer cancellation mean "put it back", not "unplug it". A
+     deliberate drop on bare paper still removes the lead through the normal
+     pointer-up path above. */
+  if(drag.detached && !lgWires(drag.page).some(w => w && w.id === drag.detached.id)){
+    drag.page.wires = lgWires(drag.page).concat([drag.detached]);
+    lgAdvance(drag.page); queueSave(drag.page.id); lgSync(); lgWake();
+  }
   return true;
 }
 
@@ -1306,7 +1395,7 @@ function lgTTDraw(){
       /* a port that has gone takes its lead with it */
       const keep = LG_PORTS.slice(0, want);
       page.wires = lgWires(page).filter(w =>
-        !(w.to.item === it.id && keep.indexOf(w.to.port) < 0));
+        !w || !w.to || !(w.to.item === it.id && keep.indexOf(w.to.port) < 0));
       queueSave(page.id);
       lgRedrawItem(it, page);
       lgTTDraw(); lgSync(); lgWake(); SND.tick();
@@ -1314,7 +1403,8 @@ function lgTTDraw(){
   } else ed.innerHTML = '';
 
   /* which row the gate is actually standing on */
-  const vals = lgEval(page), drv = lgDrivers(page, it.id);
+  const drivers = lgDriverMap(page), vals = lgEval(page, drivers);
+  const drv = drivers.get(it.id) || new Map();
   const cur = g.ins.map(p => {
     return lgSignal(vals, drv.get(p));
   });
@@ -1539,7 +1629,8 @@ defineItem('logic', {
     for(const p of openPages()){
       if(!p || !lgWires(p).length) continue;
       const n = p.wires.length;
-      p.wires = p.wires.filter(w => w.from.item !== it.id && w.to.item !== it.id);
+      p.wires = p.wires.filter(w => !w || !w.from || !w.to ||
+        (w.from.item !== it.id && w.to.item !== it.id));
       if(p.wires.length !== n) queueSave(p.id);
     }
     lgDeselect();

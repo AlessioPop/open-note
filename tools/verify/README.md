@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 1192 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 1199 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,7 +22,7 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 1192 assertions, and they should
+It prints a pass/fail count and every failure. 1199 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
@@ -139,7 +139,7 @@ all pass — if one doesn't, that is a real regression.
   it and everything hanging off it are marked while a gate nowhere near it is
   untouched, and that cutting one lead lets the whole thing settle; that all five
   signal states differ by more than their colour; that Tri-State emits `z` while
-  disabled and passes both bits while enabled; that a four-bit digit reads 1010
+  disabled, isolates a loop and passes both bits while enabled; that a four-bit digit reads 1010
   as A; that SR, D, JK and T implement their characteristic tables, D changes on
   a real rising edge and Q-bar is inverse; that the push button holds only until
   release and the clock scheduler advances without a simulation step; that the
@@ -154,12 +154,14 @@ all pass — if one doesn't, that is a real regression.
   outlines, components render above translucent leads, local zoom leaves the
   circuit frame unchanged and frame resize does not enlarge components, Canvas hides only the surface, circuit search
   loads an ordinary working half adder, Tidy restores signal order, local
-  Delete removes a component rather than its environment, and static output
+  Delete removes a component rather than its environment and closes its stale
+  truth-table panel, and static output
   keeps every nested component and lead; that a switch can really change from
   lever to rocker to plain 0/1; that a lead really can be
   dragged from an output onto an input, from a bare input onto an output, picked
   up off an input it already drives and moved, and dropped on bare paper to come
-  out; that clicking one picks it out and `Delete` takes it away; that deleting a
+  out; that repaint preserves an in-progress lead and Escape restores a lead
+  being rewired; that clicking one picks it out and `Delete` takes it away; that deleting a
   gate takes every lead on it; that **a gate turned a quarter turn swings its
   output port a quarter turn about its own middle** — nowhere near the edge of
   its box — and that turning it does not stretch the reach of its ports; that

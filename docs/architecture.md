@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1192 assertions, driven in headless Firefox
+tools/verify/       the harness: 1199 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -445,12 +445,14 @@ handling are all indifferent to what is travelling. `js/items/math/node.js` is
 the older, table-shaped graph and stays where it is; nothing has been merged on
 speculation.
 
-**Order comes from Kahn's algorithm, and so does cycle detection.** Start with
-the gates nothing feeds, and let a gate join the queue once every input it has
-is settled. What the walk never reaches is exactly what is in a loop or
-downstream of one, and it is marked `e`. There is no recursion, no visit flag and
-no iteration limit, so a circuit wired in a ring cannot hang, blow the stack, or
-cost more than one that is fine.
+**Order starts with Kahn's algorithm.** Start with the gates nothing feeds, and
+let a gate join the queue once every input it has is settled. Its remainder
+contains both the actual cycles and their downstream tails. Two iterative
+Kosaraju walks identify the strongly connected cores as `e`, then one final
+dependency pass evaluates the tail from those errors. That distinction lets a
+disabled Tri-State electrically isolate a bad input and emit `z`. There is no
+recursion or iteration limit, and the work stays linear in components and leads,
+so a ring cannot hang or blow the stack.
 
 **Five signal states, not two.** `0`, `1`, `x` (unknown or undriven), `z`
 (high impedance) and `e` (this cannot settle). An undriven input is emphatically
@@ -706,7 +708,7 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1192 assertions**, and they are the real specification of this app. Among them:
+**1199 assertions**, and they are the real specification of this app. Among them:
 that all 71 script files load without throwing; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a

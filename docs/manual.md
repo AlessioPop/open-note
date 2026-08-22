@@ -285,9 +285,10 @@ one of its two inputs does not answer as though the other were low — it says i
 does not know, and everything downstream of it says the same. That is the
 difference between a circuit you have not finished and a circuit that is wrong.
 
-**A circuit wired in a ring says so.** Every gate in the loop, and everything fed
-by one, is marked; nothing hangs, nothing recurses and nothing takes any longer
-than a circuit that is fine. Cut one lead and the whole thing settles again.
+**A circuit wired in a ring says so.** Every gate in the loop, and everything it
+feeds without electrical isolation, is marked; a disabled Tri-State still emits
+high impedance. Nothing hangs or recurses. Cut one lead and the whole thing
+settles again.
 
 ### Flip-flops and clocks
 

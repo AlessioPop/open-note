@@ -9,6 +9,7 @@ const LC_W = 1000, LC_H = 620, LC_BASE_W = 48, LC_MIN_Z = .4, LC_MAX_Z = 3;
 const LC_PICK = new Map();                    // circuit id → {kind:'node'|'wire', id}
 const LC_MODE = new Map();                    // circuit id → move | inspect (move is the default)
 const LC_RESIZE = new Map();                  // circuit id → its local ResizeObserver
+let LC_DRAG = null;                           // the one contained lead currently being pulled
 
 const lcNodes = it => Array.isArray(it.nodes) ? it.nodes : (it.nodes = []);
 const lcWires = it => Array.isArray(it.wires) ? it.wires : (it.wires = []);
@@ -26,7 +27,7 @@ function lcModels(){
 }
 defineLogicModels(lcModels);
 const lcMode = it => LC_MODE.get(it.id) || 'move';
-const lcNodeWidth = (env, node) => +node.w || 16;
+const lcNodeWidth = node => +node.w || 16;
 /* The circuit owns a view onto its world, like the molecule and nuclide views.
    Zoom changes only that view: it never resizes the page item. World positions
    stay stable, so wires, dragging, presets and static output share one model. */
@@ -61,8 +62,8 @@ function lcVisibleBounds(it){
 }
 function lcClampNode(it, node){
   const b = lcVisibleBounds(it);
-  node.x = clamp(node.x, b.x0, Math.max(b.x0, b.x1 - lcNodeWidth(it,node)));
-  node.y = clamp(node.y, b.y0, Math.max(b.y0, b.y1 - lcNodeHeight(it,node)));
+  node.x = clamp(node.x, b.x0, Math.max(b.x0, b.x1 - lcNodeWidth(node)));
+  node.y = clamp(node.y, b.y0, Math.max(b.y0, b.y1 - lcNodeHeight(node)));
   return node;
 }
 function lcApplyView(outer, it){
@@ -82,11 +83,11 @@ function lcSetZoom(outer, it, page, z, clientX, clientY){
   const scale = lcViewScale(it);
   it.viewX = anchor.x - (px - 50) / scale;
   it.viewY = anchor.y - (py - 50) / scale;
-  lcApplyView(outer,it); lcInspector(outer,it,page); queueSave(page.id);
+  lcApplyView(outer,it); lcInspector(outer,it); queueSave(page.id);
 }
 function lcHomeView(outer, it, page){
   it.zoom = 1; it.viewX = 50; it.viewY = 50;
-  lcApplyView(outer,it); lcInspector(outer,it,page);
+  lcApplyView(outer,it); lcInspector(outer,it);
   if(page) queueSave(page.id);
 }
 function lcApplyMode(outer, it){
@@ -110,36 +111,43 @@ function lcSetMode(outer, it, page, mode){
   if(mode !== 'move' && mode !== 'inspect') return;
   LC_MODE.set(it.id, mode);
   if(mode === 'move') lcPick(outer, it, page);
-  lcApplyMode(outer, it); lcInspector(outer, it, page); SND.tick();
+  lcApplyMode(outer, it); lcInspector(outer, it); SND.tick();
 }
 
 /* Internal coordinates are percentages, exactly like page items. The wire SVG
    is normalized, so ports can be located from the same symbol geometry without
    measuring the DOM — live, print and export therefore draw identical leads. */
-function lcPortPoint(env, it, port){
+function lcPortPoint(it, port){
   const p = lgPorts(it).find(x => x.port === port);
   if(!p) return null;
   const x = (+it.x || 0) / 100 * LC_W, y = (+it.y || 0) / 100 * LC_H;
-  const w = lcNodeWidth(env, it) / 100 * LC_W;
+  const w = lcNodeWidth(it) / 100 * LC_W;
   return { x: x + p.x / 100 * w, y: y + p.y / 100 * w };
 }
-function lcNodeHeight(env, it){ return lcNodeWidth(env, it) * (LC_W / LC_H) * lgH(it) / 100; }
-function lcWirePath(it, wire){
-  const by = new Map(lcNodes(it).map(x => [x.id, x]));
+function lcNodeHeight(it){ return lcNodeWidth(it) * (LC_W / LC_H) * lgH(it) / 100; }
+const lcJointId = w => String(w.from.item) + '-' + String(w.from.port);
+function lcWirePath(it, wire, by){
+  if(!wire || !wire.from || !wire.to) return '';
+  by = by || new Map(lcNodes(it).map(x => [x.id, x]));
   const a = by.get(wire.from.item), b = by.get(wire.to.item);
-  const pa = a && lcPortPoint(it, a, wire.from.port), pb = b && lcPortPoint(it, b, wire.to.port);
+  const pa = a && lcPortPoint(a, wire.from.port), pb = b && lcPortPoint(b, wire.to.port);
   return pa && pb ? lgPath(pa, pb, a.rot, b.rot, wire.clean, wire.route) : '';
 }
-function lcWiresHTML(it, model){
-  const vals = lgEval(model), by = new Map(lcNodes(it).map(x => [x.id, x]));
-  const fan = {}, joints = [];
-  lcWires(it).forEach(w => { const k = lgJoint(w); fan[k] = (fan[k] || 0) + 1; });
+function lcWiresHTML(it, model, vals){
+  vals = vals || lgEval(model);
+  const by = new Map(lcNodes(it).map(x => [x.id, x])), fan = {}, joints = [], joined = new Set();
+  lcWires(it).forEach(w => {
+    if(!w || !w.from || !w.to) return;
+    const k = lcJointId(w); fan[k] = (fan[k] || 0) + 1;
+  });
   const paths = lcWires(it).map(w => {
-    const a = by.get(w.from.item), b = by.get(w.to.item), d = lcWirePath(it, w);
+    if(!w || !w.from || !w.to) return '';
+    const a = by.get(w.from.item), b = by.get(w.to.item), d = lcWirePath(it, w, by);
     if(!a || !b || !d) return '';
-    if(fan[lgJoint(w)] > 1 && !joints.some(x => x.k === lgJoint(w))){
-      const p = lcPortPoint(it, a, w.from.port);
-      joints.push({ k: lgJoint(w), p, v: lgWireVal(vals, w) });
+    if(fan[lcJointId(w)] > 1 && !joined.has(lcJointId(w))){
+      const p = lcPortPoint(a, w.from.port);
+      joined.add(lcJointId(w));
+      joints.push({ k: lcJointId(w), p, v: lgWireVal(vals, w) });
     }
     const v = lgWireVal(vals, w);
     return '<g data-w="' + esc(w.id) + '" data-v="' + v + '">' +
@@ -147,15 +155,14 @@ function lcWiresHTML(it, model){
       '<title>' + esc(lgDef(a).name + ' ' + w.from.port + ' → ' + lgDef(b).name + ' ' +
         w.to.port + ' · carrying ' + lgWord(v)) + '</title></g>';
   }).join('');
-  return paths + joints.map(x => '<circle class="lcjoint" data-v="' + x.v + '" cx="' +
-    rd1(x.p.x) + '" cy="' + rd1(x.p.y) + '" r="4"/>').join('');
+  return paths + joints.map(x => '<circle class="lcjoint" data-j="' + esc(x.k) +
+    '" data-v="' + x.v + '" cx="' + rd1(x.p.x) + '" cy="' + rd1(x.p.y) + '" r="4"/>').join('');
 }
 
-function lcNodeHTML(it, model, live){
-  const env = model.env;
+function lcNodeHTML(it, model, live, vals, drivers){
   return '<div class="lcnode" data-id="' + esc(it.id) + '" style="left:' + it.x + '%;top:' +
-    it.y + '%;width:' + lcNodeWidth(env, it) + '%;z-index:' + (it.z || 1) + '">' +
-    lgHTML(it, { live: !!live, page: model, idx: index }) + '</div>';
+    it.y + '%;width:' + lcNodeWidth(it) + '%;z-index:' + (it.z || 1) + '">' +
+    lgHTML(it, { live: !!live, page: model, idx: index, vals, drivers }) + '</div>';
 }
 function lcRailHTML(){
   return '<aside class="lcrail glass-lite" aria-label="Logic components">' +
@@ -226,39 +233,76 @@ function lcPresetPanelHTML(){
     '<div class="lcplist">' + lcPresetListHTML('') + '</div></div>';
 }
 function lcHTML(it, c){
-  const model = lcModel(it, c.page);
+  const model = lcModel(it, c.page), drivers = lgDriverMap(model), vals = lgEval(model, drivers);
   return '<figure class="body lcenv' + (it.frame === 0 ? ' noframe' : '') +
     '" aria-label="Logic circuit">' +
     (c.live ? lcRailHTML() : '') +
     '<div class="lcstage"><div class="lcworld" style="' + lcWorldStyle(it) + '">' +
       '<svg class="lcwires" viewBox="0 0 ' + LC_W + ' ' + LC_H +
-        '" preserveAspectRatio="none">' + lcWiresHTML(it, model) + '</svg>' +
-      '<div class="lcnodes">' + lcNodes(it).map(n => lcNodeHTML(n, model, c.live)).join('') + '</div></div>' +
+        '" preserveAspectRatio="none">' + lcWiresHTML(it, model, vals) + '</svg>' +
+      '<div class="lcnodes">' + lcNodes(it).map(n => lcNodeHTML(n, model, c.live, vals, drivers)).join('') + '</div></div>' +
       (c.live ? '<div class="lcinspect glass-lite" hidden></div>' : '') +
     '</div>' + (c.live ? lcPresetPanelHTML() : '') + '</figure>';
 }
 
 /* ================= drawing and local selection ================= */
 function lcFindOuter(id){ return document.querySelector('#pageHost .item[data-id="' + id + '"]'); }
-function lcDrawWires(outer, it, page){
+function lcDrawWires(outer, it, page, vals){
   const svg = outer && outer.querySelector('.lcwires');
   if(!svg) return;
-  svg.innerHTML = lcWiresHTML(it, lcModel(it, page));
-  const pick = LC_PICK.get(it.id);
-  if(pick && pick.kind === 'wire'){
-    const g = svg.querySelector('g[data-w="' + pick.id + '"]'); if(g) g.classList.add('sel');
+  const model = lcModel(it, page), by = new Map(lcNodes(it).map(x => [x.id, x]));
+  vals = vals || lgEval(model);
+  const fan = {}, keep = new Set(), joints = new Map();
+  for(const w of lcWires(it)) if(w && w.from && w.to){
+    const k = lcJointId(w); fan[k] = (fan[k] || 0) + 1;
   }
+  const old = new Map([...svg.querySelectorAll('g[data-w]')].map(g => [g.dataset.w, g]));
+  const pick = LC_PICK.get(it.id);
+  for(const w of lcWires(it)){
+    if(!w || !w.from || !w.to) continue;
+    const a = by.get(w.from.item), b = by.get(w.to.item), d = lcWirePath(it, w, by);
+    if(!a || !b || !d) continue;
+    const id = String(w.id), v = lgWireVal(vals, w); keep.add(id);
+    let g = old.get(id);
+    if(!g){
+      g = document.createElementNS(SVGNS, 'g'); g.setAttribute('data-w', id);
+      g.innerHTML = '<path class="lchit"/><path class="lcline"/><title></title>';
+      svg.insertBefore(g, svg.querySelector('.lcjoint,.lcghost'));
+    }
+    g.querySelectorAll('path').forEach(p => p.setAttribute('d', d));
+    g.setAttribute('data-v', v);
+    g.classList.toggle('sel', !!pick && pick.kind === 'wire' && pick.id === w.id);
+    g.querySelector('title').textContent = lgDef(a).name + ' ' + w.from.port + ' → ' +
+      lgDef(b).name + ' ' + w.to.port + ' · carrying ' + lgWord(v);
+    const key = lcJointId(w);
+    if(fan[key] > 1 && !joints.has(key))
+      joints.set(key, { p:lcPortPoint(a, w.from.port), v });
+  }
+  old.forEach((g, id) => { if(!keep.has(id)) g.remove(); });
+
+  const oldJoints = new Map([...svg.querySelectorAll('.lcjoint[data-j]')].map(c => [c.dataset.j, c]));
+  joints.forEach((rec, key) => {
+    let c = oldJoints.get(key);
+    if(!c){
+      c = document.createElementNS(SVGNS, 'circle'); c.setAttribute('class', 'lcjoint');
+      c.setAttribute('data-j', key); c.setAttribute('r', '4');
+      svg.insertBefore(c, svg.querySelector('.lcghost'));
+    }
+    c.setAttribute('data-v', rec.v); c.setAttribute('cx', rd1(rec.p.x)); c.setAttribute('cy', rd1(rec.p.y));
+  });
+  oldJoints.forEach((c, key) => { if(!joints.has(key)) c.remove(); });
 }
-function lcPaint(outer, it, page){
+function lcPaint(outer, it, page, vals, drivers){
   if(!outer) return;
-  const model = lcModel(it, page), vals = lgEval(model);
+  const model = lcModel(it, page);
+  drivers = drivers || lgDriverMap(model); vals = vals || lgEval(model, drivers);
   outer.querySelectorAll('.lcnode').forEach(el => {
     const node = lcNodes(it).find(x => x.id === el.dataset.id);
-    if(node) lgPaint(el, node, model, vals);
+    if(node) lgPaint(el, node, model, vals, drivers);
   });
-  lcDrawWires(outer, it, page);
+  lcDrawWires(outer, it, page, vals);
   lcApplyMode(outer, it);
-  lcInspector(outer, it, page);
+  lcInspector(outer, it);
 }
 function lcSync(){
   document.querySelectorAll('#pageHost .item[data-type="circuit"]').forEach(outer => {
@@ -273,18 +317,19 @@ function lcPick(outer, it, page, kind, id){
   outer.querySelectorAll('.lcnode').forEach(n => n.classList.toggle('sel',
     kind === 'node' && n.dataset.id === id));
   lcDrawWires(outer, it, page);
-  lcInspector(outer, it, page);
+  lcInspector(outer, it);
 }
-function lcInspector(outer, it, page){
+function lcInspector(outer, it){
   const box = outer.querySelector('.lcinspect'); if(!box) return;
   const pick = LC_PICK.get(it.id);
   const visible = lcMode(it) === 'inspect' && outer.classList.contains('sel') && !!pick;
   box.hidden = !visible;
   if(!visible) return;
   if(pick.kind === 'wire'){
-    const wire = lcWires(it).find(w => w.id === pick.id);
+    const wire = lcWires(it).find(w => w && w.id === pick.id);
     if(!wire){ LC_PICK.delete(it.id); box.hidden = true; return; }
-    box.innerHTML = '<span>Lead</span><button data-act="delete-wire" title="Remove this lead">✕</button>';
+    const html = '<span>Lead</span><button data-act="delete-wire" title="Remove this lead">✕</button>';
+    if(box.innerHTML !== html) box.innerHTML = html;
     const path = outer.querySelector('.lcwires g[data-w="' + pick.id + '"] .lcline');
     if(path){ const p = path.getPointAtLength(path.getTotalLength() / 2);
       const q = lcScreenPoint(it, p.x / LC_W * 100, p.y / LC_H * 100);
@@ -305,9 +350,10 @@ function lcInspector(outer, it, page){
   parts.push('<button data-act="unplug" title="Unplug this component">Unplug</button>',
     '<button data-act="copy" title="Duplicate this component">Copy</button>',
     '<button data-act="delete-node" title="Delete this component">Delete</button>');
-  box.innerHTML = parts.join('');
-  const mid = lcScreenPoint(it, node.x + lcNodeWidth(it,node) / 2, node.y + lcNodeHeight(it,node) / 2);
-  const top = lcScreenPoint(it, node.x, node.y), bottom = lcScreenPoint(it,node.x,node.y + lcNodeHeight(it,node));
+  const html = parts.join('');
+  if(box.innerHTML !== html) box.innerHTML = html;
+  const mid = lcScreenPoint(it, node.x + lcNodeWidth(node) / 2, node.y + lcNodeHeight(node) / 2);
+  const top = lcScreenPoint(it, node.x, node.y), bottom = lcScreenPoint(it,node.x,node.y + lcNodeHeight(node));
   box.style.left = clamp(mid.x, 9, 91) + '%';
   box.style.top = clamp(top.y < 14 ? bottom.y + 3 : top.y - 3, 4, 94) + '%';
 }
@@ -315,11 +361,15 @@ function lcInspector(outer, it, page){
 /* Rebuild component markup only when its shape or membership changed. Values
    repaint in place through lcPaint(), preserving focused ports and gestures. */
 function lcRefresh(outer, it, page){
-  const model = lcModel(it, page), box = outer.querySelector('.lcnodes');
+  const model = lcModel(it, page), box = outer.querySelector('.lcnodes'), drivers = lgDriverMap(model);
+  const vals = lgEval(model, drivers);
   if(!box) return;
-  box.innerHTML = lcNodes(it).map(n => lcNodeHTML(n, model, true)).join('');
+  box.innerHTML = lcNodes(it).map(n => lcNodeHTML(n, model, true, vals, drivers)).join('');
   lcBindNodes(outer, it, page);
-  lcPaint(outer, it, page);
+  lcPaint(outer, it, page, vals, drivers);
+}
+function lcCloseTruthFor(nodes){
+  if(LG_TT && nodes.some(node => node === LG_TT.it)) lgTTClose();
 }
 defineLogicRedraw((node, model) => {
   const env = model && model.env, page = model && model.parent;
@@ -385,7 +435,7 @@ function lcPaletteDrag(e, outer, env, page, button){
     const r = stage.getBoundingClientRect();
     if(ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom){
       const probe = { w:LG_GATES[kind].seq || kind === 'digit' ? 18 : 16 };
-      const w = lcNodeWidth(env,probe), h = lcNodeHeight(env,{ ...probe, gate:kind, type:'logic' });
+      const w = lcNodeWidth(probe), h = lcNodeHeight({ ...probe, gate:kind, type:'logic' });
       const at = lcWorldPoint(stage,env,ev.clientX,ev.clientY);
       lcAdd(outer,env,page,kind,{ x:at.x-w/2, y:at.y-h/2 });
     }
@@ -472,7 +522,7 @@ function lcStagePointer(e, outer, env, page, stage){
     if(!moved){ moved = true; stage.classList.add('lcpanning'); }
     env.viewX = start.x - dx / r.width * 100 / scale;
     env.viewY = start.y - dy / r.height * 100 / scale;
-    lcApplyView(outer,env); lcInspector(outer,env,page);
+    lcApplyView(outer,env); lcInspector(outer,env);
   };
   const end = ev => {
     if(ev.pointerId !== pid) return;
@@ -505,24 +555,31 @@ function lcBindControlKeys(env, page, node, el){
 
 /* ================= pulling a lead inside the environment ================= */
 function lcStartWire(e, outer, env, page, node, port, dir){
-  if(!outer.classList.contains('sel')) return;
+  if(e.button || !outer.classList.contains('sel')) return;
   e.preventDefault(); e.stopPropagation();
+  if(LC_DRAG) lcCancelWire();
   const model = lcModel(env, page), svg = outer.querySelector('.lcwires');
-  let anchor = { item:node.id, port }, want = dir === 'out' ? 'in' : 'out';
+  let anchor = { item:node.id, port }, want = dir === 'out' ? 'in' : 'out', detached = null;
   if(dir === 'in'){
     const had = lgFindWire(model, node.id, port);
-    if(had){ anchor = { ...had.from }; want = 'in'; lgDisconnect(model, had, true); }
+    if(had){ anchor = { ...had.from }; want = 'in'; detached = had; lgDisconnect(model, had, true); }
   }
   const ghost = document.createElementNS(SVGNS, 'path'); ghost.setAttribute('class', 'lcghost'); svg.appendChild(ghost);
   outer.querySelectorAll('.lcnode .lgp').forEach(p => {
     if(p.dataset.dir === want && p.closest('.lcnode').dataset.id !== anchor.item) p.classList.add('lgok');
   });
   const pid = e.pointerId;
+  const clear = () => {
+    window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', cancel);
+    ghost.remove(); outer.querySelectorAll('.lcnode .lgp').forEach(p => p.classList.remove('lgok','lgaim'));
+    if(LC_DRAG && LC_DRAG.pid === pid) LC_DRAG = null;
+  };
   const mv = ev => {
     if(ev.pointerId !== pid) return;
     const r = svg.getBoundingClientRect();
     const cur = { x:(ev.clientX - r.left) / r.width * LC_W, y:(ev.clientY - r.top) / r.height * LC_H };
-    const src = lcNodes(env).find(n => n.id === anchor.item), a = src && lcPortPoint(env, src, anchor.port);
+    const src = lcNodes(env).find(n => n.id === anchor.item), a = src && lcPortPoint(src, anchor.port);
     if(a) ghost.setAttribute('d', want === 'in' ? lgPath(a, cur, src.rot, 0) : lgPath(cur, a, 0, src.rot));
     outer.querySelectorAll('.lcnode .lgp.lgaim').forEach(p => p.classList.remove('lgaim'));
     const hit = document.elementFromPoint(ev.clientX, ev.clientY);
@@ -532,9 +589,7 @@ function lcStartWire(e, outer, env, page, node, port, dir){
   };
   const up = ev => {
     if(ev.pointerId !== pid) return;
-    window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
-    window.removeEventListener('pointercancel', up);
-    ghost.remove(); outer.querySelectorAll('.lcnode .lgp').forEach(p => p.classList.remove('lgok','lgaim'));
+    clear();
     const hit = document.elementFromPoint(ev.clientX, ev.clientY);
     const aim = hit && hit.closest && hit.closest('.lcnode .lgp[data-dir="' + want + '"]');
     if(!aim || aim.closest('.lcstage') !== outer.querySelector('.lcstage')) return void lcPaint(outer, env, page);
@@ -546,8 +601,20 @@ function lcStartWire(e, outer, env, page, node, port, dir){
     }
     lcPaint(outer, env, page);
   };
+  const cancel = ev => { if(ev.pointerId === pid) lcCancelWire(); };
+  LC_DRAG = { outer, env, page, model, detached, ghost, pid, mv, up, cancel, clear };
   window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
-  window.addEventListener('pointercancel', up);
+  window.addEventListener('pointercancel', cancel);
+}
+
+function lcCancelWire(){
+  const drag = LC_DRAG; if(!drag) return false;
+  drag.clear();
+  if(drag.detached && !lgWires(drag.model).some(w => w && w.id === drag.detached.id)){
+    drag.model.wires = lgWires(drag.model).concat([drag.detached]);
+    lgAdvance(drag.model); queueSave(drag.page.id); lgSync(); lgWake();
+  } else lcPaint(drag.outer, drag.env, drag.page);
+  return true;
 }
 
 function lcBindNodes(outer, env, page){
@@ -565,7 +632,7 @@ function lcInspectAct(outer, env, page, act, anchor){
   const pick = LC_PICK.get(env.id), model = lcModel(env, page);
   if(!pick) return;
   if(act === 'delete-wire'){
-    const wire = lcWires(env).find(w => w.id === pick.id); if(wire) lgDisconnect(model, wire);
+    const wire = lcWires(env).find(w => w && w.id === pick.id); if(wire) lgDisconnect(model, wire);
     LC_PICK.delete(env.id); return void lcPaint(outer, env, page);
   }
   const node = lcNodes(env).find(n => n.id === pick.id); if(!node) return;
@@ -584,21 +651,23 @@ function lcInspectAct(outer, env, page, act, anchor){
     if(!copy.def) delete copy.def;
     env.nodes.push(copy); LC_PICK.set(env.id, { kind:'node', id:copy.id });
   } else if(act === 'delete-node'){
+    lcCloseTruthFor([node]);
     env.nodes = lcNodes(env).filter(n => n.id !== node.id);
-    env.wires = lcWires(env).filter(w => w.from.item !== node.id && w.to.item !== node.id);
+    env.wires = lcWires(env).filter(w => !w || !w.from || !w.to ||
+      (w.from.item !== node.id && w.to.item !== node.id));
     LG_CLOCK.delete(node.id); LC_PICK.delete(env.id);
   }
   queueSave(page.id); lcRefresh(outer, env, page); lgSync(); lgClockArm(); SND.tick();
 }
 
-function lcPresetBuild(preset, env){
+function lcPresetBuild(preset){
   const by = new Map(), nodes = preset.nodes.map(row => {
     const [key, kind, x, y, extra] = row;
     const node = lgMake(kind, { id:uid(), x, y, z:by.size + 1 });
     node.w = LG_GATES[kind].seq || kind === 'digit' ? 18 : 16;
     Object.assign(node, extra || {});
-    node.x = clamp(node.x, 0, 100 - lcNodeWidth(env,node));
-    node.y = clamp(node.y, 0, 100 - lcNodeHeight(env,node));
+    node.x = clamp(node.x, 0, 100 - lcNodeWidth(node));
+    node.y = clamp(node.y, 0, 100 - lcNodeHeight(node));
     by.set(key,node); return node;
   });
   const wires = preset.wires.map(row => ({ id:uid(),
@@ -622,8 +691,9 @@ function lcPresetOpen(outer){
 function lcPresetLoad(outer, env, page, id){
   const preset = LC_PRESETS.find(p => p.id === id); if(!preset) return;
   if(lcNodes(env).length && !confirm('Replace this circuit with “' + preset.name + '”?')) return;
+  lcCloseTruthFor(lcNodes(env));
   lcNodes(env).forEach(n => LG_CLOCK.delete(n.id));
-  const built = lcPresetBuild(preset,env); env.nodes = built.nodes; env.wires = built.wires;
+  const built = lcPresetBuild(preset); env.nodes = built.nodes; env.wires = built.wires;
   env.zoom = 1; env.viewX = 50; env.viewY = 50;
   LC_PICK.delete(env.id); LC_MODE.set(env.id,'move'); lcPresetClose(outer);
   queueSave(page.id); lcRefresh(outer,env,page); lgClockArm();
@@ -658,19 +728,19 @@ function lcTidy(outer, env, page){
   const groups = new Map();
   nodes.forEach(n => { const r = rank.get(n.id); if(!groups.has(r)) groups.set(r, []); groups.get(r).push(n); });
   const cols = [...groups].sort((a,b) => a[0]-b[0]).map(x => x[1].sort((a,b) => a.y-b.y));
-  const widths = cols.map(col => Math.max(...col.map(n => lcNodeWidth(env, n))));
+  const widths = cols.map(col => Math.max(...col.map(lcNodeWidth)));
   const sum = widths.reduce((a,b) => a+b,0);
   const gapX = cols.length < 2 ? 0 : clamp((96 - sum) / (cols.length - 1), 2, 7);
   const total = sum + gapX * (cols.length - 1), targets = [];
   let x = clamp(50 - total / 2, 2, Math.max(2, 98 - total));
   cols.forEach((col, ci) => {
-    const heights = col.map(n => lcNodeHeight(env, n));
+    const heights = col.map(lcNodeHeight);
     const h = heights.reduce((a,b) => a+b,0) + (col.length - 1) * 3;
     let y = clamp(50 - h / 2, 2, Math.max(2, 98 - h));
-    col.forEach((n,i) => { targets.push({ n, x:x + (widths[ci]-lcNodeWidth(env,n))/2, y }); y += heights[i] + 3; });
+    col.forEach((n,i) => { targets.push({ n, x:x + (widths[ci]-lcNodeWidth(n))/2, y }); y += heights[i] + 3; });
     x += widths[ci] + gapX;
   });
-  lcWires(env).forEach(w => { w.clean = 1; w.route = 0; });
+  lcWires(env).forEach(w => { if(w){ w.clean = 1; w.route = 0; } });
   let left = targets.length * 2, done = false; const moves = [];
   const finish = () => { if(done) return; done = true; outer._lcTidy = null;
     queueSave(page.id); lcPaint(outer, env, page); lgSay('circuit tidied'); SND.plop(); };
@@ -690,6 +760,9 @@ function lcTidy(outer, env, page){
 
 function lcKey(e){
   if(e.key !== 'Delete' && e.key !== 'Backspace' && e.key !== 'Escape') return false;
+  if(e.key === 'Escape' && lcCancelWire()){
+    e.preventDefault(); e.stopPropagation(); return true;
+  }
   const outer = document.querySelector('#pageHost .item[data-type="circuit"].sel');
   if(!outer) return false;
   const page = pageOfEl(outer), env = page && page.items.find(x => x.id === outer.dataset.id);
@@ -752,7 +825,7 @@ defineItem('circuit', {
     if(typeof ResizeObserver !== 'undefined'){
       const observer = new ResizeObserver(() => {
         if(!outer.isConnected) return;
-        lcApplyView(outer,it); lcInspector(outer,it,page);
+        lcApplyView(outer,it); lcInspector(outer,it);
       });
       observer.observe(outer); LC_RESIZE.set(it.id,observer);
     }
@@ -785,6 +858,7 @@ defineItem('circuit', {
     act('▦','Search and load a common circuit','presets',() => lcPresetOpen(outer));
     act('⌫','Remove every component and lead from this circuit','clear',() => {
       if(!lcNodes(it).length || confirm('Clear this circuit?')){
+        lcCloseTruthFor(lcNodes(it));
         lcNodes(it).forEach(n => LG_CLOCK.delete(n.id)); it.nodes=[]; it.wires=[]; LC_PICK.delete(it.id);
         queueSave(page.id); lcRefresh(outer,it,page); SND.pluck();
       }
@@ -792,7 +866,9 @@ defineItem('circuit', {
   },
   forget(it){
     if(it.type !== 'circuit') return;
+    if(LC_DRAG && LC_DRAG.env === it) lcCancelWire();
     const observer = LC_RESIZE.get(it.id); if(observer) observer.disconnect(); LC_RESIZE.delete(it.id);
+    lcCloseTruthFor(lcNodes(it));
     lcNodes(it).forEach(n => LG_CLOCK.delete(n.id)); LC_PICK.delete(it.id); LC_MODE.delete(it.id);
   },
   icon: it => '<svg viewBox="0 0 100 64" fill="none" stroke="currentColor" stroke-width="3" ' +
@@ -900,6 +976,7 @@ defineTool({ kind:'circuit', cat:'science', label:'Logic circuit', icon:'circuit
   hint:'A contained circuit with its components in a categorized side rail' });
 
 onNoteOpen(() => {
+  lcCancelWire();
   LC_RESIZE.forEach(observer => observer.disconnect()); LC_RESIZE.clear();
   LC_PICK.clear(); LC_MODE.clear();
 });
