@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 1718 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 1805 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,7 +22,7 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 1718 assertions, and they should
+It prints a pass/fail count and every failure. 1805 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
@@ -316,10 +316,15 @@ all pass — if one doesn't, that is a real regression.
   with five bonds wears the red halo, that the window slides so the drawing
   stays put as it grows, that rings go on empty paper, fuse on a bond and hang
   from an atom, that `caffeine` in the ⌕ box arrives laid out, that the
-  condensed and Lewis styles draw, that the 3D view has every ball with no
-  `NaN`, bonds within 12 % and no drift, that a drag turns it and a click
-  picks a shape, that the wheel sizes it, that labels, lone pairs and
-  space-fill draw with gradient ids unique to the item, that it all builds
+  condensed and Lewis styles draw, that the corner handle scales the 2D and 3D
+  panes together, that paper exports have transparent SVG/PNG grounds, black
+  connections and flat element colours, and that the ChemFig clipboard action
+  copies only molecule code with exact angles, lengths, ring hooks, shifted
+  skeletal double bonds and dotted hydrogen bonds, that highlight mode has a
+  neutral pointer and no editing ghost, that the 3D view has
+  every ball with no `NaN`, bonds within 12 % and no drift, that a drag turns it
+  and a click picks a shape, that the wheel sizes it, that labels, lone pairs
+  and space-fill draw with gradient ids unique to the live item, that it all builds
   statically, that the periodic table has 118 cells with rows no taller than
   its cells, taps neon and puts cerium on the f-block row, and that the picker opens, takes a click on Cl
   and `b` `r` `Enter` as bromine;

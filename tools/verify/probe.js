@@ -6524,17 +6524,36 @@
       ok('mol: lands empty, 2D, skeletal, straight',
         it && it.type === 'molecule' && it.atoms.length === 0 && it.view === '2d' && it.sty === 'skel' && it.rot === 0, JSON.stringify(it));
       var el = byType('molecule');
-      ok('mol: figure, svg, info strip and rail', !!el && !!el.querySelector('figure.mol') && !!el.querySelector('svg.molsvg') &&
-        !!el.querySelector('.molinfo') && !!el.querySelector('.molrail'));
+      ok('mol: figure, svg, info strip and both side rails', !!el && !!el.querySelector('figure.mol') && !!el.querySelector('svg.molsvg') &&
+        !!el.querySelector('.molinfo') && !!el.querySelector('.molrail') && !!el.querySelector('.molviewrail'));
       select(it.id);
       ok('mol: selected shows the rail', getComputedStyle(el.querySelector('.molrail')).display === 'flex');
       ok('mol: the rail shows the pen', el.querySelector('.molrail .mrel b').textContent === MOL_EL);
       var svg = function () { return el.querySelector('svg.molsvg'); };
+      var svg3 = function () { return el.querySelector('svg.mol3svg'); };
       var at = function (x, y) { var p = new DOMPoint(x * MOL_U, y * MOL_U).matrixTransform(svg().getScreenCTM()); return { clientX: p.x, clientY: p.y }; };
       var ev = function (type, pt, id, extra) {
         svg().dispatchEvent(new PointerEvent(type, Object.assign({ button: 0, pointerId: id, bubbles: true }, pt, extra || {}))); };
       var hover = function (pt) { window.dispatchEvent(new PointerEvent('pointermove', { clientX: pt.clientX, clientY: pt.clientY, bubbles: true })); };
       var key = function (k) { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); };
+      var viewToggle = el.querySelector('.molviewrail .mvtoggle');
+      ok('mol: the quiet right disclosure starts as > with its 3D companion hidden', viewToggle.textContent === '>' &&
+        viewToggle.getAttribute('aria-expanded') === 'false' && !!el.querySelector('.molviewrail .mvhi'));
+      viewToggle.click(); await sleep(20);
+      ok('mol: > opens a second live 3D window fully and immediately becomes <', it.peek === 100 && viewToggle.textContent === '<' &&
+        viewToggle.getAttribute('aria-expanded') === 'true' && svg().classList.contains('mol2svg') &&
+        !el.querySelector('.mol3win').hidden && svg3().classList.contains('m3d'));
+      var rs = el.querySelector('.rs'), size2 = svg().getBoundingClientRect().width, size3 = svg3().getBoundingClientRect().width;
+      molResizeTo(el, it, 30); await sleep(20);
+      ok('mol: its standard corner handle is available and scales both live panes together',
+        getComputedStyle(rs).display === 'block' && svg().getBoundingClientRect().width > size2 * 1.9 &&
+        svg3().getBoundingClientRect().width > size3 * 1.9 && it.fs === 30,
+        Math.round(size2) + '→' + Math.round(svg().getBoundingClientRect().width) + ' · ' +
+        Math.round(size3) + '→' + Math.round(svg3().getBoundingClientRect().width));
+      molResizeTo(el, it, MOL_FS);
+      viewToggle.click(); await sleep(20);
+      ok('mol: < closes the companion to zero without moving the editable drawing', it.peek === 0 && viewToggle.textContent === '>' &&
+        viewToggle.getAttribute('aria-expanded') === 'false' && svg().classList.contains('mol2svg') && el.querySelector('.mol3win').hidden);
       MOL_EL = 'C'; MOL_TOOL = 'draw'; MOL_BOND = 0;
       ev('pointerdown', at(0, 0), 11); ev('pointerup', at(0, 0), 11);
       await sleep(30);
@@ -6552,6 +6571,34 @@
       ev('pointerdown', at(a1.x, a1.y), 13); ev('pointerup', at(a1.x, a1.y), 13);
       await sleep(30);
       ok('mol: a click on an atom with the same pen sprouts a chain', it.atoms.length === 3 && it.bonds.length === 2);
+      /* ---- the ghost: the pointer casts what the click would keep ---- */
+      var ghostAt = function (x, y) {
+        var pt = at(x, y);
+        svg().dispatchEvent(new PointerEvent('pointermove', { clientX: pt.clientX, clientY: pt.clientY, bubbles: true, pointerId: 30 }));
+        return el.querySelector('.molsvg .mghost').innerHTML;
+      };
+      var far = ghostAt(it.atoms[0].x - 4, it.atoms[0].y + 3);
+      ok('mol: far from everything the ghost is one atom and no bond',
+        far.indexOf('class="gp') >= 0 && far.indexOf('<line') < 0, far.slice(0, 140));
+      var dOpen = molOpenDir(it, 2);
+      var hp = { x: it.atoms[2].x + Math.cos(dOpen) * .6, y: it.atoms[2].y + Math.sin(dOpen) * .6 };
+      var g1 = ghostAt(hp.x, hp.y);
+      ok('mol: hovering bare paper within reach of an atom casts a ghost bond as well',
+        g1.indexOf('class="gp') >= 0 && g1.indexOf('<line') >= 0, g1.slice(0, 140));
+      var promised = JSON.stringify(molPlan(it, 'draw', molHitFor(it, hp, 'draw'), hp, hp, false).sim);
+      ev('pointerdown', at(hp.x, hp.y), 31); ev('pointerup', at(hp.x, hp.y), 31); await sleep(30);
+      ok('mol: the click keeps exactly what the ghost promised',
+        JSON.stringify({ atoms: it.atoms, bonds: it.bonds, hb: it.hb }) === promised, promised);
+      var snapped = it.atoms[it.atoms.length - 1];
+      var dSnap = Math.hypot(snapped.x - it.atoms[2].x, snapped.y - it.atoms[2].y);
+      var aSnap = Math.atan2(snapped.y - it.atoms[2].y, snapped.x - it.atoms[2].x) / (Math.PI / 6);
+      ok('mol: it snapped one bond out on a 30° step, not to where the pointer was',
+        it.atoms.length === 4 && it.bonds.length === 3 && Math.abs(dSnap - 1) < .02 && Math.abs(aSnap - Math.round(aSnap)) < .02,
+        dSnap + ' ' + aSnap);
+      /* and off the paper the ghost is dropped */
+      el.querySelector('figure.mol').dispatchEvent(new PointerEvent('pointerleave', { bubbles: false, pointerId: 30 }));
+      ok('mol: the ghost goes when the pointer leaves', el.querySelector('.molsvg .mghost').innerHTML === '');
+      molDelAtom(it, 3); molEdit(it, el, page);
       /* keys with the pointer over the atom */
       var a2 = it.atoms[2];
       hover(at(a2.x, a2.y)); key('o');
@@ -6577,8 +6624,13 @@
       MOL_BOND = 0;
       ev('pointerdown', mid, 14); ev('pointerup', mid, 14); await sleep(30);
       ok('mol: a click on a single bond with the single pen makes it double', it.bonds[1].o === 2, it.bonds[1].o);
-      ev('pointerdown', mid, 15); ev('pointerup', mid, 15); ev('pointerdown', mid, 16); ev('pointerup', mid, 16); await sleep(30);
-      ok('mol: …then triple, then single again', it.bonds[1].o === 1, it.bonds[1].o);
+      ev('pointerdown', mid, 15); ev('pointerup', mid, 15); await sleep(30);
+      ok('mol: …and back to single, because a triple bond is more than O can hold', it.bonds[1].o === 1, it.bonds[1].o);
+      var cc = at((it.atoms[0].x + it.atoms[1].x) / 2, (it.atoms[0].y + it.atoms[1].y) / 2);
+      ev('pointerdown', cc, 151); ev('pointerup', cc, 151);
+      ev('pointerdown', cc, 152); ev('pointerup', cc, 152); await sleep(30);
+      ok('mol: between two carbons the cycle does reach triple', it.bonds[0].o === 3, it.bonds[0].o);
+      ev('pointerdown', cc, 153); ev('pointerup', cc, 153); await sleep(30);
       hover(at(it.atoms[2].x, it.atoms[2].y)); key('-'); await sleep(30);
       ok('mol: − over an atom charges it, and the formula carries the charge', it.atoms[2].q === -1 && chemFormula(it).plain === 'C2H5O-', chemFormula(it).plain);
       key('+'); await sleep(30);
@@ -6603,10 +6655,380 @@
         it.atoms.length + '/' + it.bonds.length + ' ' + chemFormula(it).plain + ' ' + chemName(it));
       ok('mol: nobody over-valent after the fuse', it.atoms.every(function (a, i) { return !chemOver(it, i); }));
       MOL_TOOL = 'ring'; MOL_RING = 1;
-      var a5 = it.atoms[5];
+      var a5 = it.atoms[5], nWas = it.atoms.length;
+      var gBad = ghostAt(a5.x, a5.y);
+      ok('mol: a ring that cannot be built casts a red ghost', gBad.indexOf('gp bad') >= 0, gBad.slice(0, 90));
+      ok('mol: …and the strip says which atom and why',
+        /cannot hold/.test(el.querySelector('.molinfo').textContent) && !!el.querySelector('.molinfo .mno'),
+        el.querySelector('.molinfo').textContent);
+      ok('mol: …and the pointer says no', svg().classList.contains('nogo'));
       ev('pointerdown', at(a5.x, a5.y), 17); ev('pointerup', at(a5.x, a5.y), 17); await sleep(30);
-      ok('mol: the ring tool on an atom hangs a cyclohexane off it', it.atoms.length === 15 && it.bonds.length === 17, it.atoms.length + '/' + it.bonds.length);
+      ok('mol: a ring hung off an aromatic carbon is refused — it would want five bonds',
+        it.atoms.length === nWas && el.querySelector('.molinfo .mno'), it.atoms.length + ' of ' + nWas);
+      /* a chain off the ring gives a carbon with room, and there the ring lands */
+      MOL_TOOL = 'draw'; MOL_EL = 'C'; MOL_BOND = 0;
+      ev('pointerdown', at(a5.x, a5.y), 18); ev('pointerup', at(a5.x, a5.y), 18); await sleep(30);
+      var tip = it.atoms.length - 1;
+      MOL_TOOL = 'ring';
+      ev('pointerdown', at(it.atoms[tip].x, it.atoms[tip].y), 19); ev('pointerup', at(it.atoms[tip].x, it.atoms[tip].y), 19); await sleep(30);
+      ok('mol: the ring tool on a carbon with room hangs a cyclohexane off it',
+        it.atoms.length === nWas + 6 && it.atoms.every(function (a, i) { return !chemOver(it, i); }), it.atoms.length + '/' + it.bonds.length);
       MOL_TOOL = 'draw';
+
+      /* ---- the chain: a zigzag dragged out, counted as it goes ---- */
+      page.items = []; await render();
+      addItem('molecule', { x: 10, y: 10 }, page); await sleep(120);
+      it = page.items[page.items.length - 1]; el = byType('molecule'); select(it.id);
+      MOL_TOOL = 'chain'; MOL_EL = 'C';
+      var tip = at(8 * MOL_AX, 0);
+      ev('pointerdown', at(0, 0), 40);
+      ev('pointermove', at(1.2, 0), 40);
+      ev('pointermove', tip, 40);
+      var gChain = el.querySelector('.molsvg .mghost').innerHTML;
+      ok('mol: the chain counts its carbons while it is dragged', /class="gc/.test(gChain), gChain.slice(0, 150));
+      ok('mol: …and says so under the drawing', /carbons/.test(el.querySelector('.molinfo').textContent),
+        el.querySelector('.molinfo').textContent);
+      ev('pointerup', tip, 40); await sleep(30);
+      ok('mol: a chain dragged eight long is nonane — nine carbons, eight bonds',
+        it.atoms.length === 9 && it.bonds.length === 8 && chemFormula(it).plain === 'C9H20',
+        it.atoms.length + '/' + it.bonds.length + ' ' + chemFormula(it).plain);
+      var zig = true;
+      it.bonds.forEach(function (b) {
+        var A = it.atoms[b.a], B = it.atoms[b.b];
+        var d = Math.hypot(B.x - A.x, B.y - A.y), g = Math.atan2(B.y - A.y, B.x - A.x) / (Math.PI / 6);
+        if (Math.abs(d - 1) > .02 || Math.abs(g - Math.round(g)) > .02) zig = false;
+      });
+      ok('mol: every bond of it is one long and on a 30° step', zig, JSON.stringify(it.atoms));
+      ok('mol: and it really does zigzag — two rows of carbons, not one',
+        new Set(it.atoms.map(function (a) { return Math.round(a.y * 100); })).size === 2,
+        it.atoms.map(function (a) { return a.y; }).join(' '));
+
+      /* ---- the ring tool, dragged: a row of fused rings ---- */
+      page.items = []; await render();
+      addItem('molecule', { x: 10, y: 10 }, page); await sleep(120);
+      it = page.items[page.items.length - 1]; el = byType('molecule'); select(it.id);
+      MOL_TOOL = 'ring'; MOL_RING = 1;
+      var rstep = 1 / Math.tan(Math.PI / 6);
+      ev('pointerdown', at(0, 0), 41);
+      ev('pointermove', at(rstep, 0), 41);
+      ev('pointermove', at(2 * rstep, 0), 41);
+      var gRing = el.querySelector('.molsvg .mghost').innerHTML;
+      ok('mol: a dragged row of rings is counted too', /class="gc/.test(gRing) && /rings/.test(el.querySelector('.molinfo').textContent),
+        el.querySelector('.molinfo').textContent);
+      ev('pointerup', at(2 * rstep, 0), 41); await sleep(30);
+      ok('mol: three fused six-rings — 14 carbons, 16 bonds, C14H24',
+        it.atoms.length === 14 && it.bonds.length === 16 && chemFormula(it).plain === 'C14H24',
+        it.atoms.length + '/' + it.bonds.length + ' ' + chemFormula(it).plain);
+      ok('mol: nobody over-valent in the row', it.atoms.every(function (a, i) { return !chemOver(it, i); }));
+
+      /* ---- folding a long chain into the repeat bracket ---- */
+      page.items = []; await render();
+      addItem('molecule', { x: 10, y: 10 }, page); await sleep(120);
+      it = page.items[page.items.length - 1]; el = byType('molecule'); select(it.id);
+      var m14 = chemFrom('CCCCCCCCCCCCCC');
+      it.atoms = m14.atoms; it.bonds = m14.bonds; it.box = molBox(it);
+      molEdit(it, el, page); await sleep(30);
+      var wide = it.box.w, f14 = chemFormula(it).plain, mass14 = chemMass(it), name14 = chemName(it);
+      MOL_TOOL = 'fold';
+      var mid7 = it.atoms[7];
+      var gFold = ghostAt(mid7.x, mid7.y);
+      ok('mol: hovering a foldable run shows the run and the count', /class="gs/.test(gFold) && /class="gc/.test(gFold), gFold.slice(0, 150));
+      ev('pointerdown', at(mid7.x, mid7.y), 42); ev('pointerup', at(mid7.x, mid7.y), 42); await sleep(30);
+      ok('mol: clicking a long run of CH₂ folds it away',
+        it.atoms.filter(function (a) { return a.f; }).length === 12 && !!el.querySelector('.molsvg .fd'),
+        it.atoms.filter(function (a) { return a.f; }).length + ' asleep');
+      ok('mol: the drawing really did shrink', it.box.w < wide - 5, wide + ' → ' + it.box.w);
+      ok('mol: the bracket says how many', !!el.querySelector('.molsvg text.fn') && el.querySelector('.molsvg text.fn').textContent === '12',
+        el.querySelector('.molsvg text.fn') && el.querySelector('.molsvg text.fn').textContent);
+      ok('mol: only the two ends are still drawn', el.querySelectorAll('.molsvg .ag').length === 2, el.querySelectorAll('.molsvg .ag').length);
+      ok('mol: and it is the same molecule — formula, mass and name untouched',
+        chemFormula(it).plain === f14 && Math.abs(chemMass(it) - mass14) < 1e-9 && chemName(it) === name14,
+        chemFormula(it).plain + ' / ' + f14);
+      var emb14 = molEmb(it);
+      ok('mol: in space the fold opens out again — every carbon is there',
+        emb14.atoms.filter(function (a) { return a.e === 'C'; }).length === 14,
+        emb14.atoms.filter(function (a) { return a.e === 'C'; }).length);
+      var worst14 = 0;
+      emb14.bonds.forEach(function (b) {
+        var A = emb14.atoms[b.a], B = emb14.atoms[b.b];
+        var d0 = CHEM_SYM[A.e].rcov + CHEM_SYM[B.e].rcov;
+        worst14 = Math.max(worst14, Math.abs(chemDist(A, B) - d0) / d0); });
+      ok('mol: the opened-out chain is a real chain in space, not a heap', worst14 < .12, worst14);
+      var fmid = at((it.atoms[0].x + it.atoms[13].x) / 2, (it.atoms[0].y + it.atoms[13].y) / 2);
+      ev('pointerdown', fmid, 43); ev('pointerup', fmid, 43); await sleep(30);
+      ok('mol: clicking the bracket opens it out again',
+        it.atoms.every(function (a) { return !a.f; }) && !el.querySelector('.molsvg .fd') && Math.abs(it.box.w - wide) < 1.2,
+        it.box.w + ' vs ' + wide);
+      /* a ring has no repeat notation, so the fold will not touch one */
+      page.items = []; await render();
+      addItem('molecule', { x: 10, y: 10 }, page); await sleep(120);
+      it = page.items[page.items.length - 1]; el = byType('molecule'); select(it.id);
+      var mcy = chemFrom('C1CCCCCC1'); it.atoms = mcy.atoms; it.bonds = mcy.bonds; it.box = molBox(it);
+      molEdit(it, el, page); await sleep(30);
+      MOL_TOOL = 'fold';
+      ev('pointerdown', at(it.atoms[3].x, it.atoms[3].y), 44); ev('pointerup', at(it.atoms[3].x, it.atoms[3].y), 44); await sleep(30);
+      ok('mol: a ring is never folded — there is no bracket that means “this ring again”',
+        it.atoms.every(function (a) { return !a.f; }) && !el.querySelector('.molsvg .fd'));
+
+      /* ---- the lasso, and what it hands you ---- */
+      page.items = []; await render();
+      addItem('molecule', { x: 10, y: 10 }, page); await sleep(120);
+      it = page.items[page.items.length - 1]; el = byType('molecule'); select(it.id);
+      var mA = chemFrom('CCO'), mB = chemFrom('CC');
+      it.atoms = mA.atoms; it.bonds = mA.bonds;
+      var off = it.atoms.length;
+      mB.atoms.forEach(function (a) { it.atoms.push({ e: a.e, x: a.x + 7, y: a.y + 4, q: 0, h: null, iso: null, f: 0 }); });
+      mB.bonds.forEach(function (b) { it.bonds.push({ a: b.a + off, b: b.b + off, o: b.o, s: b.s }); });
+      it.box = molBox(it); molEdit(it, el, page); await sleep(30);
+      MOL_TOOL = 'lasso';
+      ev('pointerdown', at(it.atoms[0].x, it.atoms[0].y), 45); ev('pointerup', at(it.atoms[0].x, it.atoms[0].y), 45); await sleep(60);
+      ok('mol: a lasso click takes the whole molecule under it, not one atom',
+        MOL_SEL.get(it.id).size === 3, MOL_SEL.get(it.id).size + ' of ' + it.atoms.length);
+      ok('mol: and the menu appears, with turn, chirality, move and copy on it',
+        Q('#molmenu').classList.contains('open') &&
+        QA('#molmenu button').map(function (b) { return b.dataset.a; }).join(',') === 'rot,chir,move,copy',
+        QA('#molmenu button').map(function (b) { return b.dataset.a; }).join(','));
+      var nAt = it.atoms.length, nBd = it.bonds.length;
+      QA('#molmenu button').filter(function (b) { return b.dataset.a === 'copy'; })[0].click(); await sleep(60);
+      ok('mol: copy lays another one down beside it, and hands you the copy',
+        it.atoms.length === nAt + 3 && it.bonds.length === nBd + 2 &&
+        Math.min.apply(null, Array.from(MOL_SEL.get(it.id))) === nAt,
+        it.atoms.length + '/' + it.bonds.length);
+      QA('#molmenu button').filter(function (b) { return b.dataset.a === 'rot'; })[0].click();
+      ok('mol: turn arms the next drag rather than doing anything itself', MOL_ARM === 'rot');
+      var sIdx = Array.from(MOL_SEL.get(it.id));
+      var cx = sIdx.reduce(function (s, i) { return s + it.atoms[i].x; }, 0) / sIdx.length;
+      var cy = sIdx.reduce(function (s, i) { return s + it.atoms[i].y; }, 0) / sIdx.length;
+      var r0 = sIdx.map(function (i) { return Math.hypot(it.atoms[i].x - cx, it.atoms[i].y - cy); });
+      var x0 = sIdx.map(function (i) { return it.atoms[i].x; });
+      ev('pointerdown', at(cx + 1.5, cy), 46);
+      ev('pointermove', at(cx + 1, cy + 1), 46);
+      ev('pointermove', at(cx, cy + 1.5), 46);
+      ev('pointerup', at(cx, cy + 1.5), 46); await sleep(30);
+      var kept = sIdx.every(function (i, t) { return Math.abs(Math.hypot(it.atoms[i].x - cx, it.atoms[i].y - cy) - r0[t]) < .03; });
+      var turned = sIdx.some(function (i, t) { return Math.abs(it.atoms[i].x - x0[t]) > .3; });
+      ok('mol: dragging then turns it about its own middle, keeping every distance', kept && turned, r0.join(' '));
+      ok('mol: and the arming is spent once it has been used', MOL_ARM === null);
+      /* a loop round the first molecule takes what is inside it and nothing else */
+      MOL_SEL.get(it.id).clear(); molRepaint(el, it, null);
+      var lx0 = -1.6, lx1 = 3.2, ly0 = -2, ly1 = 2;
+      ev('pointerdown', at(lx0, ly0), 47);
+      ev('pointermove', at(lx1, ly0), 47);
+      ev('pointermove', at(lx1, ly1), 47);
+      ev('pointermove', at(lx0, ly1), 47);
+      ev('pointerup', at(lx0, ly0), 47); await sleep(60);
+      var lassoed = Array.from(MOL_SEL.get(it.id));
+      ok('mol: a loop takes what is inside it and nothing else',
+        lassoed.length > 0 && lassoed.every(function (i) {
+          return it.atoms[i].x > lx0 && it.atoms[i].x < lx1 && it.atoms[i].y > ly0 && it.atoms[i].y < ly1; }),
+        lassoed.join(',') + ' of ' + it.atoms.length);
+
+      /* ---- the hydrogen bond: dotted, and outside the chemistry ---- */
+      page.items = []; await render();
+      addItem('molecule', { x: 10, y: 10 }, page); await sleep(120);
+      it = page.items[page.items.length - 1]; el = byType('molecule'); select(it.id);
+      /* two waters, drawn apart */
+      it.atoms = []; it.bonds = []; it.hb = [];
+      molAddAtom(it, 'O', 0, 0); molAddAtom(it, 'O', 3, 0);
+      it.box = molBox(it); molEdit(it, el, page); await sleep(30);
+      var fW = chemFormula(it).plain, mW = chemMass(it), smW = chemWrite(it);
+      MOL_TOOL = 'draw'; MOL_BOND = MOL_BONDS.length - 1;
+      ok('mol: the bond pen has a sixth setting, and it is the hydrogen bond', !!MOL_BONDS[MOL_BOND].hb);
+      ev('pointerdown', at(0, 0), 60);
+      ev('pointermove', at(1.4, 0), 60);
+      var gHbLead = el.querySelector('.molsvg .mghost').innerHTML;
+      ok('mol: the hydrogen-bond ghost follows the hand before it reaches another atom', /class="hb"/.test(gHbLead), gHbLead.slice(0, 160));
+      ev('pointermove', at(3, 0), 60);
+      var gHb = el.querySelector('.molsvg .mghost').innerHTML;
+      ok('mol: dragging the dotted pen from one atom to another promises a dotted link', /class="hb"/.test(gHb), gHb.slice(0, 160));
+      ev('pointerup', at(3, 0), 60); await sleep(30);
+      ok('mol: and the click keeps it', it.hb.length === 1 && it.hb[0].a === 0 && it.hb[0].b === 1, JSON.stringify(it.hb));
+      ok('mol: it is drawn as dots, not as a bond', !!el.querySelector('.molsvg line.hb') && it.bonds.length === 0);
+      ok('mol: it holds no valence — the two oxygens still carry two hydrogens each',
+        chemH(it, 0) === 2 && chemH(it, 1) === 2 && !chemOver(it, 0) && !chemOver(it, 1),
+        chemH(it, 0) + '/' + chemH(it, 1));
+      ok('mol: and the molecule is exactly what it was — formula, mass, SMILES, and still two of them',
+        chemFormula(it).plain === fW && chemMass(it) === mW && chemWrite(it) === smW && chemComps(it).comps.length === 2,
+        chemFormula(it).plain + ' | ' + chemWrite(it));
+      ok('mol: it closes no ring', chemRings(it).length === 0);
+      var tidyHb = molClone(it);
+      tidyHb.atoms[0].x = -8; tidyHb.atoms[0].y = 5; tidyHb.atoms[1].x = 9; tidyHb.atoms[1].y = -6;
+      molTidyLayout(tidyHb);
+      var tidyHbLen = Math.hypot(tidyHb.atoms[1].x - tidyHb.atoms[0].x, tidyHb.atoms[1].y - tidyHb.atoms[0].y);
+      ok('mol: tidy treats a hydrogen bond as a layout constraint without making it covalent',
+        Math.abs(tidyHbLen - MOL_HB_LEN) < .04 && tidyHb.hb.length === 1 && tidyHb.bonds.length === 0,
+        tidyHbLen + ' · ' + JSON.stringify(tidyHb.hb));
+      /* A bridge can hand layout two fixed ring atoms with several sides still
+         missing. Those sides must lie on a true polygonal arc: the former sine
+         bulge visibly alternated long and short edges in this pair of six-rings. */
+      var bridgedHex = chemLayout(chemParse('C1CC2CCC1CC2'));
+      var bridgedSides = chemRings(bridgedHex).filter(function (r) { return r.atoms.length === 6; }).map(function (r) {
+        return r.atoms.map(function (a, k) {
+          var b = r.atoms[(k + 1) % r.atoms.length];
+          return Math.hypot(bridgedHex.atoms[b].x - bridgedHex.atoms[a].x, bridgedHex.atoms[b].y - bridgedHex.atoms[a].y);
+        });
+      });
+      ok('mol: tidy keeps constrained six-membered rings regular instead of alternating long and short sides',
+        bridgedSides.length === 2 && bridgedSides.every(function (s) { return Math.max.apply(Math, s) - Math.min.apply(Math, s) < .01; }),
+        JSON.stringify(bridgedSides));
+      /* the right-side highlighter owns an additive correspondence set, and its
+         3D aura is deliberately the last painted primitive so depth cannot hide it */
+      var hiBtn = el.querySelector('.molviewrail .mvhi'); hiBtn.click();
+      ev('pointermove', at(0, 0), 600); await sleep(20);
+      ok('mol: highlight mode uses a neutral pointer and casts no editing ghost',
+        getComputedStyle(svg()).cursor === 'default' && el.querySelector('.mol2svg .mghost').innerHTML === '',
+        getComputedStyle(svg()).cursor + ' · ' + el.querySelector('.mol2svg .mghost').innerHTML.slice(0, 100));
+      ev('pointerdown', at(0, 0), 601); ev('pointerup', at(0, 0), 601); await sleep(20);
+      ok('mol: the highlighter picks an atom in the drawing', Array.isArray(it.hi) && it.hi.length === 1 && it.hi[0].t === 'a' && it.hi[0].i === 0 && !!el.querySelector('.mol2svg .mhi2 .mha'));
+      ev('pointerdown', at(1.5, 0), 602); ev('pointerup', at(1.5, 0), 602); await sleep(20);
+      ok('mol: picking a link adds it without dropping the atom highlight',
+        it.hi.length === 2 && it.hi.some(function (h) { return h.t === 'a'; }) && it.hi.some(function (h) { return h.t === 'h'; }) &&
+        !!el.querySelector('.mol2svg .mhi2 .mha') && !!el.querySelector('.mol2svg .mhi2 .mhl.dotted'));
+      viewToggle = el.querySelector('.molviewrail .mvtoggle'); viewToggle.click(); await sleep(20);
+      ok('mol: every highlight carries into the companion as one always-front aura layer',
+        svg().classList.contains('mol2svg') && !!svg3().querySelector('.mhi3 .mha3') && !!svg3().querySelector('.mhi3 .mhl3.dotted') &&
+        svg3().lastElementChild.classList.contains('mhi3'));
+      var pickSrc = function (src) {
+        var q = el._molPts.filter(function (p) { return p.src === src; })[0];
+        var p = new DOMPoint(q.x, q.y).matrixTransform(svg3().getScreenCTM());
+        molPick3D(el, it, svg3(), { clientX:p.x, clientY:p.y });
+      };
+      MOL_PICK = null; pickSrc(0); pickSrc(1); await sleep(20);
+      var hiStroke = getComputedStyle(svg3().querySelector('.mhl3')).stroke;
+      var measureStroke = getComputedStyle(svg3().querySelector('.pkl')).stroke;
+      ok('mol: distance measurement uses a different colour from highlighting',
+        hiStroke && measureStroke && hiStroke !== measureStroke && /Å/.test(el.querySelector('.molinfo .pkm').textContent), hiStroke + ' / ' + measureStroke);
+      MOL_PICK = null; hiBtn.click(); delete it.hi; molRepaint(el, it);
+      var e3h = molEmb(it);
+      ok('mol: in space it is drawn too, and joins no atoms that were not joined',
+        e3h.bonds.length === 4, e3h.bonds.length);
+      it.peek = 100; molRepaint(el, it);
+      ok('mol: the companion draws the dotted link', el.querySelectorAll('.mol3svg line.hb3').length === 1,
+        el.querySelectorAll('.mol3svg line.hb3').length);
+      it.peek = 0; molRepaint(el, it);
+      /* the same two atoms again is nothing new */
+      ev('pointerdown', at(0, 0), 61); ev('pointermove', at(1.4, 0), 61); ev('pointermove', at(3, 0), 61);
+      ev('pointerup', at(3, 0), 61); await sleep(30);
+      ok('mol: drawing the same one twice adds nothing', it.hb.length === 1);
+      /* clicking it with the dotted pen takes it away again */
+      ev('pointerdown', at(1.5, 0), 62); ev('pointerup', at(1.5, 0), 62); await sleep(30);
+      ok('mol: clicking a dotted link with the dotted pen takes it away', it.hb.length === 0);
+      /* what it will not do. Two waters, two lone carbons, and two formaldehydes:
+         a lone pair with no hydrogen anywhere near it is not a hydrogen bond */
+      it.atoms = []; it.bonds = []; it.hb = [];
+      molAddAtom(it, 'O', 0, 0); molAddAtom(it, 'O', 3, 0);
+      molAddAtom(it, 'C', 0, 3); molAddAtom(it, 'C', 3, 3);
+      molAddAtom(it, 'O', 0, 6); molAddAtom(it, 'C', 1, 6);
+      molAddAtom(it, 'O', 4, 6); molAddAtom(it, 'C', 5, 6);
+      molAddBond(it, 4, 5, 2, 0); molAddBond(it, 6, 7, 2, 0);
+      it.box = molBox(it); molEdit(it, el, page); await sleep(30);
+      ok('mol: two waters can hydrogen bond', molWhyNoHB(it, 0, 1) === '', molWhyNoHB(it, 0, 1));
+      ok('mol: two carbons cannot — nothing there has a lone pair to accept one',
+        /lone pair/.test(molWhyNoHB(it, 2, 3)), molWhyNoHB(it, 2, 3));
+      ok('mol: two carbonyl oxygens cannot — a lone pair each, but no hydrogen between them',
+        /hydrogen to give/.test(molWhyNoHB(it, 4, 6)), molWhyNoHB(it, 4, 6));
+      ok('mol: nor can two atoms already bonded to each other',
+        /bonded already/.test(molWhyNoHB(it, 4, 5)), molWhyNoHB(it, 4, 5));
+      ok('mol: a carbon with hydrogens on it may still give one to an oxygen — C–H···O is real',
+        molWhyNoHB(it, 2, 4) === '', molWhyNoHB(it, 2, 4));
+      /* the refusal really does stop the drag */
+      var hb0 = it.hb.length;
+      ev('pointerdown', at(it.atoms[2].x, it.atoms[2].y), 63);
+      ev('pointermove', at(it.atoms[3].x - .5, it.atoms[3].y), 63);
+      ev('pointermove', at(it.atoms[3].x, it.atoms[3].y), 63);
+      var gBadHb = el.querySelector('.molsvg .mghost').innerHTML;
+      var strip = el.querySelector('.molinfo').textContent;
+      ev('pointerup', at(it.atoms[3].x, it.atoms[3].y), 63); await sleep(30);
+      ok('mol: a dotted link that could not exist is shown red, said out loud, and refused',
+        /gp bad/.test(gBadHb) && /lone pair/.test(strip) && it.hb.length === hb0,
+        gBadHb.slice(0, 80) + ' | ' + strip + ' | ' + it.hb.length);
+      /* the eraser takes one, and deleting an atom takes the ones that hung off it */
+      it.hb = [{ a: 0, b: 1 }]; molEdit(it, el, page); await sleep(30);
+      MOL_TOOL = 'erase';
+      ev('pointerdown', at(1.5, 0), 64); ev('pointerup', at(1.5, 0), 64); await sleep(30);
+      ok('mol: the eraser takes a dotted link', it.hb.length === 0);
+      it.hb = [{ a: 0, b: 1 }];
+      molDelAtom(it, 0);
+      ok('mol: deleting an atom takes the dotted links that hung off it, and renumbers the rest',
+        it.hb.length === 0, JSON.stringify(it.hb));
+      it.atoms = []; it.bonds = []; it.hb = [];
+      molAddAtom(it, 'O', 0, 0); molAddAtom(it, 'C', 2, 0); molAddAtom(it, 'O', 4, 0);
+      it.hb = [{ a: 1, b: 2 }];
+      molDelAtom(it, 0);
+      ok('mol: …and the renumbering is right', it.hb.length === 1 && it.hb[0].a === 0 && it.hb[0].b === 1, JSON.stringify(it.hb));
+      MOL_TOOL = 'draw'; MOL_BOND = 0;
+
+      /* ---- chirality: stereo state, not an axis reflection ---- */
+      page.items = []; await render();
+      addItem('molecule', { x: 10, y: 10 }, page); await sleep(120);
+      it = page.items[page.items.length - 1]; el = byType('molecule'); select(it.id);
+      var mp = chemFrom('CCCO'); it.atoms = mp.atoms; it.bonds = mp.bonds; it.box = molBox(it);
+      molEdit(it, el, page); await sleep(30);
+      MOL_TOOL = 'lasso';
+      ev('pointerdown', at(it.atoms[0].x, it.atoms[0].y), 50); ev('pointerup', at(it.atoms[0].x, it.atoms[0].y), 50); await sleep(60);
+      ok('mol: the menu offers one semantic chirality operation instead of page-axis mirrors',
+        QA('#molmenu button').map(function (b) { return b.dataset.a; }).join(',') === 'rot,chir,move,copy',
+        QA('#molmenu button').map(function (b) { return b.dataset.a; }).join(','));
+      var plainWas = JSON.stringify(it.atoms.map(function (a) { return [a.x, a.y]; }));
+      QA('#molmenu button').filter(function (b) { return b.dataset.a === 'chir'; })[0].click(); await sleep(30);
+      ok('mol: chirality does not pretend a plain fragment has stereochemistry or move it',
+        JSON.stringify(it.atoms.map(function (a) { return [a.x, a.y]; })) === plainWas && /no selected stereochemistry/.test(el.querySelector('.molinfo').textContent),
+        el.querySelector('.molinfo').textContent);
+
+      /* A real stereocentre is rotated arbitrarily on the page first. Chirality
+         must invert in space without using that orientation, and tidy must keep it. */
+      page.items = []; await render();
+      addItem('molecule', { x: 10, y: 10 }, page); await sleep(120);
+      it = page.items[page.items.length - 1]; el = byType('molecule'); select(it.id);
+      it.atoms = []; it.bonds = [];
+      molAddAtom(it, 'C', 0, 0); molAddAtom(it, 'F', -1, 0); molAddAtom(it, 'Cl', 1, 0);
+      molAddAtom(it, 'Br', 0, -1); molAddAtom(it, 'I', 0, 1);
+      molAddBond(it, 0, 1, 1, 0); molAddBond(it, 0, 2, 1, 0);
+      molAddBond(it, 0, 3, 1, 1); molAddBond(it, 0, 4, 1, 2);
+      var ca = Math.cos(.73), sa = Math.sin(.73);
+      it.atoms.forEach(function (a) { var x = a.x, y = a.y; a.x = molRd(x * ca - y * sa); a.y = molRd(x * sa + y * ca); });
+      it.box = molBox(it); molEdit(it, el, page); await sleep(30);
+      var hand = function () {
+        MOL_CACHE.delete(it.id);
+        var e3 = molEmb(it), C = -1;
+        e3.atoms.forEach(function (a, i) { if (a.src === 0) C = i; });
+        if (C < 0 || !e3.nb[C] || e3.nb[C].length < 4) return 0;
+        var ns = e3.nb[C].map(function (x) { return { j: x.j, s: e3.atoms[x.j].src }; })
+                  .sort(function (a, b) { return a.s - b.s; });
+        var P0 = e3.atoms[C];
+        var v = ns.slice(0, 3).map(function (n) { var q = e3.atoms[n.j]; return [q.x - P0.x, q.y - P0.y, q.z - P0.z]; });
+        var d = v[0][0] * (v[1][1] * v[2][2] - v[1][2] * v[2][1])
+              - v[0][1] * (v[1][0] * v[2][2] - v[1][2] * v[2][0])
+              + v[0][2] * (v[1][0] * v[2][1] - v[1][1] * v[2][0]);
+        return Math.abs(d) < .2 ? 0 : Math.sign(d);
+      };
+      MOL_SEL.set(it.id, new Set([0, 1, 2, 3, 4]));
+      var h1 = hand(), stereoWas = it.bonds.map(function (b) { return b.s || 0; });
+      var coordsWas = JSON.stringify(it.atoms.map(function (a) { return [a.x, a.y]; }));
+      molInvertChirality(it, el, page); await sleep(30);
+      var h2 = hand();
+      ok('mol: chirality reverses the centre in space without moving any 2D coordinate',
+        h1 !== 0 && h2 === -h1 && JSON.stringify(it.atoms.map(function (a) { return [a.x, a.y]; })) === coordsWas, h1 + ' → ' + h2);
+      ok('mol: wedge and hash depth directions invert, independent of the page angle',
+        it.bonds[2].s === 2 && it.bonds[3].s === 1 && stereoWas[2] === 1 && stereoWas[3] === 2,
+        stereoWas.join(',') + ' → ' + it.bonds.map(function (b) { return b.s || 0; }).join(','));
+      ok('mol: the strip counts the stereocentre that changed',
+        /1 stereocentre/.test(el.querySelector('.molinfo').textContent) && /orientation independent/.test(el.querySelector('.molinfo').textContent),
+        el.querySelector('.molinfo').textContent);
+      var stereoInverted = it.bonds.map(function (b) { return b.s || 0; }).join(',');
+      var tidyBtn = QA('#pageHost .item[data-type=molecule] .tools button').filter(function (b) { return b.textContent === '⟲'; })[0];
+      tidyBtn.click(); await sleep(60);
+      ok('mol: tidy preserves the chirality operation instead of undoing it',
+        it.bonds.map(function (b) { return b.s || 0; }).join(',') === stereoInverted && hand() === h2,
+        it.bonds.map(function (b) { return b.s || 0; }).join(',') + ' · hand ' + hand());
+      MOL_SEL.set(it.id, new Set([0, 1, 2, 3, 4]));
+      molInvertChirality(it, el, page); await sleep(30);
+      ok('mol: applying chirality twice returns the original handedness', hand() === h1, hand() + ' vs ' + h1);
+
+      MOL_TOOL = 'draw'; molMenuClose(); MOL_SEL.delete(it.id);
+      /* the hand comes off the drawing, so the strip goes back to saying what it is */
+      el.querySelector('figure.mol').dispatchEvent(new PointerEvent('pointerleave', { bubbles: false, pointerId: 48 }));
+
       /* the ⌕ box */
       var askBtn = QA('#pageHost .item[data-type=molecule] .tools button').filter(function (b) { return b.textContent === '⌕'; })[0];
       ok('mol: has the ⌕ button', !!askBtn);
@@ -6630,7 +7052,66 @@
       ok('mol: 3D draws a ball for every atom, hydrogens included', el.querySelectorAll('.molsvg.m3d circle.ball').length === 24,
         el.querySelectorAll('.molsvg.m3d circle.ball').length);
       ok('mol: 3D bonds as half-sticks', el.querySelectorAll('.molsvg.m3d line.stick').length >= 50);
-      ok('mol: no NaN in 3D', svg().innerHTML.indexOf('NaN') < 0);
+      ok('mol: 2D remains visible beside a finite 3D companion', svg().classList.contains('mol2svg') && svg3().innerHTML.indexOf('NaN') < 0);
+      /* SVG and PNG are both first-class exports for either pane, and the 2D
+         graph can be copied as ChemFig. The 3D file is made from the saved
+         yaw/pitch, not a home pose or a screenshot of the side window. */
+      var exportBtn = QA('#pageHost .item[data-type=molecule] .tools button').filter(function (b) { return b.textContent === '⇩'; })[0];
+      exportBtn.click(); await sleep(40);
+      var exportChoices = QA('#molexport button').map(function (b) { return b.dataset.v + '-' + b.dataset.f; });
+      ok('mol: export offers both picture formats for both panes and a ChemFig clipboard action', Q('#molexport').classList.contains('open') &&
+        exportChoices.join('|') === '2d-svg|2d-png|3d-svg|3d-png|2d-latex' && /Copy LaTeX/.test(Q('#molexport .moltex').textContent), exportChoices.join('|'));
+      Q('#molexport button').dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true, cancelable:true })); await sleep(260);
+      ok('mol: Escape closes only the export menu and leaves the molecule selected', !MOL_EXPORT &&
+        !Q('#molexport').classList.contains('open') && el.classList.contains('sel'));
+      it.yaw = .57; it.pitch = -.22; molRepaint(el, it);
+      var art2 = molExportArt(it, '2d'), art3 = molExportArt(it, '3d');
+      ok('mol: standalone 2D SVG is transparent paper artwork with black bonds, element colours and no editing marks',
+        /<svg/.test(art2.text) && /mol2svg/.test(art2.text) && /class="bd"/.test(art2.text) &&
+        !/mghost|msel|drop-shadow|mol_export_bg/.test(art2.text) && /#000000/.test(art2.text) &&
+        !Array.from(art2.svg.children).some(function (n) { return n.tagName.toLowerCase() === 'rect'; }), art2.text.slice(0, 180));
+      ok('mol: standalone 3D SVG keeps the pose but flattens spheres and sticks onto transparency',
+        /mol3svg/.test(art3.text) && /class="ball"/.test(art3.text) && !/mol_export_bg|radialGradient|drop-shadow/.test(art3.text) &&
+        /#000000/.test(art3.text) && !Array.from(art3.svg.children).some(function (n) { return n.tagName.toLowerCase() === 'rect'; }),
+        art3.text.slice(0, 180));
+      var latex = molChemfigLatex(it);
+      ok('mol: copied ChemFig is only molecule code, with exact angle/length bonds and official hooks for rings',
+        latex.indexOf('\\chemfig{') === 0 && !/usepackage|Requires/.test(latex) && /\[:[-\d.]+,[\d.]+\]/.test(latex) && /\?\[h\d+\]/.test(latex),
+        latex.slice(0, 220));
+      var ringLatex = molChemfigLatex(chemLayout(chemParse('C1=CC=CC=C1')));
+      ok('mol: internal double bonds use ChemFig shifted-double syntax for a continuous skeletal line',
+        /=[_^]\[:/.test(ringLatex), ringLatex);
+      var htex = molChemfigLatex({ atoms:[{e:'O',x:0,y:0,q:0,h:null},{e:'O',x:2,y:0,q:0,h:null}], bonds:[], hb:[{a:0,b:1}], sty:'skel' });
+      ok('mol: ChemFig carries hydrogen bonds as black dotted connections', /densely dotted/.test(htex), htex);
+      var savedPictures = [], oldSaveFile = PLAT.saveFile;
+      PLAT.saveFile = function (name, blob) { savedPictures.push({ name:name, blob:blob }); return Promise.resolve(); };
+      await molExportFile(it, el, '2d', 'svg');
+      await molExportFile(it, el, '2d', 'png');
+      await molExportFile(it, el, '3d', 'svg');
+      await molExportFile(it, el, '3d', 'png');
+      PLAT.saveFile = oldSaveFile;
+      ok('mol: the four image choices hand a correctly named, non-empty file to the platform',
+        savedPictures.length === 4 && savedPictures.map(function (x) { return x.name.replace(/^.* — /, ''); }).join('|') ===
+          '2D.svg|2D.png|3D.svg|3D.png' && savedPictures.every(function (x) { return x.blob.size > 100; }),
+        savedPictures.map(function (x) { return x.name + ':' + x.blob.type + ':' + x.blob.size; }).join(' | '));
+      ok('mol: PNG choices are real PNG blobs and SVG stays vector',
+        savedPictures[0] && savedPictures[0].blob.type.indexOf('image/svg+xml') === 0 && savedPictures[1].blob.type === 'image/png' &&
+        savedPictures[2].blob.type.indexOf('image/svg+xml') === 0 && savedPictures[3].blob.type === 'image/png',
+        savedPictures.map(function (x) { return x.blob.type; }).join('|'));
+      var copiedLatex = '', clipOwn = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:function (s) { copiedLatex = s; return Promise.resolve(); } } });
+      await molCopyChemfig(it, el);
+      if(clipOwn) Object.defineProperty(navigator, 'clipboard', clipOwn); else delete navigator.clipboard;
+      ok('mol: Copy LaTeX writes only the current ChemFig molecule code to the clipboard and creates no fifth file',
+        copiedLatex === latex && copiedLatex.indexOf('\\chemfig{') === 0 && !/usepackage/.test(copiedLatex) && savedPictures.length === 4,
+        copiedLatex.slice(0, 180));
+      var alphaAtCorner = async function (blob) {
+        var bmp = await createImageBitmap(blob), can = document.createElement('canvas'); can.width = 1; can.height = 1;
+        can.getContext('2d').drawImage(bmp, 0, 0, 1, 1, 0, 0, 1, 1); bmp.close();
+        return can.getContext('2d').getImageData(0, 0, 1, 1).data[3];
+      };
+      var pngAlpha = [await alphaAtCorner(savedPictures[1].blob), await alphaAtCorner(savedPictures[3].blob)];
+      ok('mol: both PNG formats preserve a fully transparent background', pngAlpha[0] === 0 && pngAlpha[1] === 0, pngAlpha.join(','));
       /* space-filling: every gradient and mask an svg refers to has to live inside that
          same svg. The ids carry a counter that climbs with every repaint, so two
          molecules on one sheet will collide the moment one is dragged unless the
@@ -6644,7 +7125,7 @@
       el = mels[0];                                   /* render() swapped the nodes */
       var m2 = chemLayout(chemParse('C1CCCCC1'));
       it2.atoms = m2.atoms; it2.bonds = m2.bonds; it2.box = molBox(it2);
-      it2.view = '3d'; it2.s3 = 'fill'; it2.pitch = 1; molRepaint(mels[1], it2);
+      it2.peek = 100; it2.s3 = 'fill'; it2.pitch = 1; molRepaint(mels[1], it2);
       it.s3 = 'fill'; molRepaint(el, it); await sleep(20);
       var stray = 0, twice = 0, ids = {};
       for (var sp = 0; sp < 40; sp++) {
@@ -6678,7 +7159,8 @@
       /* put the sheet back the way the rest of the stage expects it */
       page.items = page.items.filter(function (x) { return x !== it2; });
       await render(); el = byType('molecule'); select(it.id); await sleep(30);
-      ok('mol: the rail steps aside in 3D', getComputedStyle(el.querySelector('.molrail')).display === 'none');
+      ok('mol: the drawing rail remains available while its 3D companion is open',
+        getComputedStyle(el.querySelector('.molrail')).display === 'flex' && !!el.querySelector('.mol2svg') && !!el.querySelector('.mol3svg'));
       var emb = molEmb(it), worst = 0;
       emb.bonds.forEach(function (b, k) {
         var A = emb.atoms[b.a], B = emb.atoms[b.b];
@@ -6688,22 +7170,24 @@
       var drift = 0;
       emb.atoms.forEach(function (a) { if (a.src < 0) return; var d = it.atoms[a.src]; drift = Math.max(drift, Math.hypot(a.x / 1.45 - d.x, a.y / 1.45 - d.y)); });
       ok('mol: the 3D keeps the face of the drawing', drift < .6, drift);
-      var r = svg().getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, y0 = it.yaw || 0;
-      ev('pointerdown', { clientX: cx, clientY: cy }, 21); ev('pointermove', { clientX: cx + 40, clientY: cy + 5 }, 21);
-      ev('pointermove', { clientX: cx + 80, clientY: cy + 10 }, 21); ev('pointerup', { clientX: cx + 80, clientY: cy + 10 }, 21);
+      var ev3 = function (type, pt, id, extra) {
+        svg3().dispatchEvent(new PointerEvent(type, Object.assign({ button:0, pointerId:id, bubbles:true }, pt, extra || {}))); };
+      var r = svg3().getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, y0 = it.yaw || 0;
+      ev3('pointerdown', { clientX: cx, clientY: cy }, 21); ev3('pointermove', { clientX: cx + 40, clientY: cy + 5 }, 21);
+      ev3('pointermove', { clientX: cx + 80, clientY: cy + 10 }, 21); ev3('pointerup', { clientX: cx + 80, clientY: cy + 10 }, 21);
       /* read at once: synthetic moves have no time between them, so the flick that follows is absurd — and clamped */
       ok('mol: dragging turns it', Math.abs((it.yaw || 0) - y0 - .88) < .01, it.yaw);
       molStopSpin(it); await sleep(30);
-      var near = el._molPts[0], pp = new DOMPoint(near.x, near.y).matrixTransform(svg().getScreenCTM());
-      ev('pointerdown', { clientX: pp.x, clientY: pp.y }, 22); ev('pointerup', { clientX: pp.x, clientY: pp.y }, 22); await sleep(30);
+      var near = el._molPts[0], pp = new DOMPoint(near.x, near.y).matrixTransform(svg3().getScreenCTM());
+      ev3('pointerdown', { clientX: pp.x, clientY: pp.y }, 22); ev3('pointerup', { clientX: pp.x, clientY: pp.y }, 22); await sleep(30);
       var pkm = el.querySelector('.molinfo .pkm');
       ok('mol: a click picks an atom and names its shape',
         MOL_PICK && MOL_PICK.id === it.id && MOL_PICK.atoms.length === 1 && !!pkm && /tetrahedral|trigonal/.test(pkm.textContent), pkm && pkm.textContent);
       var z0 = it.zoom || 1;
-      svg().dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
+      svg3().dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
       ok('mol: the wheel scales it', (it.zoom || 1) > z0);
       var z1 = it.zoom;
-      svg().dispatchEvent(new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, bubbles: true, cancelable: true }));
+      svg3().dispatchEvent(new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, bubbles: true, cancelable: true }));
       ok('mol: ctrl+wheel is the desk’s', it.zoom === z1);
       it.lp = 1; it.lab = 1; molRepaint(el, it);
       ok('mol: lone pairs and labels draw', el.querySelectorAll('.molsvg circle.lp3').length >= 8 && el.querySelectorAll('.molsvg text.lb3').length >= 14,
@@ -6713,7 +7197,7 @@
       it.s3 = 'ball'; it.lp = 0; it.lab = 0;
       addItem('molecule', { x: 50, y: 50 }, page); await sleep(120);
       var it2 = page.items[page.items.length - 1], m2 = chemFrom('O');
-      it2.atoms = m2.atoms; it2.bonds = m2.bonds; it2.view = '3d'; it2.box = molBox(it2);
+      it2.atoms = m2.atoms; it2.bonds = m2.bonds; it2.peek = 100; it2.box = molBox(it2);
       await render(); await sleep(60);
       var ids = QA('#pageHost radialGradient').map(function (g) { return g.id; });
       ok('mol: gradient ids are unique across the page', ids.length > 0 && new Set(ids).size === ids.length, ids.join(','));

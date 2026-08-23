@@ -54,6 +54,8 @@ function syncSelectionDOM(){
     el.classList.remove('multipreview');
     if(!inSet) el.classList.remove('play');
   });
+  /* a molecule that is no longer the one in hand must drop the ghost it was casting */
+  if(typeof molHoverAll === 'function') molHoverAll();
   syncSelectionBar();
 }
 

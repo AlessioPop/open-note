@@ -486,7 +486,11 @@ function chemLayout(m){
     const a0 = dir + Math.PI;
     at.forEach((i, t) => { if(!placed[i]) put(i, cx + R * Math.cos(a0 + t * CHEM_TAU / k), cy + R * Math.sin(a0 + t * CHEM_TAU / k)); });
   }
-  /* the rest of a ring whose ends are already down — a bridge, drawn as an arc */
+  /* The rest of a ring whose ends are already down — a bridge, drawn on the
+     exact arc of a regular polygon. The old sine bulge only looked polygonal:
+     in bridged systems it could leave a six-ring with alternating long and
+     short sides. Here the chord A–B determines the radius for exactly `span`
+     sides of a k-gon, and the candidate on the emptier side wins. */
   function arcFill(r){
     const at = r.atoms, k = at.length;
     let s = at.findIndex((i, t) => placed[i] && !placed[at[(t + 1) % k]]);
@@ -497,14 +501,31 @@ function chemLayout(m){
     const ax = m.atoms[A].x, ay = m.atoms[A].y, bx = m.atoms[B].x, by = m.atoms[B].y;
     const cx = at.filter(i => placed[i]).reduce((q, i) => q + m.atoms[i].x, 0) / (k - run.length);
     const cy = at.filter(i => placed[i]).reduce((q, i) => q + m.atoms[i].y, 0) / (k - run.length);
-    const L = Math.hypot(bx - ax, by - ay) || 1;
-    let nx = -(by - ay) / L, ny = (bx - ax) / L;
-    if((cx - (ax + bx) / 2) * nx + (cy - (ay + by) / 2) * ny > 0){ nx = -nx; ny = -ny; }
-    const bulge = 0.45 * (run.length + 1);
-    run.forEach((i, t) => {
-      const u = (t + 1) / (run.length + 1), h = bulge * Math.sin(Math.PI * u);
-      put(i, ax + (bx - ax) * u + nx * h, ay + (by - ay) * u + ny * h);
-    });
+    const L = Math.hypot(bx - ax, by - ay) || 1, span = run.length + 1;
+    const step = CHEM_TAU / k, R = L / (2 * Math.sin(Math.PI * span / k));
+    const h = Math.sqrt(Math.max(0, R * R - L * L / 4));
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    const nx = -(by - ay) / L, ny = (bx - ax) / L;
+    let best = null;
+    for(const side of [-1, 1]) for(const turn of [-1, 1]){
+      const ox = mx + nx * h * side, oy = my + ny * h * side;
+      const a0 = Math.atan2(ay - oy, ax - ox), pts = [];
+      for(let t = 1; t <= run.length; t++) pts.push({ x:ox + R * Math.cos(a0 + turn * step * t), y:oy + R * Math.sin(a0 + turn * step * t) });
+      const ex = ox + R * Math.cos(a0 + turn * step * span), ey = oy + R * Math.sin(a0 + turn * step * span);
+      const px = pts.reduce((q, p) => q + p.x, 0) / pts.length, py = pts.reduce((q, p) => q + p.y, 0) / pts.length;
+      let crowd = 0;
+      pts.forEach(p => m.atoms.forEach((a, i) => {
+        if(!placed[i] || i === A || i === B) return;
+        const d = Math.hypot(p.x - a.x, p.y - a.y);
+        if(d < .78) crowd += (.78 - d) * (.78 - d);
+      }));
+      /* Endpoint error chooses the geometrically valid arc; distance from the
+         already placed part breaks the two-way tie without crossing it. A
+         crowded candidate is much worse than a little extra whitespace. */
+      const score = Math.hypot(ex - bx, ey - by) * 1e6 + crowd * 1e4 - Math.hypot(px - cx, py - cy);
+      if(!best || score < best.score) best = { score, pts };
+    }
+    run.forEach((i, t) => put(i, best.pts[t].x, best.pts[t].y));
   }
   function placeSystem(sid, anchor, from){
     const list = systems[sid].slice();
