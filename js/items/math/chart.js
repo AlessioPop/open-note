@@ -840,8 +840,6 @@ defineItem('chart', {
   add: {
     pie:   base => ({ ...base, type: 'chart', kind: 'pie', look: 'flat', w: 34, pal: 'crisp', lbl: 'pct',
                       a0: -90, cap: '', rows: [{ lab: 'Code', v: 12 }, { lab: 'Art', v: 8 }, { lab: 'Music', v: 5 }] }),
-    donut: base => ({ ...base, type: 'chart', kind: 'pie', look: 'donut', w: 34, pal: 'crisp', lbl: 'pct',
-                      a0: -90, hole: 52, cap: '', rows: [{ lab: 'Code', v: 12 }, { lab: 'Art', v: 8 }, { lab: 'Music', v: 5 }] }),
     bars:  base => ({ ...base, type: 'chart', kind: 'bars', w: 34, pal: 'crisp', lbl: 'val', cap: '',
                       rows: [{ lab: 'Mon', v: 6 }, { lab: 'Tue', v: 9 }, { lab: 'Wed', v: 4 }] }),
     stack: base => ({ ...base, type: 'chart', kind: 'stack', w: 40, pal: 'crisp', lbl: 'pct', cap: '',
@@ -955,13 +953,10 @@ svg.chsvg.chf-hand text{font-family:var(--hand);font-weight:600}
 
 defineTool({ kind: 'pie',   cat: 'math', label: 'Pie chart', icon: 'pie', order: 60,
              hint: 'Named shares as a wheel — flat, donut, 3D or sketchbook; the legend is the editor' });
-defineTool({ kind: 'donut', cat: 'math', label: 'Donut', icon: 'donut', order: 62,
-             hint: 'The pie with a hole — the total sits in the middle' });
 defineTool({ kind: 'bars',  cat: 'math', label: 'Bar chart', icon: 'chbars', order: 64,
              hint: 'Named values as bars — plain for now, it will grow' });
 defineTool({ kind: 'stack', cat: 'math', label: 'Stacked bar', icon: 'chstack', order: 66,
              hint: 'Shares of a whole in one bar — plain for now, it will grow' });
 defineIcon('pie', '<circle cx="12" cy="12" r="8.2"/><path d="M12 12V3.8M12 12l5.8 5.8"/>');
-defineIcon('donut', '<circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="3.4"/><path d="M12 8.6V3.8"/>');
 defineIcon('chbars', '<path d="M5 5.5h10M5 12h14M5 18.5h7"/>');
 defineIcon('chstack', '<rect x="3.5" y="9" width="17" height="6" rx="1.6"/><path d="M11 9v6M16.2 9v6"/>');

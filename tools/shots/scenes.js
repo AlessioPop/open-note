@@ -84,7 +84,7 @@
         rows: [{ lab: 'A', v: 6.2 }, { lab: 'B', v: 9.1 },
                { lab: 'C', v: 4.4 }, { lab: 'D', v: 7.8 }] });
 
-      put(page, 'donut', 68, 13, { w: 24, pal: 'tonal', lbl: 'pct', hole: 54,
+      put(page, 'pie', 68, 13, { w: 24, look: 'donut', pal: 'tonal', lbl: 'pct', hole: 54,
         cap: 'where the mass went',
         rows: [{ lab: 'Fuel', v: 61 }, { lab: 'Casing', v: 24 }, { lab: 'Avionics', v: 15 }] });
 

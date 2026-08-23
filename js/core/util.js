@@ -51,10 +51,13 @@ function sanitize(html){
   const t = document.createElement('div');
   t.innerHTML = html == null ? '' : String(html);
   t.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(n => n.remove());
-  /* compiled maths and code are stored as their source, never as markup */
+  /* compiled maths, code and marks are stored as their source, never as markup
+     — and in that order, so a formula inside a heading is back to being written
+     before the heading itself is unwrapped */
   t.querySelectorAll('[data-tex],[data-tick]').forEach(n =>
     n.replaceWith(document.createTextNode(
       n.getAttribute('data-tex') || n.getAttribute('data-tick') || '')));
+  unmarkify(t);
   const ok = { B:1, I:1, U:1, S:1, BR:1, SPAN:1, MARK:1, DIV:1, FONT:1 };
   (function walk(n){
     [...n.children].forEach(c => {

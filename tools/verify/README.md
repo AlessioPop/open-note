@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 1442 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 1549 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,12 +22,12 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 1442 assertions, and they should
+It prints a pass/fail count and every failure. 1549 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 74 script files load, in order;
+- nothing throws while the 76 script files load, in order;
 - the app boots, opens a note and draws its sheet — one sheet, 1980 × 1320,
   four rails, and no page furniture of any kind;
 - every entry in the add menu adds the type it claims to;
@@ -68,6 +68,45 @@ all pass — if one doesn't, that is a real regression.
   one rewrites the fence's own opening line and asks the box to store itself,
   and that a printed block keeps the colours and loses the buttons. Then the keyboard end to end on a real `.txt`, ⇥ ⇧⇥ ⏎ and a bracket
   inside the fence and none of them outside it;
+- **the marks a line wears**: that `# ` `## ` `### ` are three levels and more
+  hashes still stop at three, that `---` alone is a rule, that a hash in a
+  sentence, a `#1` and a hash with nothing after it are none of those, and that a
+  heading inside a fence or inside a formula is left where it is; then a box
+  compiled and taken apart again — the block with the hashes off its front and
+  kept as its source, the writing either side left alone, the line's own ending
+  going with it so no empty line is left under a heading built out of `<br>`s and
+  handed straight back when it is unwound, what `sanitize()` stores (the hashes,
+  never the markup), and marks, code and maths in one box each leaving the others
+  alone; then a real text item, where leaving the box compiles the heading and
+  the rule, what is stored is what was typed, coming back gives the hashes back,
+  and the printed page carries the heading;
+- **bullets, tasks and arrows**: that every `- ` line is a bullet and a tab or
+  two spaces is one step in, that `- [ ] ` and `- [x] ` are a task and a done
+  one, that a dash with nothing after it, a dash mid-sentence and `---` are none
+  of those, and that a bullet inside a fence is code; what ⏎ does on a list line
+  — the next bullet at the same depth, an unticked task after a ticked one, the
+  list ending on an empty bullet and stepping back out when that one is nested —
+  and what ⇥ and ⇧⇥ do, both of them leaving ordinary writing and a fence alone;
+  then a box compiled and taken apart again, the depth on the row, the box that
+  is not part of the writing, and what `sanitize()` stores; then the arrow, left
+  alone inside code and inside a formula but not inside a bullet; then a real
+  text item, where clicking a box ticks the task off, the one bracket in the
+  source is what changed, and the printed page carries the list; and the
+  keyboard end to end on a real `.txt`, ⏎ and ⇥ on a bullet, the step landing as
+  a tab and coming off cleanly, neither key touching ordinary writing and
+  neither taking one another handler has already claimed; and — since a browser
+  swaps a space for a non-breaking one wherever it thinks the space might
+  collapse — that an indent and a marker written with those still read as an
+  indent and a marker, and such a task still ticks off;
+- **bold and italic**: that two stars, one and three are bold, italic and both,
+  that arithmetic, an unclosed star and a pair that would reach onto the next
+  line are none of them, and that a star inside code or a formula is that
+  language's own; a box compiled and taken apart again, and what `sanitize()`
+  stores; then what ⌃B and ⌃I do to what is picked out — the stars going round
+  it, coming off again whether or not they were picked out with it, the pair
+  written with nothing picked, and neither key ours inside a formula or across a
+  line ending; then both of them end to end on a real `.txt`, with what was
+  picked out still picked out afterwards;
 - **what a key does inside code**: `cdKey()`, the one rule table the cell and a
   fence in a sentence are both typed under — ⇥ writing the language's own step
   (four spaces in python, a tab in go), ⇧⇥ taking one off, both of them moving

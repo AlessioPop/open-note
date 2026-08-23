@@ -13,7 +13,6 @@ function setMath(on){
   const was = mathMode;
   mathMode = !!on;
   document.body.classList.toggle('mathing', mathMode);
-  $('#mathBtn').classList.toggle('on', mathMode);
   $('#mathbar').classList.toggle('open', mathMode);
   if(mathMode){
     if(drawMode) setDraw(false);
@@ -66,7 +65,6 @@ function syncMathBar(){
     : !it ? 'add a coordinate system, or click one'
     : '';
 }
-$('#mathBtn').addEventListener('click', () => setMath(!mathMode));
 $('#mDone').addEventListener('click', () => setMath(false));
 $('#mAxes').addEventListener('click', () => { setMath(true); addItem('plot'); });
 $('#mMat').addEventListener('click', () => addItem('matrix'));

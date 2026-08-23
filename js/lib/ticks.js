@@ -193,12 +193,14 @@ function untickify(root){
 }
 
 /* ---- the two anybody else calls ----
-   Ticks first: a fence seals its text, and the maths pass walks straight over
-   it. Every writing surface in the app goes through this pair. Only an explicit
-   `live === false` — a print, an export, a thumbnail — leaves the buttons off a
-   block, so that `list.forEach(richify)` handing an index along is harmless. */
-function richify(root, live){ return mathify(tickify(root, live)); }
-function plainify(root){ return untickify(unmathify(root)); }
+   Marks first — a heading is a line, and it may hold code or a formula — then
+   ticks, because a fence seals its text and the maths pass walks straight over
+   it. Every writing surface in the app goes through this pair, and unwinds it
+   in the opposite order. Only an explicit `live === false` — a print, an
+   export, a thumbnail — leaves the buttons off a block, so that
+   `list.forEach(richify)` handing an index along is harmless. */
+function richify(root, live){ return mathify(tickify(markify(root), live)); }
+function plainify(root){ return unmarkify(untickify(unmathify(root))); }
 
 /* ---- setting the language from the bar ----
    A fence keeps nothing but its source, so the language is the word after the

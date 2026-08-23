@@ -155,7 +155,7 @@
         ['deck', 'deck'], ['plot', 'plot'], ['matrix', 'matrix'], ['vecbox', 'vecbox'],
         ['cube', 'solid'], ['sphere', 'solid'], ['torus', 'solid'],
         ['square', 'solid'], ['circle', 'solid'],
-        ['pie', 'chart'], ['donut', 'chart'], ['bars', 'chart'], ['stack', 'chart'],
+        ['pie', 'chart'], ['bars', 'chart'], ['stack', 'chart'],
         ['washi', 'washi'], ['sticker', 'sticker'], ['molecule', 'molecule'],
         ['circuit', 'circuit'], ['ptable', 'ptable'], ['nuchart', 'nuchart']
       ];
@@ -2017,6 +2017,440 @@
       tx.blur();
       tx.remove();
       await sleep(60);
+    });
+
+    /* ---- the marks a line wears: # a heading, --- a rule ---- */
+    await stage('marks', async function () {
+      /* what counts as a mark, read off a flat string */
+      var H = markHits('# One\n## Two\n### Three\n#### Four\n---\nplain');
+      ok('marks: # ## ### are three levels',
+        H.length === 5 && H[0].lvl === 1 && H[1].lvl === 2 && H[2].lvl === 3,
+        JSON.stringify(H.map(function (h) { return h.kind + h.lvl; })));
+      ok('marks: …and more hashes still stop at three', H[3].lvl === 3, H[3].lvl);
+      ok('marks: --- alone on a line is a rule', H[4].kind === 'rule', H[4].kind);
+      ok('marks: a hash in a sentence is a hash', markHits('a # b').length === 0);
+      ok('marks: …and #1 is a number', markHits('#1 of 3').length === 0);
+      ok('marks: a hash with nothing after it is not a heading', markHits('# ').length === 0);
+      ok('marks: dashes with writing on the line are dashes',
+        markHits('--- so far').length === 0);
+      ok('marks: a heading inside a fence is code',
+        markHits('```\n# not a heading\n```').length === 0,
+        JSON.stringify(markHits('```\n# not a heading\n```')));
+      ok('marks: …and one inside a formula is the formula’s',
+        markHits('$$\n#1\n# x\n$$').length === 0);
+      ok('marks: …while the one after the fence is a heading',
+        markHits('```\n# no\n```\n# yes').length === 1);
+
+      /* a box compiled, and taken apart again */
+      var d = document.createElement('div');
+      d.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      d.textContent = 'before\n## The middle\nafter';
+      document.body.appendChild(d);
+      markify(d);
+      var h = d.querySelector('.mkh');
+      ok('marks: a heading compiles to a block', !!h && h.className === 'mkh mkh2',
+        d.innerHTML.slice(0, 120));
+      ok('marks: …holding the line without its hashes',
+        h.textContent === 'The middle', JSON.stringify(h.textContent));
+      ok('marks: …keeping the hashes as its source',
+        h.getAttribute('data-head') === '## ', JSON.stringify(h.getAttribute('data-head')));
+      ok('marks: …and the writing either side untouched',
+        d.textContent.indexOf('before') === 0 && d.textContent.indexOf('after') > 0,
+        JSON.stringify(d.textContent));
+      ok('marks: what is stored is the hashes, not the markup',
+        sanitize(d.innerHTML) === 'before\n## The middle\nafter', JSON.stringify(sanitize(d.innerHTML)));
+      unmarkify(d);
+      ok('marks: …which is what taking it apart gives back',
+        d.textContent === 'before\n## The middle\nafter', JSON.stringify(d.textContent));
+      d.remove();
+
+      /* the line's own ending goes with it: a block already ends its line, and
+         the break left behind would show as an empty one under the heading */
+      var br = document.createElement('div');
+      br.className = 'txt';
+      br.style.cssText = 'position:fixed;left:-9999px;top:0;width:300px;white-space:pre-wrap';
+      br.innerHTML = 'a<br># Head<br>b';
+      document.body.appendChild(br);
+      markify(br);
+      var h2 = br.querySelector('.mkh1');
+      ok('marks: a heading built out of <br>s compiles', !!h2, br.innerHTML.slice(0, 110));
+      ok('marks: …with no empty line left under it',
+        !(h2.nextSibling && h2.nextSibling.nodeName === 'BR') &&
+        h2.textContent === 'Head', br.innerHTML.slice(0, 110));
+      unmarkify(br);
+      ok('marks: …the break handed straight back',
+        mathFlat(br).s === 'a\n# Head\nb', JSON.stringify(mathFlat(br).s));
+      br.remove();
+
+      /* a rule is a line of nothing: it keeps its dashes and gives them back */
+      var rl = document.createElement('div');
+      rl.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      rl.textContent = 'over\n---\nunder';
+      document.body.appendChild(rl);
+      markify(rl);
+      ok('marks: --- compiles to an <hr>', !!rl.querySelector('hr.mkrule'), rl.innerHTML.slice(0, 90));
+      ok('marks: …and the writing either side is still there',
+        rl.textContent === 'overunder' || rl.textContent === 'over\nunder',
+        JSON.stringify(rl.textContent));
+      ok('marks: a rule is stored as its dashes',
+        sanitize(rl.innerHTML) === 'over\n---\nunder', JSON.stringify(sanitize(rl.innerHTML)));
+      unmarkify(rl);
+      ok('marks: …and comes back as them', rl.textContent === 'over\n---\nunder',
+        JSON.stringify(rl.textContent));
+      rl.remove();
+
+      /* marks, code and maths in one box, each left to itself */
+      var m = document.createElement('div');
+      m.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      m.textContent = '# The law of $$x^2$$\nrun `npm i`\n---\n';
+      document.body.appendChild(m);
+      richify(m);
+      ok('marks: a heading may hold a formula',
+        !!m.querySelector('.mkh1 math'), m.innerHTML.slice(0, 140));
+      ok('marks: …and code sits under it', !!m.querySelector('code.tick'));
+      ok('marks: …and the rule is a rule', !!m.querySelector('hr.mkrule'));
+      plainify(m);
+      ok('marks: all three go back to source together',
+        m.textContent === '# The law of $$x^2$$\nrun `npm i`\n---\n',
+        JSON.stringify(m.textContent));
+      m.remove();
+
+      /* on a real item: leaving the box compiles it, coming back gives it back */
+      var page = sheet();
+      var keep = page.items.slice();
+      page.items = [];
+      await render();
+      addItem('body', { x: 10, y: 10 }, page);
+      await sleep(90);
+      var it = page.items[page.items.length - 1];
+      var el = Q('.item[data-id="' + it.id + '"]');
+      var box = el.querySelector('.txt');
+      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      box.textContent = '# A heading\n---\nand a line under it';
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+      box.dispatchEvent(new Event('blur'));
+      await sleep(60);
+      ok('marks: leaving a text box compiles the heading',
+        !!el.querySelector('.txt .mkh1') && !!el.querySelector('.txt hr.mkrule'),
+        el.querySelector('.txt').innerHTML.slice(0, 140));
+      ok('marks: …and what is stored is what was typed',
+        it.html === '# A heading\n---\nand a line under it', JSON.stringify(it.html));
+      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await sleep(40);
+      ok('marks: coming back to it gives the hashes back',
+        mathFlat(box).s === '# A heading\n---\nand a line under it', JSON.stringify(mathFlat(box).s));
+      box.dispatchEvent(new Event('blur'));
+      await sleep(40);
+      /* and the static path — print, export, thumbnails — sets it too */
+      var st = buildPage(page, false, {});
+      ok('marks: a printed page carries the heading',
+        !!st.querySelector('.item[data-type=text] .mkh1'),
+        st.querySelector('.item[data-type=text] .txt').innerHTML.slice(0, 120));
+      page.items = keep;
+      await render();
+    });
+
+    /* ---- bullets, tasks and arrows: the rest of what a line may wear ---- */
+    await stage('lists', async function () {
+      /* the grammar, read off a flat string */
+      var L = markHits('- one\n\t- two\n  - three\n- [ ] task\n- [x] done');
+      ok('lists: every - line is a bullet', L.length === 5 &&
+        L.every(function (h) { return h.kind === 'li'; }),
+        JSON.stringify(L.map(function (h) { return h.kind + h.dep; })));
+      ok('lists: a tab is one step in', L[1].dep === 1, L[1].dep);
+      ok('lists: …and so are two spaces', L[2].dep === 1, L[2].dep);
+      ok('lists: - [ ] is a task with nothing done', L[3].task && !L[3].done);
+      ok('lists: …and - [x] one that is', L[4].task && L[4].done);
+      ok('lists: the marker is kept exactly as typed',
+        L[3].pre === '- [ ] ' && L[1].pre === '\t- ', JSON.stringify([L[1].pre, L[3].pre]));
+      ok('lists: a dash with nothing after it is a dash', markHits('- ').length === 0);
+      var nb = markHits('- one\n\u00a0\u00a0- two');
+      ok('lists: an indent the editor made non-breaking is still an indent',
+        nb.length === 2 && nb[1].dep === 1, JSON.stringify(nb.map(function (h) { return h.dep; })));
+      var nb2 = markHits('-\u00a0one\n-\u00a0[\u00a0]\u00a0two');
+      ok('lists: …and so is the space the editor left after the dash',
+        nb2.length === 2 && nb2[1].task === true, JSON.stringify(nb2));
+      ok('lists: …and a dash mid-sentence is a dash', markHits('a - b').length === 0);
+      ok('lists: --- is still a rule, not a bullet',
+        markHits('---')[0].kind === 'rule', markHits('---')[0].kind);
+      ok('lists: a bullet inside a fence is code',
+        markHits('```\n- not a bullet\n```').length === 0,
+        JSON.stringify(markHits('```\n- not a bullet\n```')));
+
+      /* what ⏎ does — the rule, not the keyboard */
+      var e1 = markEnter('- one', 5);
+      ok('lists: ⏎ on a bullet makes the next one',
+        e1 && e1.text === '\n- ' && e1.from === 5 && e1.caret === 3, JSON.stringify(e1));
+      var e2 = markEnter('\t- one', 6);
+      ok('lists: …at the same depth', e2 && e2.text === '\n\t- ', JSON.stringify(e2));
+      var e3 = markEnter('- [x] done', 10);
+      ok('lists: …and after a ticked task, one still to do',
+        e3 && e3.text === '\n- [ ] ', JSON.stringify(e3));
+      var e4 = markEnter('- ', 2);
+      ok('lists: ⏎ on an empty bullet ends the list',
+        e4 && e4.from === 0 && e4.to === 2 && e4.text === '', JSON.stringify(e4));
+      var e5 = markEnter('\t- ', 3);
+      ok('lists: …or steps back out when it is nested',
+        e5 && e5.text === '- ' && e5.from === 0 && e5.to === 3, JSON.stringify(e5));
+      ok('lists: ⏎ on ordinary writing is a plain ⏎', markEnter('just words', 4) === null);
+      ok('lists: …and inside a fence the fence has the keyboard',
+        markEnter('```\n- one\n```', 8) === null, JSON.stringify(markEnter('```\n- one\n```', 8)));
+
+      /* …and what ⇥ does */
+      var t1 = markTab('- one', 3, false);
+      ok('lists: ⇥ pushes the bullet one step in',
+        t1 && t1.from === 0 && t1.to === 0 && t1.text === '\t' && t1.caret === 4,
+        JSON.stringify(t1));
+      ok('lists: …and says to write it in by hand, not through the editor', t1.raw === true);
+      var t2 = markTab('\t- one', 4, true);
+      ok('lists: ⇧⇥ takes it back out',
+        t2 && t2.from === 0 && t2.to === 1 && t2.text === '' && t2.caret === 3,
+        JSON.stringify(t2));
+      ok('lists: …and there is nowhere further out to go',
+        markTab('- one', 3, true) === null);
+      ok('lists: ⇥ on ordinary writing walks on as it did', markTab('just words', 4, false) === null);
+
+      /* the keyboard, on a real writing box — chrome/listpad.js */
+      var tx = document.createElement('div');
+      tx.className = 'txt';
+      tx.contentEditable = 'true';
+      tx.style.cssText = 'position:fixed;left:0;top:0;width:300px;white-space:pre-wrap';
+      document.body.appendChild(tx);
+      tx.focus();
+      var said = 0;
+      tx.addEventListener('input', function () { said++; });
+      var text = function () { return mathFlat(tx).s; };
+      var caretAt = function () {
+        var sel = getSelection();
+        return sel.rangeCount ? mathFlatOff(tx, sel.anchorNode, sel.anchorOffset) : -1;
+      };
+      var put = function (off) {
+        var P = mathFlatPos(tx, off), r = document.createRange(), sel = getSelection();
+        r.setStart(P[0], P[1]); r.collapse(true);
+        sel.removeAllRanges(); sel.addRange(r);
+      };
+      var key = function (k, shift) {
+        return tx.dispatchEvent(new KeyboardEvent('keydown',
+          { key: k, shiftKey: !!shift, bubbles: true, cancelable: true }));
+      };
+      var key2 = function (k, ctrl) {
+        return tx.dispatchEvent(new KeyboardEvent('keydown',
+          { key: k, ctrlKey: !!ctrl, bubbles: true, cancelable: true }));
+      };
+      tx.textContent = '- one';
+      put(5);
+      ok('lists: ⏎ on a bullet is eaten', key('Enter') === false);
+      ok('lists: …and the next bullet is already there',
+        text() === '- one\n- ' && caretAt() === 8, JSON.stringify([text(), caretAt()]));
+      document.execCommand('insertText', false, 'two');
+      ok('lists: ⇥ on a bullet is eaten too', key('Tab') === false);
+      ok('lists: …and pushes that line one step in',
+        text() === '- one\n\t- two' && caretAt() === 12, JSON.stringify([text(), caretAt()]));
+      ok('lists: ⇧⇥ is eaten as well', key('Tab', true) === false);
+      ok('lists: …and takes the step back off',
+        text() === '- one\n- two' && caretAt() === 11, JSON.stringify([text(), caretAt()]));
+      ok('lists: …and the box is told to save itself', said > 0, said);
+      ok('lists: …leaving no whitespace of any kind behind it',
+        text() === '- one\n- two', JSON.stringify(text()));
+      /* …and ⌃B end to end, on what is picked out */
+      tx.textContent = 'make this loud';
+      var pick = function (a2, b2) {
+        var A = mathFlatPos(tx, a2), B = mathFlatPos(tx, b2);
+        var r = document.createRange(), sel = getSelection();
+        r.setStart(A[0], A[1]); r.setEnd(B[0], B[1]);
+        sel.removeAllRanges(); sel.addRange(r);
+      };
+      pick(5, 9);
+      ok('lists: ⌃B is eaten', key2('b', true) === false);
+      ok('lists: …and the stars go round what was picked out',
+        text() === 'make **this** loud', JSON.stringify(text()));
+      ok('lists: …which is still picked out', getSelection().toString() === 'this',
+        JSON.stringify(getSelection().toString()));
+      ok('lists: ⌃B again is eaten too', key2('b', true) === false);
+      ok('lists: …and takes them off', text() === 'make this loud', JSON.stringify(text()));
+      pick(5, 9);
+      key2('i', true);
+      ok('lists: ⌃I puts one star either side',
+        text() === 'make *this* loud', JSON.stringify(text()));
+
+      /* a key somebody ahead of us has already taken is not ours: window capture
+         runs before document capture, which is the maths pad and a fence both */
+      var eat = function (ev) { ev.preventDefault(); };
+      window.addEventListener('keydown', eat, true);
+      tx.textContent = '- one';
+      put(5);
+      key('Tab');
+      ok('lists: a key already taken is left where it was',
+        text() === '- one', JSON.stringify(text()));
+      window.removeEventListener('keydown', eat, true);
+      tx.textContent = 'just writing';
+      put(4);
+      ok('lists: off a list ⏎ is nobody else’s business', key('Enter') === true);
+      ok('lists: …and so is ⇥', key('Tab') === true);
+      tx.blur();
+      tx.remove();
+      await sleep(40);
+
+      /* a box compiled, and taken apart again */
+      var src = '- one\n\t- two\n- [ ] task\n- [x] done';
+      var d = document.createElement('div');
+      d.className = 'txt';
+      d.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      d.textContent = src;
+      document.body.appendChild(d);
+      markify(d);
+      var rows = d.querySelectorAll('.mkli');
+      ok('lists: every bullet compiles to a row', rows.length === 4, d.innerHTML.slice(0, 160));
+      ok('lists: …the nested one carrying its depth',
+        rows[1].className.indexOf('mkd1') >= 0, rows[1].className);
+      ok('lists: …the row holding the line without its marker',
+        rows[0].textContent === 'one', JSON.stringify(rows[0].textContent));
+      ok('lists: a task gets a box to tick',
+        rows[2].className.indexOf('mktask') >= 0 && !!rows[2].querySelector('.mkbox'),
+        rows[2].outerHTML.slice(0, 120));
+      ok('lists: …and a done one is drawn done',
+        rows[3].className.indexOf('done') >= 0, rows[3].className);
+      ok('lists: the box is not part of the writing',
+        rows[2].textContent === 'task', JSON.stringify(rows[2].textContent));
+      ok('lists: what is stored is the dashes, not the markup',
+        sanitize(d.innerHTML) === src, JSON.stringify(sanitize(d.innerHTML)));
+      unmarkify(d);
+      ok('lists: …which is what taking it apart gives back',
+        d.textContent === src, JSON.stringify(d.textContent));
+      d.remove();
+
+      /* bold and italic */
+      var E = emphHits('**bold** and *slanted* and ***both***');
+      ok('lists: two stars are bold, one is italic, three are both',
+        E.length === 3 && E[0].n === 2 && E[1].n === 1 && E[2].n === 3,
+        JSON.stringify(E.map(function (h) { return h.n; })));
+      ok('lists: arithmetic is not emphasis', emphHits('2 * 3 * 4').length === 0,
+        JSON.stringify(emphHits('2 * 3 * 4')));
+      ok('lists: …and neither is a star with nothing to close it',
+        emphHits('*half a thought').length === 0);
+      ok('lists: …or one that would have to reach onto the next line',
+        emphHits('*over\nthe edge*').length === 0);
+      ok('lists: a star inside code or a formula is that language’s own',
+        emphHits('`a**b`').length === 0 && emphHits('$$a**b$$').length === 0,
+        JSON.stringify([emphHits('`a**b`'), emphHits('$$a**b$$')]));
+
+      var b = document.createElement('div');
+      b.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      b.textContent = '# A **strong** word and a *slant*';
+      document.body.appendChild(b);
+      markify(b);
+      ok('lists: ** compiles to bold', !!b.querySelector('.mkh1 b.mkb'), b.innerHTML.slice(0, 140));
+      ok('lists: …and * to italic', !!b.querySelector('.mkh1 i.mki'), b.innerHTML.slice(0, 140));
+      ok('lists: …holding the words without their stars',
+        b.querySelector('b.mkb').textContent === 'strong', JSON.stringify(b.querySelector('b.mkb').textContent));
+      ok('lists: what is stored is the stars, not the markup',
+        sanitize(b.innerHTML) === '# A **strong** word and a *slant*',
+        JSON.stringify(sanitize(b.innerHTML)));
+      unmarkify(b);
+      ok('lists: …which is what taking it apart gives back',
+        b.textContent === '# A **strong** word and a *slant*', JSON.stringify(b.textContent));
+      b.remove();
+
+      /* what ⌃B and ⌃I do — the rule, not the keyboard */
+      var w1 = markWrap('make this loud', 5, 9, '**');
+      ok('lists: ⌃B puts the stars round what is picked out',
+        w1 && w1.text === '**this**' && w1.from === 5 && w1.to === 9,
+        JSON.stringify(w1));
+      ok('lists: …and leaves it picked out', w1.pick[0] === 7 && w1.pick[1] === 11,
+        JSON.stringify(w1.pick));
+      var w2 = markWrap('make **this** loud', 7, 11, '**');
+      ok('lists: …and takes them off again when they are already there',
+        w2 && w2.text === 'this' && w2.from === 5 && w2.to === 13, JSON.stringify(w2));
+      var w3 = markWrap('make **this** loud', 5, 13, '**');
+      ok('lists: …whether the stars were picked out with it or not',
+        w3 && w3.text === 'this', JSON.stringify(w3));
+      var w4 = markWrap('nothing picked', 3, 3, '*');
+      ok('lists: with nothing picked out ⌃I writes the pair',
+        w4 && w4.text === '**' && w4.caret === 1, JSON.stringify(w4));
+      ok('lists: …and inside a formula neither key is ours',
+        markWrap('$$a b$$', 3, 4, '**') === null);
+      ok('lists: …nor across a line ending', markWrap('one\ntwo', 1, 5, '*') === null);
+
+      /* the arrow. `>` comes back out of innerHTML as an entity, as it does for
+         any writing that holds one, so the source is read back rather than compared */
+      var back = function (h) { var t = document.createElement('div'); t.innerHTML = h; return t.textContent; };
+      var a = document.createElement('div');
+      a.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      a.textContent = 'here -> there';
+      document.body.appendChild(a);
+      markify(a);
+      var arw = a.querySelector('.mkarw');
+      ok('lists: -> compiles to an arrow', !!arw && !!arw.querySelector('svg path'),
+        a.innerHTML.slice(0, 110));
+      ok('lists: …drawn in the ink around it rather than set in a glyph',
+        arw.textContent === '' && arw.querySelector('svg').getAttribute('stroke') === 'currentColor',
+        arw.innerHTML.slice(0, 80));
+      ok('lists: …stored as the two keystrokes that made it',
+        back(sanitize(a.innerHTML)) === 'here -> there', JSON.stringify(sanitize(a.innerHTML)));
+      unmarkify(a);
+      ok('lists: …and handed back as them', a.textContent === 'here -> there',
+        JSON.stringify(a.textContent));
+      a.textContent = 'run `a -> b` and $$x -> y$$';
+      markify(a);
+      ok('lists: an arrow inside code or a formula is left alone',
+        !a.querySelector('.mkarw'), a.innerHTML.slice(0, 120));
+      a.textContent = '- from -> to';
+      markify(a);
+      ok('lists: …but a bullet may hold one',
+        !!a.querySelector('.mkli .mkarw'), a.innerHTML.slice(0, 120));
+      ok('lists: …and the line is still stored as it was typed',
+        back(sanitize(a.innerHTML)) === '- from -> to', JSON.stringify(sanitize(a.innerHTML)));
+      a.remove();
+
+      /* on a real item: the box ticks itself off, and the source is what changes */
+      var page = sheet();
+      var keep = page.items.slice();
+      page.items = [];
+      await render();
+      addItem('body', { x: 10, y: 10 }, page);
+      await sleep(90);
+      var it = page.items[page.items.length - 1];
+      var el = Q('.item[data-id="' + it.id + '"]');
+      var box = el.querySelector('.txt');
+      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      box.textContent = '- [ ] wash up\n- [ ] and dry';
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+      box.dispatchEvent(new Event('blur'));
+      await sleep(60);
+      ok('lists: leaving a text box compiles the tasks',
+        el.querySelectorAll('.txt .mktask').length === 2,
+        el.querySelector('.txt').innerHTML.slice(0, 160));
+      el.querySelector('.txt .mktask .mkbox').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await sleep(40);
+      ok('lists: clicking the box ticks the task off',
+        el.querySelector('.txt .mktask').className.indexOf('done') >= 0,
+        el.querySelector('.txt .mktask').className);
+      ok('lists: …and the one bracket in the source is what changed',
+        it.html === '- [x] wash up\n- [ ] and dry', JSON.stringify(it.html));
+      /* the same click on a task the editor left a non-breaking space in */
+      var nbx = document.createElement('div');
+      nbx.className = 'txt';
+      nbx.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      nbx.textContent = '-\u00a0[\u00a0]\u00a0feed the cat';
+      document.body.appendChild(nbx);
+      markify(nbx);
+      markTick(nbx.querySelector('[data-li]'));
+      ok('lists: …and a task with one of those in it ticks off too',
+        (nbx.querySelector('[data-li]').getAttribute('data-li') || '').indexOf('[x]') > 0,
+        nbx.querySelector('[data-li]').getAttribute('data-li'));
+      nbx.remove();
+      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await sleep(40);
+      ok('lists: coming back to it gives the brackets back',
+        mathFlat(box).s === '- [x] wash up\n- [ ] and dry', JSON.stringify(mathFlat(box).s));
+      box.dispatchEvent(new Event('blur'));
+      await sleep(40);
+      var st = buildPage(page, false, {});
+      ok('lists: a printed page carries the list',
+        st.querySelectorAll('.item[data-type=text] .mkli').length === 2,
+        st.querySelector('.item[data-type=text] .txt').innerHTML.slice(0, 140));
+      page.items = keep;
+      await render();
     });
 
     /* ---- the static path: print, thumbnails and export all use this ---- */

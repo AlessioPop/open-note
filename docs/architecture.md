@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1442 assertions, driven in headless Firefox
+tools/verify/       the harness: 1549 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -174,6 +174,7 @@ right up until it loses the session.
 | `mathbar.js` | 101 | the maths toolbar |
 | `mathpad.js` | 514 | writing maths: the `$` that pairs itself and opens out into a display block (and the `` ` `` that pairs itself by `lib/ticks.js`'s rules), the completion list built from the compiler's own tables, and the formula typeset under the caret as it is written. The rules are plain functions over (text, offset), so the harness can drive them without a caret |
 | `tickpad.js` | 45 | typing inside a ```fence``` in any writing box: ⇥ and ⇧⇥, ⏎ keeping the indent, brackets and quotes closing themselves. None of the rules are here — they are the code cell's, reached through the registry's code pen |
+| `markpad.js` | 83 | what the keyboard does to the marks in a writing box. A list: ⏎ making the next bullet and ending the list on an empty one, ⇥ and ⇧⇥ moving one in and out. None of the rules are here either — they are `lib/marks.js`'s, and inside a fence they stand aside for `tickpad.js`. A key another handler has already taken is read off `defaultPrevented`, and an indent is written into the box by hand rather than through the editor's `insertText`, which is free to turn a tab it is handed into a space. Then ⌃B and ⌃I, which put the stars round what is picked out or take them off — the shortcut writes the mark rather than markup, so the browser's own bold never gets the key |
 | `map.js` | 174 | the map: the whole sheet, and where you are standing on it |
 | `shelf.js` | 100 | the shelf of notes |
 | `print.js` | 32 | print / PDF |
@@ -219,18 +220,21 @@ shelf** — a new file under `items/science/` had better call
 
 ### `js/lib/` — owes nothing to this app
 
-No DOM in any of them, with two stated exceptions: `latex.js` and `ticks.js`
-call `addCSS()` for the stylesheet their markup needs, which is why
-`core/registry.js` is the one thing loaded ahead of this whole layer. `ticks.js`
-also reaches the DOM for the same reason `latex.js` does — it compiles writing
-in place — and hangs one delegated listener for its copy buttons.
+No DOM in any of them, with three stated exceptions: `latex.js`, `ticks.js`
+and `marks.js` call `addCSS()` for the stylesheet their markup needs, which is
+why `core/registry.js` is the one thing loaded ahead of this whole layer. The
+last two also reach the DOM for the same reason `latex.js` does — they compile
+writing in place — and each hangs one delegated listener on the thing its markup
+carries: `ticks.js` for the copy button on a fenced block, `marks.js` for the box
+on a task.
 
 | File | Lines | What it does |
 |---|---:|---|
 | `sound.js` | 81 | the studio sounds, generated live. No audio files |
 | `spring.js` | 125 | springs and momentum: analytic springs, release velocity, flick projection. What the throws, spins and card-tosses all move on |
 | `latex.js` | 459 | LaTeX → MathML. No library, nothing downloaded — plus the flatten/scan pair that tells a caret which formula it is standing in, which `chrome/mathpad.js` writes with |
-| `ticks.js` | 294 | code ticks: `` `a phrase` `` and ```` ```a block``` ````, compiled and taken apart the way `latex.js` does formulas — plus what typing a backtick does, and `richify()`/`plainify()`, the pair every writing surface in the app goes through. A fenced block itself is built by whatever registered the code pen — the code cell does — and setting its language from the bar rewrites the fence's own opening line, then leaves the box to save itself on the `input` that follows |
+| `ticks.js` | 296 | code ticks: `` `a phrase` `` and ```` ```a block``` ````, compiled and taken apart the way `latex.js` does formulas — plus what typing a backtick does, and `richify()`/`plainify()`, the pair every writing surface in the app goes through — marks, then ticks, then maths, and unwound in the opposite order. A fenced block itself is built by whatever registered the code pen — the code cell does — and setting its language from the bar rewrites the fence's own opening line, then leaves the box to save itself on the `input` that follows |
+| `marks.js` | 499 | the marks writing wears: `# ` `## ` `### ` a heading, `- ` a bullet, `- [ ] ` a task with a box to tick, `---` a rule, `**bold**`, `*italic*`, and `->` an arrow — compiled and taken apart the way `latex.js` does formulas. First of the three passes, so a heading or a bullet may hold a formula or a phrase of code while a `#` or an `->` inside a fence or a formula is left where it is; a heading is sized in `em`, keeps the face of the box it is in, and differs from the step above it only in size, and a nested bullet carries a hairline down from the one it belongs to. `markEnter()`, `markTab()` and `markWrap()` are here too — what ⏎, ⇥ and ⌃B/⌃I do, over (text, offset) with no DOM in sight — and every marker reads a non-breaking space as a space, since that is what a browser's editor leaves behind wherever it thinks a space might collapse |
 | `matrix.js` | 255 | the n×m arithmetic the cards lean on: multiply, transpose, determinant, inverse, powers, and eigen (Hessenberg + shifted QR, null-space eigenvectors) |
 | `fits.js` | 477 | a `.fits` → its HDUs, their headers, and the shape of every data unit; the walk steps over the data without touching it, so a four-gigabyte cube opens as fast as a small one. Then one column of a binary table, on request — planned before it is read, so what comes back is bounded whatever the file weighs |
 | `workbook.js` | 518 | `.xlsx`, `.ods` and `.csv` → plain rows of plain strings. No library: a workbook is a zip of XML, and the browser has an unzipper |
@@ -720,8 +724,8 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1442 assertions**, and they are the real specification of this app. Among them:
-that all 74 script files load without throwing; that a fresh note is one empty
+**1549 assertions**, and they are the real specification of this app. Among them:
+that all 76 script files load without throwing; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a
 third on the real one; that every add-menu entry adds the type it claims to;

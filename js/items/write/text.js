@@ -43,7 +43,7 @@ addCSS('text', `
 `);
 /* its tiles in the palette — one per style */
 defineTool({ kind:'title',  cat:'write', label:'Heading',     icon:'heading', order:10, hint:'Poster type for titles' });
-defineTool({ kind:'body',   cat:'write', label:'Text',        icon:'text',    order:12, hint:'Serif body text — $$…$$ sets an equation' });
+defineTool({ kind:'body',   cat:'write', label:'Text',        icon:'text',    order:12, hint:'Serif body text — # a heading, - a bullet, **bold**, $$…$$ an equation, `…` code' });
 defineTool({ kind:'hand',   cat:'write', label:'Handwriting', icon:'hand',    order:14, hint:'Marker-pen handwriting' });
 defineTool({ kind:'mono',   cat:'write', label:'Mono',        icon:'mono',    order:16, hint:'Monospace — for code and readouts' });
 defineTool({ kind:'marker', cat:'write', label:'Marker',      icon:'marker',  order:18, hint:'Highlighted handwriting — ◑ cycles the colour' });
