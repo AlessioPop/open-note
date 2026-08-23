@@ -1530,6 +1530,7 @@
       ok('mathpad: fra offers \\frac{}{} first', m.length && m[0].lab === '\\frac{}{}',
         m.length ? m[0].lab : 'nothing');
       ok('mathpad: alp offers alpha', mpadMatch('alp', 'cs')[0].cs === 'alpha');
+      ok('mathpad: rm offers the short upright form', mpadMatch('rm', 'cs')[0].lab === '\\rm{}');
       ok('mathpad: a bare \\ offers the whole list', mpadMatch('', 'cs').length > 20);
       ok('mathpad: nonsense offers nothing', mpadMatch('zzqq', 'cs').length === 0);
       ok('mathpad: \\begin{pm offers pmatrix', mpadMatch('pm', 'env')[0].cs === 'pmatrix');
@@ -6008,6 +6009,9 @@
 
       ok('undo: it has a sound of its own', typeof SND.undo === 'function' &&
         typeof SND.redo === 'function' && typeof SND.nope === 'function');
+      ok('ink: pen sound warms up and follows contact and motion', typeof SND.preparePen === 'function' &&
+        typeof SND.penStart === 'function' &&
+        typeof SND.penMove === 'function' && typeof SND.penStop === 'function');
 
       /* --- a thing placed comes off the page again, and goes back on --- */
       act();

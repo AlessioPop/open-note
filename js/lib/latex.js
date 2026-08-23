@@ -251,7 +251,8 @@ function texCompile(src, display){
       const s = raw().replace(/^ | $/g, '\u00a0');   // keep the spaces at the edges
       return texEl('mtext', [s], v === 'textbf' ? { style:'font-weight:700' } : v === 'textit' ? { style:'font-style:italic' } : null);
     }
-    if(v === 'mathrm' || v === 'operatorname') return texEl('mi', [raw()], { mathvariant:'normal' });
+    if(v === 'rm' || v === 'mathrm' || v === 'operatorname')
+      return texEl('mi', [raw()], { mathvariant:'normal' });
     if(v === 'mathbf' || v === 'boldsymbol')   return texEl('mi', [raw()], { mathvariant:'normal', style:'font-weight:700' });
     if(v === 'mathit')  return texEl('mi', [raw()], { style:'font-style:italic' });
     if(v === 'mathsf')  return texEl('mi', [raw()], { mathvariant:'normal', style:'font-family:var(--body),sans-serif' });

@@ -114,7 +114,7 @@ const MPAD_SNIP = [
   { ins:'\\overbrace{}',     hint:'brace over',    pv:'\\overbrace{a+b}',          rank:27 },
   { ins:'\\underbrace{}',    hint:'brace under',   pv:'\\underbrace{a+b}',         rank:28 },
   { ins:'\\operatorname{}',  hint:'named operator',pv:'\\operatorname{sgn}',       rank:29 },
-  { ins:'\\mathrm{}',        hint:'upright',       pv:'\\mathrm{d}x',              rank:15 },
+  { ins:'\\rm{}',            hint:'upright',       pv:'\\rm{d}x',                  rank:15 },
   { ins:'\\mathbf{}',        hint:'bold',          pv:'\\mathbf{v}',               rank:15 },
   { ins:'\\mathit{}',        hint:'italic',        pv:'\\mathit{x}',               rank:31 },
   { ins:'\\mathsf{}',        hint:'sans serif',    pv:'\\mathsf{T}',               rank:32 },

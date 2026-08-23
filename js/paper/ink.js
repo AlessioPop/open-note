@@ -168,7 +168,7 @@ function inkCfg(){                                /* 'stylus', not 'ink' — set
 /* a transparent sheet over the page catches the stylus, so ink lands on top of
    pictures and everything else instead of on whatever was clicked */
 function wireDraw(cap, page, surf){
-  let cur = null, path = null, raf = 0, pid = null, st = null;
+  let cur = null, path = null, raf = 0, pid = null, st = null, soundAt = 0;
   const P = e => {
     const r = surf.getBoundingClientRect();
     return [rd1((e.clientX - r.left) / r.width * 1000), rd1((e.clientY - r.top) / r.width * 1000)];
@@ -192,21 +192,25 @@ function wireDraw(cap, page, surf){
     (page.ink = page.ink || []).push(cur);
     path = addStroke(st, cur);
     path.setAttribute('d', strokeGeom(cur));
-    SND.scratch();
+    soundAt = e.timeStamp;
+    SND.penStart(cfg.mode, e.pressure);
   });
   cap.addEventListener('pointermove', e => {
     if(!cur || e.pointerId !== pid) return;
     const p = P(e), last = cur.pts[cur.pts.length - 1];
-    if(Math.hypot(p[0] - last[0], p[1] - last[1]) < 1.2 * pgK()) return;   // same hand, any sheet
+    const travel = Math.hypot(p[0] - last[0], p[1] - last[1]);
+    if(travel < 1.2 * pgK()) return;   // same hand, any sheet
     cur.pts.push(p);
     if(!raf) raf = requestAnimationFrame(paint);   // one repaint per frame, however fast the mouse
-    SND.scratch();
+    SND.penMove(travel / Math.max(1, e.timeStamp - soundAt), e.pressure);
+    soundAt = e.timeStamp;
   });
   const stop = e => {
     if(!cur || (e && e.pointerId !== pid)) return;
     if(raf){ cancelAnimationFrame(raf); raf = 0; }
     path.setAttribute('d', strokeGeom(cur));
     cur = null; path = null; st = null;
+    SND.penStop();
     queueSave(page.id);
   };
   cap.addEventListener('pointerup', stop);
@@ -237,6 +241,7 @@ function setDraw(on){
   $('#drawBtn').classList.toggle('on', drawMode);
   $('#inkbar').classList.toggle('open', drawMode);
   if(drawMode){
+    SND.preparePen();
     if(typeof setSelectMode === 'function' && selectMode) setSelectMode(false, true);
     select(null); deselectString(); cancelLinking(); closeQuickMenu();
   }
