@@ -5,8 +5,7 @@
    Every entry in the add menu is a `kind` some feature registered. Core does
    not know what any of them are: it asks the registry to make one, drops it on
    the page, and lets the feature say what should happen next — a text box opens
-   for typing, a matrix puts the caret in its first cell, a plot switches maths
-   mode on. See core/registry.js. */
+   for typing, or a matrix puts the caret in its first cell. See core/registry.js. */
 function addItem(kind, at, page){
   page = page || sheet();
   const entry = ADD_KINDS[kind];

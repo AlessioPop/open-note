@@ -249,7 +249,7 @@
       fitToDesk(true);
       await frames(6);
       if(SCENE === 'logic' && made) select(made.id); else select(null);
-      selectMath(null, null); setMath(false);
+      selectMath(null, null);
       document.body.classList.remove('map');
       await frames(4);
       say('ok, ' + page.items.length + ' items');

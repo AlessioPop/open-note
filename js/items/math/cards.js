@@ -137,7 +137,7 @@ function wireCard(el, it, page){
     if(!mathAim || mathAim.kind !== 'mul' || mathAim.from === it.id) return;
     e.stopPropagation(); e.preventDefault();
     const src = findItem(mathAim.from);
-    mathAim = null; syncMathBar();
+    mathAim = null; syncMathState();
     if(src) makeProduct(page, src.it, it);
   }, true);
 }
@@ -273,7 +273,7 @@ function matAct(a, it, page, el, x){
   }
   if(a === 'mul'){
     mathAim = { kind: 'mul', from: it.id, lab: it.lab || 'M' };
-    setMath(true);
+    syncMathState();
     mathHint('click the matrix or vector to multiply — or just drag one onto the other');
   }
 }
@@ -298,14 +298,14 @@ function vecAct(a, it, page, el){
   }
   if(a === 'mul'){
     mathAim = { kind: 'mul', from: it.id, lab: it.lab || 'v' };
-    setMath(true);
+    syncMathState();
     mathHint('click the matrix to multiply it by — or drag one onto the other');
   }
 }
 /* the card's vector, drawn in a coordinate system */
 function plotAddVec(f, box){
   const bv = Array.isArray(box.v) ? box.v : [1, 1];
-  if(bv.length !== 2){ setMath(true); mathHint('only a 2-vector can be drawn in a plane'); return null; }
+  if(bv.length !== 2){ mathHint('only a 2-vector can be drawn in a plane'); return null; }
   const v = { id: uid(), ox: 0, oy: 0, x: bv[0], y: bv[1],
     c: box.c || MATH_COLORS[1], s: box.s || 'solid', lab: box.lab || nextName(f.it) };
   vecsOf(f.it).push(v);

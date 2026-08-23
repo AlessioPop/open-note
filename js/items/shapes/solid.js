@@ -16,7 +16,7 @@
    slice and the cut faces are drawn where it stops. The square and the circle
    are flat on the page: no pose, just corners you drag (x and y only) into
    any rectangle or ellipse, and an arc for the circle.
-   It is arithmetic and SVG like the rest of maths mode, so a guide prints,
+   It is arithmetic and SVG like the rest of the maths items, so a guide prints,
    travels in a backup and comes out in an exported book with nothing to load. */
 const SOLID_KINDS = ['cube', 'sphere', 'torus', 'square', 'circle'];
 const SOLID_NAMES = { cube:'Cube', sphere:'Sphere', torus:'Torus', square:'Square', circle:'Circle' };
@@ -535,18 +535,17 @@ function syncSolidChrome(el, it){
 }
 
 /* ---- turning one about ----
-   In maths mode a guide takes the mouse, the way a plot does; out of it the
-   ⟳ button lends it the mouse for a moment. Either way a double-click hands it
-   back to the page, and the pen goes over the top of it whatever it is doing —
-   ink is caught by a sheet above the whole page, not by what is under it. */
-const solidLive = el => (mathMode || el.classList.contains('play')) && !PLOT_MOVE.has(el.dataset.id);
+   The local ⟳ button lends the guide the mouse. A double-click hands it back to
+   the page, and the pen goes over the top whatever it is doing — ink is caught
+   by a sheet above the whole page, not by what is under it. */
+const solidLive = el => el.classList.contains('play') && !PLOT_MOVE.has(el.dataset.id);
 function solidMove(el, it, on){
   if(on) PLOT_MOVE.add(it.id); else PLOT_MOVE.delete(it.id);
   el.classList.toggle('mmove', !!on);
   select(it.id); SND.pop();
 }
 /* a guide let go mid-turn keeps the hand's spin, decaying like a real thing —
-   one entry per item, so a fresh grab (or leaving the mode) always stops it */
+   one entry per item, so a fresh grab (or putting the tool away) stops it */
 const SOLID_SPIN = new Map();
 function stopSpin(it){
   const s = SOLID_SPIN.get(it.id);
@@ -614,7 +613,7 @@ function wireSolid(el, it, page){
     svg.addEventListener('pointerup', up);
     svg.addEventListener('pointercancel', up);
   });
-  /* the wheel sizes it at any time — including in the middle of a turn */
+  /* while the local turn tool is on, the wheel sizes it mid-gesture too */
   svg.addEventListener('wheel', e => {
     if(!solidLive(el) || e.ctrlKey || e.metaKey) return;      /* ctrl+wheel still zooms the desk */
     e.preventDefault(); e.stopPropagation();
@@ -622,7 +621,7 @@ function wireSolid(el, it, page){
     paintSolid(el, it); queueSave(page.id);
   }, { passive:false });
   el.addEventListener('dblclick', e => {
-    if(!mathMode) return;
+    if(!el.classList.contains('play') && !PLOT_MOVE.has(it.id)) return;
     e.stopPropagation(); e.preventDefault();
     solidMove(el, it, !PLOT_MOVE.has(it.id));
   });
@@ -737,7 +736,6 @@ defineItem('solid', {
   html: (it, c) => '<div class="body solid' + (SOLID_FLAT[it.kind] ? ' flat' : '') +
     '"><div class="sowrap">' + solidSVG(it) +
     (c.live ? SOLID_HANDLES + '<div class="shield"><b>⟳ to turn it</b></div>' : '') + '</div></div>',
-  after(){ setMath(true); },
   tools(mk, it, el, page){
     mk('⟳', 'Hands it the mouse — turn it, or pull a flat shape’s corners', b => {
       el.classList.toggle('play');
@@ -781,63 +779,24 @@ svg.msolid{display:block;width:100%;height:auto;background:none;overflow:visible
 .msolid path.shd{fill:none;stroke-width:2.6;stroke-dasharray:13 11;stroke-linecap:round;opacity:.3}
 .msolid path.sgr{fill:none;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round;opacity:.62}
 .msolid path.sct{fill:none;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
-.item.play .sowrap,body.mathing .item[data-type="solid"] svg.msolid{cursor:grab}
-.item.play .sowrap:active,body.mathing .item[data-type="solid"] svg.msolid:active{cursor:grabbing}
+.item.play .sowrap{cursor:grab}
+.item.play .sowrap:active{cursor:grabbing}
 /* flat shapes have no pose to grab — their corners do the work */
-body.mathing .item[data-type="solid"] .solid.flat svg.msolid,
 .item.play .solid.flat svg.msolid,.item.play .solid.flat .sowrap{cursor:default}
 .shnd{position:absolute;z-index:8;width:calc(var(--scale)*13px);height:calc(var(--scale)*13px);
   margin:calc(var(--scale)*-6.5px) 0 0 calc(var(--scale)*-6.5px);border-radius:50%;
   background:var(--accent2);border:calc(var(--scale)*2px) solid var(--paper);
   box-shadow:0 1px 4px rgba(0,0,0,.35);display:none;cursor:nwse-resize;touch-action:none}
-body.mathing .item[data-type="solid"] .solid.flat .shnd,
 .item.play .solid.flat .shnd{display:block}
 .item.mmove .solid.flat .shnd{display:none}
-body.mathing .item[data-type="solid"] .shield{display:none}
-body.mathing .item[data-type="solid"].mmove svg.msolid{cursor:default}
+.item.play .shield{display:none}
+.item.play.mmove svg.msolid{cursor:default}
 .item.mmove .solid{box-shadow:0 0 0 calc(var(--scale)*2px) var(--accent),
   0 calc(var(--scale)*10px) calc(var(--scale)*22px) rgba(0,0,0,.25)}
 .item.mmove .solid::after{content:"✥ move — double-click to turn it again";position:absolute;
   right:0;top:100%;margin-top:calc(var(--scale)*3px);white-space:nowrap;pointer-events:none;
   font-family:var(--mono);font-size:calc(var(--scale)*10px);letter-spacing:.08em;
   color:#fff;background:var(--accent);padding:calc(var(--scale)*2px) calc(var(--scale)*6px);border-radius:2px}
-.mleg{display:flex;flex-wrap:wrap;gap:calc(var(--scale)*4px);margin-top:calc(var(--scale)*5px)}
-.mleg:empty{display:none}
-.mpill{display:inline-flex;align-items:center;gap:calc(var(--scale)*4px);font-family:var(--mono);
-  font-size:calc(var(--scale)*12px);letter-spacing:.03em;color:var(--soft);background:none;
-  border:1px solid var(--line);border-radius:2px;padding:calc(var(--scale)*3px) calc(var(--scale)*7px)}
-.mpill i{display:block;width:calc(var(--scale)*9px);height:calc(var(--scale)*9px);border-radius:50%}
-.mpill:hover{color:var(--ink);border-color:var(--accent2)}
-.mpill.on{color:var(--ink);border-color:var(--accent2);background:color-mix(in srgb,var(--accent2) 15%,transparent)}
-.mpill.det{color:var(--accent2);border-style:dashed}
-.mchip{position:absolute;z-index:24;display:flex;align-items:center;gap:1px;white-space:nowrap;
-  transform:translate(calc(var(--scale)*11px),calc(var(--scale)*-15px));
-  background:var(--ink);color:var(--paper);border-radius:3px;padding:calc(var(--scale)*3px);
-  font-family:var(--mono);font-size:calc(var(--scale)*13px);
-  box-shadow:0 calc(var(--scale)*5px) calc(var(--scale)*14px) rgba(0,0,0,.4)}
-.mchip.flip{transform:translate(calc(var(--scale)*-11px),calc(var(--scale)*-15px))}
-.mchip.flip .merr{left:auto;right:0}
-.mchip input{font:inherit;color:#fff;background:rgba(255,255,255,.1);border:0;border-radius:2px;
-  padding:calc(var(--scale)*2px) calc(var(--scale)*3px);outline:none;user-select:text}
-.mchip input:focus{background:rgba(255,255,255,.22)}
-.mchip input.bad{color:#ff9d8a}
-.mchip .mval{width:calc(var(--scale)*50px);text-align:center}
-.mchip .mlab{width:calc(var(--scale)*30px);text-align:center}
-.mchip .mexp{width:calc(var(--scale)*124px)}
-.mchip .mpar{opacity:.6;padding:0 1px}
-.mchip button{color:var(--paper);line-height:1;border-radius:2px;padding:calc(var(--scale)*4px) calc(var(--scale)*6px)}
-.mchip button:hover{background:var(--accent);color:#fff}
-.mchip button.on{background:rgba(255,255,255,.24)}
-.mchip .mdot{width:calc(var(--scale)*15px);height:calc(var(--scale)*15px);border-radius:50%;padding:0;
-  border:1px solid rgba(255,255,255,.5)}
-.mchip .msty{padding:calc(var(--scale)*4px)}
-.mchip .msty b{display:block;width:calc(var(--scale)*19px);height:0;border-top:calc(var(--scale)*2px) solid var(--paper)}
-.mchip .msty b.s-dashed{border-top-style:dashed}
-.mchip .msty b.s-dotted{border-top-style:dotted}
-.mchip .merr{position:absolute;left:0;top:100%;margin-top:calc(var(--scale)*4px);white-space:normal;
-  max-width:calc(var(--scale)*230px);background:var(--accent);color:#fff;border-radius:2px;
-  padding:calc(var(--scale)*3px) calc(var(--scale)*7px);font-size:calc(var(--scale)*11px)}
-.mchip .merr:empty{display:none}
 `);
 /* its tiles in the palette — one per shape */
 defineTool({ kind:'cube',   cat:'shapes', label:'Cube',   icon:'cube',   order:10, hint:'A cube to draw over — drag to turn it, ✎ for its sides' });

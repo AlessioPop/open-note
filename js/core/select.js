@@ -14,27 +14,36 @@ const selectionItems = page => {
 };
 
 function selectionLeavesMath(ids){
-  if(typeof mathSel === 'undefined' || !mathSel) return;
-  if(ids && ids.has(mathSel.pid)) return;
-  mathSel = null;
-  if(typeof repaintPlots === 'function') repaintPlots();
-  if(typeof syncMathBar === 'function') syncMathBar();
+  let changed = false;
+  if(typeof mathSel !== 'undefined' && mathSel && (!ids || !ids.has(mathSel.pid))){
+    mathSel = null; changed = true;
+  }
+  if(typeof mathTool !== 'undefined' && mathTool === 'vec' &&
+     typeof mathToolPlot !== 'undefined' && mathToolPlot && (!ids || !ids.has(mathToolPlot))){
+    mathTool = 'pan'; mathToolPlot = null; changed = true;
+  }
+  if(changed && typeof repaintPlots === 'function') repaintPlots();
+  if(changed && typeof syncMathState === 'function') syncMathState();
 }
 
 function select(id){
+  const was = selected;
   SELECTED.clear();
   if(id) SELECTED.add(id);
   selected = id || null;
   selectionLeavesMath(SELECTED);
   syncSelectionDOM();
+  if(was !== selected && typeof repaintPlots === 'function') repaintPlots();
 }
 
 function selectMany(ids){
+  const was = selected;
   SELECTED.clear();
   for(const id of ids || []) if(id) SELECTED.add(id);
   selected = SELECTED.size === 1 ? [...SELECTED][0] : null;
   selectionLeavesMath(SELECTED);
   syncSelectionDOM();
+  if(was !== selected && typeof repaintPlots === 'function') repaintPlots();
 }
 
 function syncSelectionDOM(){
@@ -72,7 +81,6 @@ function setSelectMode(on, keep){
   document.body.classList.toggle('selecting', selectMode);
   if(selectMode){
     if(typeof setDraw === 'function' && drawMode) setDraw(false);
-    if(typeof setMath === 'function' && mathMode) setMath(false);
     if(!keep) select(null);
     if(typeof deselectString === 'function') deselectString();
     if(typeof cancelLinking === 'function') cancelLinking();

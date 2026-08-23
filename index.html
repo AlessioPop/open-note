@@ -246,7 +246,7 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
   <div class="sec">Sound</div>
   <div class="row"><span>Studio sounds</span><div class="switch on" id="sndSwitch" role="switch" aria-checked="true" tabindex="0"></div></div>
   <div class="row"><span>Volume</span><input type="range" id="sndVol" min="0" max="100" value="50"></div>
-  <div class="sec">Keys: Space / Shift+A / right-click quick add · D stylus · L layers · M maths · Ctrl+scroll zoom · drag the paper to pan · Del removes · double-click text to edit · select text, then tap a dot to highlight</div>
+  <div class="sec">Keys: Space / Shift+A / right-click quick add · D stylus · L layers · Ctrl+scroll zoom · drag the paper to pan · Del removes · double-click text to edit · select text, then tap a dot to highlight</div>
   <button class="btn wide" id="closeDrawer">Close</button>
 </aside>
 
@@ -261,35 +261,6 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
   <button id="inkClear" title="Remove this layer's ink from this sheet">Clear ink</button>
   <span class="lab">on <b id="inkLay">Base</b></span>
   <button id="inkDone" title="Back to moving things (Esc)">✕ Done</button>
-</div>
-
-<div class="inkbar mathbar glass-lite" id="mathbar">
-  <span class="lab">∑ Math</span>
-  <button id="mAxes" title="Drop a coordinate system on the sheet">＋ Axes</button>
-  <button id="mFn" title="Draw a function in it — sin(x), x^2, 1/x…">ƒ(x)</button>
-  <button id="mVec" title="Drag inside the plot to pull a vector out of it">⇗ Vector</button>
-  <button id="mMat" title="A 2×2 matrix you can fill in — drag it onto a vector to apply it">▦ Matrix</button>
-  <button id="mVecBox" title="A vector card — drag it into a plot to draw it">[v] Vector</button>
-  <span class="divider"></span>
-  <span class="lab">draw over</span>
-  <button id="mScube" title="A cube to draw over — drag to turn it, wheel to size it">◰ Cube</button>
-  <button id="mSsphere" title="A sphere to draw over — drag to turn it, wheel to size it">◕ Sphere</button>
-  <button id="mStorus" title="A torus to draw over — drag to turn it, wheel to size it">◎ Torus</button>
-  <button id="mSsquare" title="A square to draw over — flat, but it turns in space like the rest">◻ Square</button>
-  <button id="mScircle" title="A circle to draw over — flat, but it turns in space like the rest">◯ Circle</button>
-  <span class="divider"></span>
-  <button id="mFill" title="Make the plot fill the sheet">Fill sheet</button>
-  <span class="lab">x <input class="num" id="mX0" title="Left edge"><input class="num" id="mX1" title="Right edge"></span>
-  <span class="lab">y <input class="num" id="mY0" title="Bottom edge"><input class="num" id="mY1" title="Top edge"></span>
-  <button id="mGrid" title="Grid — solid, dashed, dotted or blank">grid solid</button>
-  <button id="mAxis" title="Axes with numbers / without / off">axes</button>
-  <span class="divider"></span>
-  <button id="mBasis" title="Show î and ĵ — drag their tips to change the basis">î ĵ</button>
-  <button id="mHome" title="Put the origin back in the middle">⌂ View</button>
-  <button id="mReset" title="Back to the standard basis">⟲ Basis</button>
-  <span class="lab" id="mBasisTag"></span>
-  <span class="lab hint" id="mHint"></span>
-  <button id="mDone" title="Back to moving things (Esc)">✕ Done</button>
 </div>
 
 <aside class="lpanel glass" id="lpanel">
@@ -361,6 +332,8 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <script src="js/lib/sound.js"></script>
 <script src="js/lib/spring.js"></script>
 <script src="js/lib/latex.js"></script>
+<script src="js/lib/mathexpr.js"></script>
+<script src="js/lib/contour.js"></script>
 <script src="js/lib/ticks.js"></script>
 <script src="js/lib/marks.js"></script>
 <script src="js/lib/matrix.js"></script>
@@ -407,6 +380,7 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <script src="js/items/write/deck.js"></script>
 <script src="js/items/math/table.js"></script>
 <script src="js/items/math/plot.js"></script>
+<script src="js/items/math/plotpanel.js"></script>
 <script src="js/items/math/chart.js"></script>
 <script src="js/items/math/cards.js"></script>
 <script src="js/items/math/calc.js"></script>
@@ -431,7 +405,6 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <script src="js/chrome/glass.js"></script>
 <script src="js/chrome/palette.js"></script>
 <script src="js/chrome/props.js"></script>
-<script src="js/chrome/mathbar.js"></script>
 <script src="js/chrome/mathpad.js"></script>
 <script src="js/chrome/tickpad.js"></script>
 <script src="js/chrome/markpad.js"></script>

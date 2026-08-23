@@ -487,7 +487,7 @@ function plotAddTable(f, tit){
   queueSave(f.page.id); SND.plop();
   select(it.id);
   selectMath(it.id, 'dat', d.id);                    // the options come up on the point straight away
-  syncMathBar();
+  syncMathState();
   return d;
 }
 

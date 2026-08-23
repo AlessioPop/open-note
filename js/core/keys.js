@@ -75,7 +75,6 @@ window.addEventListener('keydown', e => {
   if(!e.ctrlKey && !e.metaKey && !e.altKey){
     if(e.key === 'd' || e.key === 'D'){ e.preventDefault(); setDraw(!drawMode); return; }
     if(e.key === 'l' || e.key === 'L'){ e.preventDefault(); toggleLayers(); return; }
-    if(e.key === 'm' || e.key === 'M'){ e.preventDefault(); setMath(!mathMode); return; }
   }
   if(e.key === '+' || e.key === '=') zoomBy(1.15);
   if(e.key === '-') zoomBy(1 / 1.15);
@@ -83,10 +82,9 @@ window.addEventListener('keydown', e => {
   if(e.key === 'Escape'){
     if(qmenu.classList.contains('open')){ closeQuickMenu(); return; }
     if(linking){ cancelLinking(); return; }
-    if(mathAim){ mathAim = null; syncMathBar(); return; }
-    if(mathTool === 'vec'){ mathTool = 'pan'; syncMathBar(); return; }
+    if(mathAim){ mathAim = null; syncMathState(); return; }
+    if(mathTool === 'vec'){ mathTool = 'pan'; mathToolPlot = null; syncMathState(); return; }
     if(mathSel){ selectMath(null, null); return; }
-    if(mathMode){ setMath(false); return; }
     if(drawMode){ setDraw(false); return; }
     if(selString){ deselectString(); return; }
     if(focusLayer){ focusLayer = null; applyLayerClasses(); return; }

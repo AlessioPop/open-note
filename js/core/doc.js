@@ -35,7 +35,7 @@ async function openNote(id){
   select(null);
   panX = panY = 0; setZoom(1);
   layers(index); curLayerId(); queueIndex();      // stable layer ids from the first open
-  focusLayer = null; setDraw(false); setMath(false); renderLayers();
+  focusLayer = null; setDraw(false); renderLayers();
   resetForNewNote();                              // features drop whatever they were holding
   applyTheme(); syncSound();
   lib.lastOpen = id; queueLib();

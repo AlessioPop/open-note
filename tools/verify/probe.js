@@ -159,6 +159,8 @@
         ['washi', 'washi'], ['sticker', 'sticker'], ['molecule', 'molecule'],
         ['circuit', 'circuit'], ['ptable', 'ptable'], ['nuchart', 'nuchart']
       ];
+      ok('global maths mode and toolbar are absent', !Q('#mathbar') &&
+        typeof setMath === 'undefined' && typeof mathMode === 'undefined');
       for (var i = 0; i < kinds.length; i++) {
         var kind = kinds[i][0], want = kinds[i][1];
         var before = page.items.length;
@@ -177,8 +179,6 @@
           ok('addItem(' + kind + ') style is ' + kind, added && added.st === kind,
             'got st ' + (added && added.st));
       }
-      /* setMath / deckEdit may have been switched on by the adds above */
-      setMath(false);
       await render();
     });
 
@@ -476,7 +476,6 @@
         }
       }
       ok('solids: no NaN at any sweep of any shape', bad === '', bad);
-      setMath(false);
       page.items = []; await render();
     });
 
@@ -721,7 +720,6 @@
         calcResult(oc).join(','));
       ok('old books: and still draws whole',
         QA('#pageHost .item[data-type="calc"] .mtxgrid').length === 3);
-      setMath(false);
       page.items = []; await render();
     });
 
@@ -943,7 +941,6 @@
         if (added.rot !== 0) tilted += kinds[i] + '@' + added.rot + ' ';
       }
       ok('straight: nothing tilts on its way in', tilted === '', tilted);
-      setMath(false);
       cpage.items = keep;
       await render();
     });
@@ -3771,7 +3768,7 @@
 
       /* clicking a point picks the series it belongs to. Both of these repaint
          the plot, so the mark is looked up after them or it is a detached node */
-      setMath(true);
+      select(plt.id);
       selectMath(null, null);
       var mark = byType('plot').querySelector('.mgrab[data-h^="dat:"]');
       ok('plot⊂table: the points are something to click', !!mark);
@@ -3780,8 +3777,6 @@
         ok('plot⊂table: clicking one picks the series',
           !!mathSel && mathSel.kind === 'dat' && mathSel.id === d.id, JSON.stringify(mathSel));
       }
-      setMath(false);
-
       /* the options chip, and picking a column in it */
       selectMath(plt.id, 'dat', d.id);
       pel = byType('plot');
@@ -3836,8 +3831,7 @@
 
       selectMath(null, null);
 
-      /* the wheel zooms the plane it is over, maths bar or no maths bar */
-      setMath(false);
+      /* the wheel zooms the plane it is over */
       var svg = byType('plot').querySelector('svg.mplot');
       var rect = svg.getBoundingClientRect();
       var turn = function (dy, extra) {
@@ -3849,7 +3843,7 @@
       var span = function () { return plt.xmax - plt.xmin; };
       var was = span();
       turn(-120);
-      ok('plot wheel: it zooms in with the maths bar away', span() < was * 0.95,
+      ok('plot wheel: it zooms in', span() < was * 0.95,
         was + ' → ' + span());
       var inAt = span();
       turn(120); turn(120);
@@ -3867,6 +3861,492 @@
       ok('plot wheel: a plot being moved lets it through', span() === held, held + ' → ' + span());
       PLOT_MOVE.delete(plt.id);
 
+      page.items = keep;
+      await render();
+    });
+
+    /* ---- the expression compiler: one tree, three back ends ---- */
+    await stage('mathexpr', async function () {
+      var C = mxCompile;
+      ok('mx: x^2 is still a function of x', C('x^2').fn(3) === 9);
+      ok('mx: a typo is a sentence', typeof C('wat(').err === 'string');
+      ok('mx: x^2+y^2=1 is an equation', C('x^2+y^2=1').kind === 'implicit');
+      ok('mx: y<x^2 is a strict region under a curve', C('y<x^2').kind === 'ineq' && C('y<x^2').strict && C('y<x^2').sub === 'expy' && C('y<x^2').below);
+      ok('mx: y>=x^2 is inclusive, above', !C('y>=x^2').strict && !C('y>=x^2').below);
+      ok('mx: 0<y<x is a chain', C('0<y<x').chain === 2 && C('0<y<x').kind === 'ineq');
+      ok('mx: a chain runs one way', /one way/.test(C('0<y>x').err || ''));
+      ok('mx: r=cos(2θ) is polar', C('r=cos(2θ)').kind === 'polar' && C('r=cos(2theta)').kind === 'polar');
+      ok('mx: xy is refused with advice', /x·y/.test(C('xy').err || ''), C('xy').err);
+      ok('mx: x<1 compiles, a matrix cell refuses it', !C('x<1').err && !!mxNum('x<1').err);
+      ok('mx: a cell still takes 1/2 and sqrt(2)', mxNum('1/2').v === 0.5 && Math.abs(mxNum('sqrt(2)/2').v - Math.SQRT1_2) < 1e-12);
+      ok('mx: (1+i)(1-i) is the point 2', C('(1+i)(1-i)').kind === 'points' && C('(1+i)(1-i)').pts[0][0] === 2 && C('(1+i)(1-i)').pts[0][1] === 0);
+      var z = C('z=e^(i t)');
+      ok('mx: z=e^(it) is a parametric curve', z.kind === 'param' && z.z, z.err);
+      var q = z.evc(0, 0, Math.PI / 2);
+      ok('mx: …through i at t=π/2', Math.abs(q[0]) < 1e-9 && Math.abs(q[1] - 1) < 1e-9);
+      ok('mx: (cos t, sin t) is parametric', C('(cos(t), sin(t))').kind === 'param');
+      ok('mx: {1+i, 2-i, 3} is three points', C('{1+i, 2-i, 3}').pts.length === 3);
+      var ex = C('y=e^(i x)');
+      ok('mx: e^(ix) is a complex function of x', ex.kind === 'expy' && ex.complex && !!ex.evc);
+      ok('mx: x^2=y reads as y=x^2', C('x^2=y').kind === 'expy' && C('x^2=y').fn(3) === 9);
+      ok('mx: x=y^2 is a function of y', C('x=y^2').kind === 'expx' && C('x=y^2').ev(0, 3, 0) === 9);
+      ok('mx: the margin of y<x^2 is positive below the curve', C('y<x^2').ev(2, 1, 0) === 3);
+      ok('mx: the margin of a chain is the smaller one', C('0<y<x').ev(3, 1, 0) === 1 && C('0<y<x').ev(3, -1, 0) === -1);
+      ok('mx: precedence kept: 2^-1, -x^2, 3e2, 3e', C('2^-1').fn(0) === 0.5 && C('-x^2').fn(2) === -4 && C('3e2').fn(0) === 300 && Math.abs(C('3e').fn(0) - 3 * Math.E) < 1e-9);
+      ok('mx: a bare t draws nothing, and says so', !!C('t^2').err);
+      ok('mx: x and y with no = is refused', !!C('x^2+y^2').err);
+      ok('mx: a formula node only takes a function of x', mxFn('y=x').fn(3) === 3 && !!mxFn('x+y').err && !!mxFn('x^2+y^2=1').err && mxFn('2x').fn(3) === 6);
+      /* the typesetter: the same tree, written out */
+      ok('mx: x^10 typesets as x^{10}', C('x^10').tex === 'x^{10}', C('x^10').tex);
+      ok('mx: 1/x is a fraction', C('1/x').tex === '\\frac{1}{x}');
+      ok('mx: sin(x)^2 is not sin x²', C('sin(x)^2').tex === '\\left(\\sin x\\right)^{2}', C('sin(x)^2').tex);
+      ok('mx: θ comes back as \\theta', /\\theta/.test(C('r=cos(2θ)').tex));
+      var frac = texCompile(C('1/x').tex, false);
+      ok('mx: …and the fraction really typesets', !!frac.querySelector('mfrac'));
+      var seeds = ['x^2', 'sin(x)', '1/x', 'sqrt(x)', 'exp(x)', 'x^3-2x', 'x^2+y^2=1', 'y<=x^2', '0<y<x', 'r=cos(2θ)',
+                   '(cos(t), sin(t))', '{1+i, 2-i}', 'z=e^(i t)', '|x|', 'x%2', 'floor(x)', 'atan2(y,x)=1', 'log2(x)', '1.5e-7x'];
+      var broke = seeds.filter(function (s) { try { texCompile(C(s).tex, false); return false; } catch (e) { return true; } });
+      ok('mx: everything the compiler writes, the typesetter reads', broke.length === 0, broke.join(' | '));
+    });
+
+    /* ---- the plot after the rework's first pass: no fill-page, clip ids named
+       after the item, and a thing switched off in the key ---- */
+    await stage('plot: prep', async function () {
+      var page = sheet();
+      var keep = page.items.slice();
+      var mk = function (x, fns) {
+        return { id: uid(), x: x, y: 4, w: 40, rot: 0, z: 2, lay: curLayerId(),
+                 type: 'plot', xmin: -5, xmax: 5, ymin: -3.4, ymax: 3.4, grid: 'solid',
+                 axes: 1, bshow: 0, basis: [1, 0, 0, 1], cap: '', fns: fns, vecs: [] };
+      };
+      var a = mk(4, [{ id: 'fa', expr: 'x^2', c: '#c33', s: 'solid' }]);
+      var b = mk(52, [{ id: 'fb', expr: 'sin(x)', c: '#33c', s: 'solid', on: 0 },
+                      { id: 'fc', expr: 'cos(x)', c: '#3c3', s: 'solid' }]);
+      page.items = [a, b];
+      await render();
+      var els = QA('#pageHost .item[data-type="plot"]');
+      ok('plot prep: two plots on the page', els.length === 2);
+      var idOf = function (el) { var c = el.querySelector('clipPath'); return c && c.id; };
+      ok('plot prep: clip id carries the item id', idOf(els[0]) === 'mp-' + a.id, idOf(els[0]));
+      ok('plot prep: two plots, two clip ids', idOf(els[0]) !== idOf(els[1]));
+      ok('plot prep: the clip is what the picture is clipped to',
+         els[0].querySelector('g[clip-path]').getAttribute('clip-path') === 'url(#mp-' + a.id + ')');
+      var before = idOf(els[1]);
+      mrepaint(b);
+      ok('plot prep: the id survives a repaint', idOf(els[1]) === before);
+      ok('plot prep: fill-page is gone from the toolbar', !Q('#mFill'));
+      ok('plot prep: no FIT button on the plot', !QA('.item .tools button').some(function (x) { return x.textContent.trim() === 'FIT'; }));
+      /* the one switched off */
+      ok('plot prep: a hidden function draws no curve', els[1].querySelectorAll('path.mfn').length === 1);
+      ok('plot prep: …but the shown one still does', els[1].querySelector('path.mfn').getAttribute('stroke') === '#3c3');
+      var pills = els[1].querySelectorAll('.mpill');
+      ok('plot prep: the key still lists both', pills.length === 2, pills.length);
+      ok('plot prep: the hidden one wears a hollow dot', pills[0].classList.contains('off') && !pills[1].classList.contains('off'));
+      ok('plot prep: absent `on` means shown', els[0].querySelectorAll('path.mfn').length === 1);
+      /* the static path (print, export) leaves the record alone */
+      var json = JSON.stringify(page.items);
+      buildPage(page, false);
+      ok('plot prep: building the static page changes nothing in the record', JSON.stringify(page.items) === json);
+      page.items = keep;
+      await render();
+    });
+
+    /* ---- the expressions panel beside a plot ---- */
+    await stage('plot: panel', async function () {
+      var page = sheet();
+      var keep = page.items.slice();
+      var plt = { id: uid(), x: 40, y: 4, w: 40, rot: 0, z: 2, lay: curLayerId(),
+                  type: 'plot', xmin: -5, xmax: 5, ymin: -3.4, ymax: 3.4, grid: 'solid',
+                  axes: 1, bshow: 0, basis: [1, 0, 0, 1], cap: '', xp: 1,
+                  fns: [{ id: 'p1', expr: 'x^2', c: '#cf3a24', s: 'solid' }], vecs: [] };
+      page.items = [plt];
+      queueSave(page.id); histCommit();
+      await render();
+      var frame = function () { return new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); }); };
+      var el = byType('plot'), panel = el.querySelector('.xpanel');
+      ok('panel: the plot carries one', !!panel);
+      ok('panel: it is a group with a name', panel.getAttribute('role') === 'group' && !!panel.getAttribute('aria-label'));
+      ok('panel: hidden until the plot is picked', getComputedStyle(panel).visibility === 'hidden');
+      select(plt.id);
+      ok('panel: shown once it is', getComputedStyle(panel).visibility === 'visible');
+      ok('panel: the static page has none', !buildPage(page, false).querySelector('.xpanel'));
+      plotAct('vec', plt, page);
+      ok('panel: the local vector tool arms one plot gesture', mathTool === 'vec' &&
+        mathToolPlot === plt.id && !Q('#mathbar') && !document.body.classList.contains('mathing') &&
+        el.classList.contains('vectool'));
+      plotAct('vec', plt, page);
+      var advanced = panel.querySelector('.xpadv'), axesOptions = panel.querySelector('.xpfoot');
+      var compactH = panel.getBoundingClientRect().height;
+      ok('panel: axes options start behind a labelled gear', advanced.getAttribute('aria-expanded') === 'false' &&
+         advanced.getAttribute('aria-label') === 'Advanced axes options' && getComputedStyle(axesOptions).visibility === 'hidden');
+      advanced.click();
+      ok('panel: the gear opens the axes options without growing the expressions panel',
+        advanced.getAttribute('aria-expanded') === 'true' && getComputedStyle(axesOptions).visibility === 'visible' &&
+        Math.abs(panel.getBoundingClientRect().height - compactH) < 1);
+      advanced.click();
+      var row = panel.querySelector('.xprow'), inp = row.querySelector('.xpin');
+      ok('panel: a row per function', panel.querySelectorAll('.xprow').length === 1 && inp.value === 'x^2');
+      ok('panel: the row is an input, not a writing box', inp.tagName === 'INPUT' && !inp.isContentEditable);
+      ok('panel: the dot is a switch, on', row.querySelector('.xpdot').getAttribute('role') === 'switch' &&
+         row.querySelector('.xpdot').getAttribute('aria-checked') === 'true');
+      ok('panel: y = is written before a bare expression', row.querySelector('.xppre').textContent === 'y =');
+      ok('panel: x^2 is typeset beside the text', !!row.querySelector('.xppv math'));
+      /* typing */
+      inp.focus();
+      inp.value = 'sin(x)'; inp.dispatchEvent(new Event('input', { bubbles: true }));
+      await frame();
+      ok('panel: typing changes the record', plt.fns[0].expr === 'sin(x)');
+      var d = el.querySelector('path.mfn').getAttribute('d');
+      ok('panel: …and repaints the curve', el.querySelectorAll('path.mfn').length === 1 && d.length > 200);
+      inp.value = 'x^('; inp.dispatchEvent(new Event('input', { bubbles: true }));
+      await frame();
+      ok('panel: a half-typed one says what is wrong', row.querySelector('.xperr').textContent === mxCompile('x^(').err &&
+         inp.getAttribute('aria-invalid') === 'true', row.querySelector('.xperr').textContent);
+      ok('panel: …and keeps the last good picture, dimmed', row.querySelector('.xppv').classList.contains('stale') &&
+         !!row.querySelector('.xppv math'));
+      ok('panel: …and no curve', el.querySelectorAll('path.mfn').length === 0);
+      inp.value = 'x^2'; inp.dispatchEvent(new Event('input', { bubbles: true }));
+      await frame();
+      ok('panel: put right again', !row.querySelector('.xppv').classList.contains('stale') &&
+         inp.getAttribute('aria-invalid') === 'false' && el.querySelectorAll('path.mfn').length === 1);
+      /* mathpad stays out of it */
+      inp.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: '$', bubbles: true, cancelable: true }));
+      ok('panel: a $ in a row does not wake the LaTeX pad', !Q('#mathpad').classList.contains('open'));
+      /* the keys */
+      var key = function (n, k, o) {
+        var ev = new KeyboardEvent('keydown', Object.assign({ key: k, bubbles: true, cancelable: true }, o || {}));
+        n.dispatchEvent(ev); return ev;
+      };
+      inp.focus();
+      key(inp, 'Enter');
+      ok('panel: ⏎ adds a row below', plt.fns.length === 2 && plt.fns[1].expr === '' && panel.querySelectorAll('.xprow').length === 2);
+      var inp2 = panel.querySelectorAll('.xpin')[1];
+      ok('panel: …with the caret in it', document.activeElement === inp2);
+      ok('panel: an empty row writes nothing in the key', el.querySelectorAll('.mpill').length === 1);
+      inp2.value = 'cos(x)'; inp2.dispatchEvent(new Event('input', { bubbles: true }));
+      await frame();
+      ok('panel: two curves now', el.querySelectorAll('path.mfn').length === 2);
+      key(inp2, 'ArrowUp');
+      ok('panel: ↑ walks to the row above', document.activeElement === panel.querySelectorAll('.xpin')[0]);
+      key(document.activeElement, 'ArrowDown', { altKey: true });
+      ok('panel: alt+↓ moves the expression down the list', plt.fns[1].expr === 'x^2' && plt.fns[0].expr === 'cos(x)');
+      ok('panel: …and keeps the caret on it', document.activeElement === panel.querySelectorAll('.xpin')[1] &&
+         document.activeElement.value === 'x^2');
+      key(document.activeElement, 'Enter');
+      var inp3 = document.activeElement;
+      ok('panel: a fresh row is empty', inp3.classList.contains('xpin') && inp3.value === '' && plt.fns.length === 3);
+      key(inp3, 'Backspace');
+      ok('panel: ⌫ on an empty row takes it off', plt.fns.length === 2 && panel.querySelectorAll('.xprow').length === 2);
+      ok('panel: …and the caret goes to the row above', document.activeElement === panel.querySelectorAll('.xpin')[1]);
+      var ev = key(document.activeElement, 'Escape');
+      ok('panel: Esc leaves the field for its dot', ev.defaultPrevented && document.activeElement.classList.contains('xpdot'));
+      /* the dot */
+      var dot = panel.querySelectorAll('.xpdot')[1];
+      dot.click();
+      ok('panel: the dot hides the curve', plt.fns[1].on === 0 && el.querySelectorAll('path.mfn').length === 1);
+      ok('panel: …and says so', dot.getAttribute('aria-checked') === 'false' && dot.closest('.xprow').classList.contains('off'));
+      dot.click();
+      ok('panel: …and shows it again', plt.fns[1].on === undefined && el.querySelectorAll('path.mfn').length === 2);
+      dot.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+      ok('panel: right-click on the dot opens the colours', Q('#props').classList.contains('open') &&
+         Q('#props .prsw') !== null);
+      Q('#props .prsw').click();
+      ok('panel: …and a swatch recolours it', plt.fns[1].c === MATH_COLORS[0] &&
+         el.querySelectorAll('path.mfn')[1].getAttribute('stroke') === MATH_COLORS[0]);
+      closeProps();
+      /* delete */
+      panel.querySelectorAll('.xpdel')[0].click();
+      ok('panel: ✕ takes a row off', plt.fns.length === 1 && plt.fns[0].expr === 'x^2');
+      /* fold */
+      panel.querySelector('.xpfold').click();
+      await sleep(300);                            /* it fades before it goes */
+      ok('panel: the fold hides it and is remembered', plt.xp === 0 && getComputedStyle(panel).visibility === 'hidden');
+      var fx = [].slice.call(el.querySelectorAll('.tools button')).filter(function (b) { return b.textContent === 'ƒ(x)'; })[0];
+      ok('panel: the toolbar button is the other door', !!fx);
+      fx.click();
+      ok('panel: …and opens it again', plt.xp === 1 && getComputedStyle(panel).visibility === 'visible');
+      /* ＋ */
+      panel.querySelector('.xpadd').click();
+      ok('panel: ＋ adds an empty row and focuses it', plt.fns.length === 2 && document.activeElement.classList.contains('xpin'));
+      /* undo is free */
+      var act = function () { document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 4, isPrimary: true })); };
+      act(); histCommit();
+      await undo();
+      ok('panel: ctrl+Z takes the added row back', sheet().items[0].fns.length === 1, sheet().items[0].fns.length);
+      page = sheet();
+      page.items = keep; queueSave(page.id); histCommit();
+      await render();
+    });
+
+    /* ---- every kind of curve the compiler can classify, drawn ---- */
+    await stage('plot: curves', async function () {
+      var page = sheet();
+      var keep = page.items.slice();
+      var plt = { id: uid(), x: 30, y: 4, w: 40, rot: 0, z: 2, lay: curLayerId(),
+                  type: 'plot', xmin: -5, xmax: 5, ymin: -3.4, ymax: 3.4, grid: 'solid',
+                  axes: 1, bshow: 0, basis: [1, 0, 0, 1], cap: '', xp: 0, fns: [], vecs: [] };
+      page.items = [plt];
+      await render();
+      var el = byType('plot');
+      var show = function (fns, win) {
+        plt.fns = fns.map(function (f, i) { return Object.assign({ id: 'c' + i, c: '#c33', s: 'solid' }, typeof f === 'string' ? { expr: f } : f); });
+        Object.assign(plt, { xmin: -5, xmax: 5, ymin: -3.4, ymax: 3.4, basis: [1, 0, 0, 1] }, win || {});
+        mrepaint(plt);
+        return {
+          fn: QA.bind(null, '#pageHost .item[data-type="plot"] path.mfn'),
+          reg: QA.bind(null, '#pageHost .item[data-type="plot"] path.mreg'),
+          dots: QA.bind(null, '#pageHost .item[data-type="plot"] circle.mdot'),
+          g: plotGeom(plt)
+        };
+      };
+      var Ms = function (p) { return (p.getAttribute('d').match(/M/g) || []).length; };
+      var box = function (p) { return p.getBBox(); };
+      var near = function (a, b, tol) { return Math.abs(a - b) <= tol; };
+      /* explicit, and its asymptotes */
+      var r = show(['1/x']);
+      ok('curves: 1/x lifts the pen across zero', r.fn().length === 1 && Ms(r.fn()[0]) === 2, r.fn().length && Ms(r.fn()[0]));
+      r = show(['tan(x)']);
+      ok('curves: tan x lifts it at every pole', Ms(r.fn()[0]) >= 3, Ms(r.fn()[0]));
+      r = show(['log(x)']);
+      var d = r.fn()[0].getAttribute('d');
+      ok('curves: log x starts right of the axis and carries no NaN', !/NaN/.test(d) && +d.slice(1).split(' ')[0] > r.g.S(0, 0)[0]);
+      r = show(['x=y^2']);
+      ok('curves: x = y² is a function of y', r.fn().length === 1 && box(r.fn()[0]).x >= r.g.S(0, 0)[0] - 5);
+      /* implicit */
+      r = show(['x^2+y^2=1']);
+      var b = box(r.fn()[0]), o = r.g.S(0, 0);
+      ok('curves: the unit circle is one curve', r.fn().length === 1, r.fn().length);
+      ok('curves: …centred on the origin, 2 units across', near(b.x + b.width / 2, o[0], 4) && near(b.y + b.height / 2, o[1], 4) &&
+         near(b.width, 2 * r.g.kx, 2 * r.g.kx * 0.03) && near(b.height, 2 * r.g.ky, 2 * r.g.ky * 0.03),
+         JSON.stringify([b.x, b.y, b.width, b.height, r.g.kx]));
+      ok('curves: …and closes on itself', Ms(r.fn()[0]) === 1);
+      r = show(['x^2+y^2=1'], { xmin: 0.5, xmax: 5 });
+      b = box(r.fn()[0]);
+      ok('curves: a circle across the edge is one open arc inside the picture', Ms(r.fn()[0]) === 1 && b.x >= -1 && b.x + b.width <= 1001, Ms(r.fn()[0]));
+      r = show(['x^2+y^2=1'], { xmin: -2, xmax: 2, ymin: -0.5, ymax: 0.5 });
+      b = box(r.fn()[0]);
+      ok('curves: …and two arcs when the window cuts it in two', Ms(r.fn()[0]) === 2 && b.y >= -1 && b.y + b.height <= r.g.H + 1, Ms(r.fn()[0]));
+      r = show(['x^2+y^2=-1']);
+      ok('curves: an empty equation draws nothing', r.fn().length === 0);
+      r = show(['1/x=y']);
+      d = r.fn()[0].getAttribute('d');
+      var far = 3.01 * Math.max(r.g.W, r.g.H);
+      ok('curves: 1/x = y stays within reach', d.split(/[ML]/).filter(Boolean).every(function (q) { var v = q.split(' '); return Math.abs(+v[0]) < far && Math.abs(+v[1]) < far; }));
+      ok('curves: …and does not draw the pole', !d.split('M').filter(Boolean).some(function (sp) {
+        var q = sp.split('L').map(function (s) { return s.split(' ').map(Number); });
+        return q.some(function (p, i) { return i && Math.abs(p[1] - q[i - 1][1]) > r.g.H; }); }));
+      /* inequalities */
+      r = show(['y<x^2']);
+      ok('curves: y<x² shades one region under one boundary', r.reg().length === 1 && r.fn().length === 1);
+      ok('curves: …the boundary dashed', (r.fn()[0].getAttribute('stroke-dasharray') || '') !== '');
+      ok('curves: …the shade see-through', getComputedStyle(r.reg()[0]).fillOpacity < 1 && getComputedStyle(r.reg()[0]).fill !== 'none');
+      ok('curves: …in the curve\'s colour', r.reg()[0].getAttribute('fill') === '#c33');
+      var under = box(r.reg()[0]);
+      r = show(['y>=x^2']);
+      ok('curves: y≥x² has a solid boundary', !r.fn()[0].getAttribute('stroke-dasharray'));
+      var over = box(r.reg()[0]);
+      ok('curves: …and shades the other side', over.y + over.height < under.y + under.height - 100,
+         [over.y, over.height, under.y, under.height].join(' '));
+      r = show(['0<y<x']);
+      b = box(r.reg()[0]); o = r.g.S(0, 0);
+      ok('curves: 0<y<x shades the wedge in the first quadrant', r.reg().length === 1 && b.x >= o[0] - 12 && b.y + b.height <= o[1] + 12, JSON.stringify(b));
+      r = show(['x^2+y^2<1']);
+      b = box(r.reg()[0]);
+      ok('curves: x²+y²<1 shades a disc', near(b.width, 2 * r.g.kx, 2 * r.g.kx * 0.06) && near(b.height, 2 * r.g.ky, 2 * r.g.ky * 0.06), JSON.stringify(b));
+      r = show(['x^2+y^2<1', 'x^2+y^2>0.25']);
+      ok('curves: two regions stay two', r.reg().length === 2);
+      ok('curves: a region goes down before the axes', el.querySelector('path.mreg').compareDocumentPosition(el.querySelector('path.max')) & Node.DOCUMENT_POSITION_FOLLOWING);
+      /* polar */
+      r = show(['r=1']);
+      b = box(r.fn()[0]);
+      ok('curves: r=1 is the unit circle', near(b.width, 2 * r.g.kx, 2 * r.g.kx * 0.03) && near(b.height, 2 * r.g.ky, 2 * r.g.ky * 0.03));
+      r = show(['r=1'], { basis: [1, 0.5, 0, 1] });
+      b = box(r.fn()[0]);
+      ok('curves: …and an ellipse once the basis is sheared — P = S∘B holds for polar', b.width > b.height * 1.1, b.width + ' × ' + b.height);
+      r = show(['r=cos(2θ)']);
+      d = r.fn()[0].getAttribute('d');
+      var pts = d.slice(1).split(/[ML]/).map(function (q) { return q.split(' ').map(Number); });
+      ok('curves: a rose is one closed path of many points', Ms(r.fn()[0]) === 1 && pts.length > 1000 &&
+         Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 2);
+      r = show([{ expr: 'r=1', dom: [0, Math.PI] }]);
+      b = box(r.fn()[0]);
+      ok('curves: a range on θ draws that much of it', near(b.height, r.g.ky, r.g.ky * 0.05) && near(b.width, 2 * r.g.kx, 2 * r.g.kx * 0.03), JSON.stringify(b));
+      /* parametric */
+      r = show(['(cos(t), sin(t))']);
+      b = box(r.fn()[0]);
+      ok('curves: (cos t, sin t) closes into the unit circle', Ms(r.fn()[0]) === 1 && near(b.width, 2 * r.g.kx, 2 * r.g.kx * 0.03) && near(b.height, 2 * r.g.ky, 2 * r.g.ky * 0.03));
+      r = show(['z=e^(i t)']);
+      b = box(r.fn()[0]);
+      ok('curves: z = e^(it) is the same circle', near(b.width, 2 * r.g.kx, 2 * r.g.kx * 0.03));
+      /* complex */
+      r = show(['{1+i, 2-i, 3}']);
+      ok('curves: three complex numbers are three points', r.dots().length === 3);
+      var p1 = r.g.P(1, 1), dot = r.dots()[0];
+      ok('curves: …at re along x and im along y', near(+dot.getAttribute('cx'), p1[0], 1) && near(+dot.getAttribute('cy'), p1[1], 1));
+      r = show(['y=e^(i x)']);
+      ok('curves: e^(ix) draws its real and imaginary parts', r.fn().length === 2 &&
+         r.fn()[0].getAttribute('stroke') === r.fn()[1].getAttribute('stroke') &&
+         !r.fn()[0].getAttribute('stroke-dasharray') && !!r.fn()[1].getAttribute('stroke-dasharray'));
+      r = show(['abs((x+i)^2)']);
+      ok('curves: a real answer by way of i is one curve', r.fn().length === 1);
+      /* the statics and the ids */
+      r = show(['x^2+y^2<1', 'r=cos(3θ)']);
+      var json = JSON.stringify(plt);
+      var st = buildPage(page, false);
+      ok('curves: print draws the same shading', st.querySelectorAll('path.mreg').length === 1 && st.querySelectorAll('path.mfn').length === 2);
+      ok('curves: …and touches nothing in the record', JSON.stringify(plt) === json);
+      var t0 = performance.now();
+      for (var k = 0; k < 5; k++) { plt.xmin -= 0.01; mrepaint(plt); }
+      var ms = (performance.now() - t0) / 5;
+      ok('curves: a repaint with a region and a rose is quick', ms < 60, ms.toFixed(1) + ' ms');
+      page.items = keep;
+      await render();
+    });
+
+    /* ---- the axes: log scales, a polar lattice, powers of ten, names ---- */
+    await stage('plot: axes', async function () {
+      var page = sheet();
+      var keep = page.items.slice();
+      var plt = { id: uid(), x: 30, y: 4, w: 40, rot: 0, z: 2, lay: curLayerId(),
+                  type: 'plot', xmin: -5, xmax: 5, ymin: -3.4, ymax: 3.4, grid: 'solid',
+                  axes: 1, bshow: 0, basis: [1, 0, 0, 1], cap: '', xp: 1, fns: [], vecs: [] };
+      page.items = [plt];
+      await render();
+      var el = byType('plot');
+      var set = function (o) {
+        Object.assign(plt, { xmin: -5, xmax: 5, ymin: -3.4, ymax: 3.4, basis: [1, 0, 0, 1], lx: 0, ly: 0, pol: 0, fns: [] }, o || {});
+        mrepaint(plt);
+        return plotGeom(plt);
+      };
+      var labels = function () { return QA('#pageHost .item[data-type="plot"] .mnum').map(function (t) { return t.textContent; }); };
+      var gridD = function (sel) { var p = el.querySelector(sel); return p ? p.getAttribute('d') : ''; };
+      /* the plane, untouched */
+      var g = set();
+      ok('axes: a plain plane is what it always was', g.H === 680 && g.kx === g.ky && g.mL === 0 && g.VW === 1000 && g.stepX === g.stepY);
+      ok('axes: …with its numbers', labels().indexOf('4') >= 0 && labels().indexOf('-3') >= 0 && labels().indexOf('0') >= 0);
+      /* powers of ten */
+      var l = axLab(1.5e7, 5e6);
+      ok('axes: 1.5×10⁷ is a mantissa and a lifted power', l.t === '1.5×10^7' && /^1\.5×10<tspan[^>]*>7<\/tspan>$/.test(l.svg), l.svg);
+      ok('axes: …but 15000 is written out', axLab(15000, 5000).t === '15000');
+      ok('axes: a whole power of ten is just 10ⁿ', axLab(1e6, 1e6).t === '10^6' && /^10<tspan/.test(axLab(1e6, 1e6).svg));
+      ok('axes: tiny numbers go the same way', axLab(0.000015, 0.000005).t === '1.5×10^-5', axLab(0.000015, 0.000005).t);
+      ok('axes: …but 0.001 is written out', axLab(0.001, 0.001).t === '0.001');
+      ok('axes: a step below a ten-thousandth puts the whole axis in powers of ten', axLab(0.000025, 0.000005).t === '2.5×10^-5' && axLab(0.00025, 0.00005).t === '2.5×10^-4' && axLab(0.0002, 0.00005).t === '2×10^-4',
+         [axLab(0.000025, 0.000005).t, axLab(0.00025, 0.00005).t, axLab(0.0002, 0.00005).t].join(' '));
+      ok('axes: …and a plain step keeps a plain axis', axLab(0.00025, 0.00025).t === '0.00025' && axLab(15000, 5000).t === '15000');
+      ok('axes: a number is 19 a glyph', mnumW('1000') === 76 && axLab(1000, 1000).w === 76);
+      g = set({ xmin: 0, xmax: 2e7, ymin: 0, ymax: 1.36e7 });
+      var sup = QA('#pageHost .item[data-type="plot"] .mnum tspan');
+      ok('axes: a window in the millions writes its numbers as powers of ten', sup.length > 2, sup.length);
+      var rows = {};
+      QA('#pageHost .item[data-type="plot"] .mnum').forEach(function (t) { (rows[t.getAttribute('y')] = rows[t.getAttribute('y')] || []).push(t); });
+      var xs = Object.keys(rows).map(function (k) { return rows[k]; }).sort(function (a, b) { return b.length - a.length; })[0] || [];
+      xs.sort(function (a, b) { return +a.getAttribute('x') - +b.getAttribute('x'); });
+      var tooClose = false;
+      for (var i = 1; i < xs.length; i++) {
+        var a = xs[i - 1], b = xs[i];
+        if (Math.abs(+b.getAttribute('x') - +a.getAttribute('x')) < (mnumW(a.textContent) + mnumW(b.textContent)) / 2) tooClose = true;
+      }
+      ok('axes: …and no two of them touch', xs.length > 1 && !tooClose, xs.length);
+      g = set({ xmin: -5000, xmax: 5000, ymin: -3400, ymax: 3400 });
+      ok('axes: thousands stay written out, thinned to fit', labels().indexOf('1000') >= 0 || labels().indexOf('2000') >= 0, labels().join(' '));
+      /* log x */
+      g = set({ lx: 1, xmin: 0.5, xmax: 2000 });
+      ok('axes: log x names the decades', ['1', '10', '100', '1000'].every(function (t) { return labels().indexOf(t) >= 0; }) && labels().indexOf('500') < 0, labels().join(' '));
+      ok('axes: …spaced evenly', Math.abs((g.S(10, 0)[0] - g.S(1, 0)[0]) - (g.S(1000, 0)[0] - g.S(100, 0)[0])) < 0.01);
+      var minors = (gridD('path.mgrid.minor').match(/M/g) || []).length;
+      ok('axes: …with 2…9 ruled quietly between them', minors === 28, minors);
+      ok('axes: …and no zero written on it', labels().indexOf('0') < 0);
+      plt.fns = [{ id: 'l', expr: 'y=x', c: '#c33', s: 'solid' }];
+      Object.assign(plt, { ly: 1, ymin: 1, ymax: 1000 }); mrepaint(plt);
+      var d = el.querySelector('path.mfn').getAttribute('d');
+      var pts = d.slice(1).split(/[ML]/).map(function (q) { return q.split(' ').map(Number); });
+      var p0 = pts[10], p1 = pts[Math.floor(pts.length / 2)], p2 = pts[pts.length - 10];
+      var cross = (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p1[1] - p0[1]) * (p2[0] - p0[0]);
+      ok('axes: y = x on log–log is a straight line', Math.abs(cross) / Math.hypot(p2[0] - p0[0], p2[1] - p0[1]) < 1, cross);
+      ok('axes: …sampled in log space, the first point is near the left edge', pts[0][0] < 5, pts[0][0]);
+      g = set({ lx: 1, xmin: 3.2, xmax: 4.7 });
+      ok('axes: under a decade the numbers are linear', labels().indexOf('3.5') >= 0 && labels().indexOf('4') >= 0, labels().join(' '));
+      g = set({ lx: 1, xmin: 1, xmax: 30 });
+      ok('axes: under two decades 2 and 5 are named too', labels().indexOf('2') >= 0 && labels().indexOf('5') >= 0 && labels().indexOf('20') >= 0, labels().join(' '));
+      g = set({ lx: 1, xmin: -5, xmax: 5 });
+      ok('axes: a window across zero is pulled onto the positive side', g.x0 > 0 && g.x1 === 5, g.x0);
+      /* entering log mode fixes the plot's shape; leaving it after a pan returns
+         the linear plane to the origin instead of adopting the positive window */
+      g = set();
+      var linearH = g.H;
+      plotAct('logx', plt, page);
+      plt.xmin *= 100; plt.xmax *= 100; mrepaint(plt);
+      ok('axes: panning a log view does not resize the plot', Math.abs(plotGeom(plt).H - linearH) < 1e-9,
+        plotGeom(plt).H + ' / ' + linearH);
+      plotAct('logx', plt, page);
+      ok('axes: leaving log returns to the origin at the original shape', plt.xmin === -5 && plt.xmax === 5 &&
+        plt.ymin === -3.4 && plt.ymax === 3.4 && Math.abs(plotGeom(plt).H - linearH) < 1e-9,
+        [plt.xmin, plt.xmax, plt.ymin, plt.ymax, plotGeom(plt).H].join(' '));
+      /* a log axis and a basis */
+      set({ basis: [1, 0.5, 0, 1] });
+      plotAct('logx', plt, page);
+      ok('axes: turning log x on puts the basis back', plt.lx === 1 && mIdent(mbasis(plt)) && plt.xmin > 0);
+      var was = mbasis(plt).slice();
+      var svg = el.querySelector('svg.mplot');
+      select(plt.id);
+      var stop = el.querySelector('[data-h="bas:i"]');
+      ok('axes: …and î ĵ are not offered', !stop);
+      setBasisTo({ it: plt, page: page }, [2, 0, 0, 1]);
+      ok('axes: …a matrix dropped on it is refused with a word', mIdent(mbasis(plt)) && Q('#saveTag').textContent.indexOf('log axis') >= 0, Q('#saveTag').textContent);
+      /* zoom and pan keep their point on a log axis */
+      set({ lx: 1, xmin: 1, xmax: 100 });
+      g = plotGeom(plt);
+      var q = g.S(10, 0), r = svg.getBoundingClientRect();
+      var ctm = svg.getScreenCTM();
+      var cx = ctm.a * q[0] + ctm.c * q[1] + ctm.e, cy = ctm.b * q[0] + ctm.d * q[1] + ctm.f;
+      zoomPlot(el, plt, page, svg, { clientX: cx, clientY: cy }, 0.5);
+      ok('axes: zooming a log axis keeps the decade under the pointer', Math.abs(Math.log10(plt.xmin) + Math.log10(plt.xmax) - 2) < 1e-6 && plt.xmax / plt.xmin < 100,
+         plt.xmin + ' ' + plt.xmax);
+      /* polar lattice */
+      g = set({ pol: 1 });
+      var pol = gridD('path.mpolar');
+      var rings = (pol.match(/a[\d.]+ [\d.]+ 0 1 0 -/g) || []).length, spokes = (pol.match(/L/g) || []).length;
+      ok('axes: a polar lattice has rings and spokes', rings >= 3 && rings <= 12 && (spokes === 12 || spokes === 24), rings + ' rings, ' + spokes + ' spokes');
+      ok('axes: polar replaces the cartesian lattice', !el.querySelector('path.mgrid'));
+      ok('axes: …rings an arc each way', /a[\d.]+ [\d.]+ 0 1 0 [\d.]+ 0a/.test(pol));
+      g = set({ pol: 1, basis: [1, 0.5, 0, 1] });
+      ok('axes: …and polylines once the basis is sheared', (gridD('path.mpolar').match(/L/g) || []).length > 100);
+      g = set({ pol: 0 });
+      ok('axes: …and none on a cartesian plane', !el.querySelector('path.mpolar'));
+      ok('axes: polar is its own switch, not a grid style', plt.grid === 'solid');
+      /* names */
+      g = set({ xl: 'time' });
+      var xl = el.querySelector('.mxlab');
+      ok('axes: a plane writes its x name at the arrowhead, inside the picture', !!xl && xl.classList.contains('plane') && +xl.getAttribute('x') < 1000 && !!xl.closest('g[clip-path]'), xl && xl.outerHTML);
+      ok('axes: …anchored to its end', getComputedStyle(xl).textAnchor === 'end');
+      ok('axes: …and no written y name until there is one', !el.querySelector('.mylab:not(.ghost)'));
+      select(plt.id); mrepaint(plt);
+      var yl = el.querySelector('.mylab');
+      ok('axes: on a selected plot a faint y waits to be named', !!yl && yl.classList.contains('ghost') && yl.textContent === 'y');
+      yl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 7, isPrimary: true }));
+      var chip = el.querySelector('.mchip[data-for="lab:y"] .maxl');
+      ok('axes: …click it and a box opens on it', !!chip);
+      chip.value = 'volts'; chip.dispatchEvent(new Event('input', { bubbles: true }));
+      ok('axes: …typing names the axis', plt.yl === 'volts' && el.querySelector('.mylab').textContent === 'volts');
+      selectMath(null, null);
+      var inp = el.querySelector('.xpal[data-k="xl"]');
+      ok('axes: the panel shows the names too', inp.value === 'time' && el.querySelector('.xpal[data-k="yl"]').value === 'volts');
+      inp.value = 'seconds'; inp.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+      ok('axes: …and writes them', plt.xl === 'seconds' && el.querySelector('.mxlab').textContent === 'seconds');
+      ok('axes: the panel footer says which scales are on', el.querySelector('.xpsw[data-a="logx"]').getAttribute('aria-checked') === 'false');
+      el.querySelector('.xpsw[data-a="logx"]').click();
+      ok('axes: …and the switch turns one on', plt.lx === 1 && el.querySelector('.xpsw[data-a="logx"]').getAttribute('aria-checked') === 'true');
+      el.querySelector('.xpseg1[data-a="polar"]').click();
+      ok('axes: …and the lattice over', plt.pol === 1 && el.querySelector('.xpseg1[data-a="polar"]').getAttribute('aria-checked') === 'true');
+      /* a chart keeps its names outside and takes a typed one over the column's */
+      delete plt.yl;
+      set({ lx: 0, pol: 0, xl: 'time', ar: 0.68, dat: [{ id: 'd', c: '#c33', s: 'solid', m: 'dots', xc: 0, yc: 1, cols: ['Time', 'Height'], xl: 'Time', yl: 'Height', pts: [[1, 10], [2, 18]] }] });
+      g = plotGeom(plt);
+      ok('axes: a chart names its axes from what was typed, else the column', g.lab.x === 'time' && g.lab.y === 'Height' && g.mL > 60, JSON.stringify(g.lab) + ' ' + g.mL);
+      ok('axes: …outside the picture', !el.querySelector('.mxlab').closest('g[clip-path]'));
+      delete plt.ar; delete plt.dat; delete plt.xl; delete plt.yl;
       page.items = keep;
       await render();
     });

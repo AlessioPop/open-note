@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1549 assertions, driven in headless Firefox
+tools/verify/       the harness: 1718 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -171,7 +171,6 @@ right up until it loses the session.
 | `glass.js` | 69 | the glass material and the warp that every floating panel shares |
 | `palette.js` | 229 | the palette — shelves, labelled groups, tiles and search, drawn from the registry |
 | `props.js` | 328 | the properties popover — glass sliders, steppers, the sweep dial, a deed button and a row of colour swatches with a wheel; `openProps()` for any feature with measurements, and `placePanel()`, the above-then-beside-then-below rule every panel an item opens off its toolbar follows |
-| `mathbar.js` | 101 | the maths toolbar |
 | `mathpad.js` | 514 | writing maths: the `$` that pairs itself and opens out into a display block (and the `` ` `` that pairs itself by `lib/ticks.js`'s rules), the completion list built from the compiler's own tables, and the formula typeset under the caret as it is written. The rules are plain functions over (text, offset), so the harness can drive them without a caret |
 | `tickpad.js` | 45 | typing inside a ```fence``` in any writing box: ⇥ and ⇧⇥, ⏎ keeping the indent, brackets and quotes closing themselves. None of the rules are here — they are the code cell's, reached through the registry's code pen |
 | `markpad.js` | 83 | what the keyboard does to the marks in a writing box. A list: ⏎ making the next bullet and ending the list on an empty one, ⇥ and ⇧⇥ moving one in and out. None of the rules are here either — they are `lib/marks.js`'s, and inside a fence they stand aside for `tickpad.js`. A key another handler has already taken is read off `defaultPrevented`, and an indent is written into the box by hand rather than through the editor's `insertText`, which is free to turn a tab it is handed into a space. Then ⌃B and ⌃I, which put the stars round what is picked out or take them off — the shortcut writes the mark rather than markup, so the browser's own bold never gets the key |
@@ -197,7 +196,8 @@ shelf** — a new file under `items/science/` had better call
 | `write/code.js` | 865 | `code` — the terminal-style code cell: one hand-rolled scanner driven by a table per language (12 of them), the editor schemes as CSS variables plus a Theme scheme mixed from the note's colours, the copy button, typing that recolours under the caret with brackets that close themselves, the band a long one clips to, and the folder glyph and viewer. `cdKey()` is that keyboard as a plain function over (writing, selection, key), and the code pen it registers is the same cell built into a ```fence``` in a sentence — bar, picker, colours and all, less the traffic lights |
 | `write/deck.js` | 1317 | `deck` — flip cards, the scope, the scoreboard |
 | `math/table.js` | 1659 | `table` — the grid, the formula compiler, rows and columns, the band a long one shows, folding it to an icon, reading a workbook in, and handing two columns to a plot |
-| `math/plot.js` | 1277 | `plot` — the expression compiler, the grid, the vectors, and a table's points |
+| `math/plot.js` | 1493 | `plot` — the coordinate system: the window and its log axes, the lattice (square or polar), ticks that turn into powers of ten and never overlap, one sampler for every kind of curve (explicit, polar, parametric, complex), the marching-squares equations and shaded regions through `lib/contour.js`, the vectors, a table's points, and the axis names you click to edit |
+| `math/plotpanel.js` | 526 | the expressions panel beside a plot — one row per thing drawn, the colour dot that is also the switch, the typeset preview, the keyboard, the polar/log/name footer. Live-only: print and export never build it |
 | `math/chart.js` | 967 | `chart` — pie / donut / 3D / sketch, plain bars and a stacked bar; the legend that edits the rows, validated palettes (ten slots) and the note-coloured ramps, and the label engine: four placements, cornered leader lines, and labels you drag anywhere that remember their offset |
 | `math/cards.js` | 397 | `matrix`, `vecbox` — any size through the ✎ panel, the label algebra (`M⁻¹` undone is `M`), determinants between bars, eigen rows |
 | `math/calc.js` | 264 | `calc` — the written-out product: the animated working, folding it to just the answer, taking it apart again, and standing in as an operand itself |
@@ -232,6 +232,8 @@ on a task.
 |---|---:|---|
 | `sound.js` | 81 | the studio sounds, generated live. No audio files |
 | `spring.js` | 125 | springs and momentum: analytic springs, release velocity, flick projection. What the throws, spins and card-tosses all move on |
+| `mathexpr.js` | 502 | the expression compiler: text → a small tree → a real evaluator, a complex one, and a LaTeX emitter; `mxCompile` says what kind of thing was typed (a function of x, an equation, a region, a polar or parametric curve, a list of points) and `mxNum`/`mxFn` are the two narrow doors the cards, the window boxes and the formula node use |
+| `contour.js` | 180 | marching squares over a picture-sized grid: the zero line of a field as chained polylines (a pole is told from a root by bisecting towards it), and the region it is positive as row-merged rectangles plus cell polygons |
 | `latex.js` | 459 | LaTeX → MathML. No library, nothing downloaded — plus the flatten/scan pair that tells a caret which formula it is standing in, which `chrome/mathpad.js` writes with |
 | `ticks.js` | 296 | code ticks: `` `a phrase` `` and ```` ```a block``` ````, compiled and taken apart the way `latex.js` does formulas — plus what typing a backtick does, and `richify()`/`plainify()`, the pair every writing surface in the app goes through — marks, then ticks, then maths, and unwound in the opposite order. A fenced block itself is built by whatever registered the code pen — the code cell does — and setting its language from the bar rewrites the fence's own opening line, then leaves the box to save itself on the `input` that follows |
 | `marks.js` | 499 | the marks writing wears: `# ` `## ` `### ` a heading, `- ` a bullet, `- [ ] ` a task with a box to tick, `---` a rule, `**bold**`, `*italic*`, and `->` an arrow — compiled and taken apart the way `latex.js` does formulas. First of the three passes, so a heading or a bullet may hold a formula or a phrase of code while a `#` or an `->` inside a fence or a formula is left where it is; a heading is sized in `em`, keeps the face of the box it is in, and differs from the step above it only in size, and a nested bullet carries a hairline down from the one it belongs to. `markEnter()`, `markTab()` and `markWrap()` are here too — what ⏎, ⇥ and ⌃B/⌃I do, over (text, offset) with no DOM in sight — and every marker reads a non-breaking space as a space, since that is what a browser's editor leaves behind wherever it thinks a space might collapse |
@@ -724,8 +726,8 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1549 assertions**, and they are the real specification of this app. Among them:
-that all 76 script files load without throwing; that a fresh note is one empty
+**1718 assertions**, and they are the real specification of this app. Among them:
+that all 78 script files load without throwing; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a
 third on the real one; that every add-menu entry adds the type it claims to;
@@ -748,7 +750,21 @@ and holds the point you aimed at; that every item type builds both live and
 through `buildPage(page, false)` — the path print and exports take; that a code
 cell colours a python line the way the editor would and reparses it as rust;
 that a table works out its formulas, reads a real `.xlsx` built in the harness,
-and hands two columns to a plot; that a `$` typed in a writing box comes back as
+and hands two columns to a plot; that the expression compiler reads `x^2+y^2=1`
+as an equation, `y<x^2` as a strict region and `r=cos(2θ)` as polar, writes
+every one of them back out as LaTeX the typesetter accepts, and refuses `xy` with
+advice; that the unit circle comes out one closed curve two units across and a
+circle cut by the window comes out two arcs, that `1/x = y` never draws its pole,
+that `y<x^2` shades one see-through region under one dashed boundary and
+`y>=x^2` the other side under a solid one, that `r=1` is a circle until the
+basis is sheared and an ellipse after, that `e^(ix)` draws its real and imaginary
+parts, and that print draws the same shading without touching the record; that a
+log axis names its decades and rules 2…9 quietly between them, puts the basis
+back and refuses a matrix, and that `y=x` on log–log is straight; that a window
+in the millions writes its numbers as powers of ten with no two touching; and
+that the expressions panel is absent from the static page, adds a row on ⏎, takes
+an empty one off on ⌫, hides a curve from its dot and never wakes the LaTeX pad;
+that a `$` typed in a writing box comes back as
 a pair and a second one opens it out onto three tidy lines, that `\fra` offers
 `\frac{}{}` first and ⏎ writes it with the caret in its first pair, and that
 everything the completion list offers really compiles; that a chart draws one slice per positive row
@@ -782,6 +798,6 @@ has every ball and no `NaN`; that the chart of the nuclides parses all 5646 of
 them, peaks its binding-energy curve on ⁶²Ni and walks the four natural series
 to lead, lead, lead and thallium; and that **Export** really produces one file
 with every feature's styles in it and no flipbook chrome. It also fingerprints
-the computed style of 61 selectors, which is how a rule that changed file and
+the computed style of 76 selectors, which is how a rule that changed file and
 lost its place in the cascade gets caught. See `tools/verify/README.md` for what
 it covers and the traps in extending it.

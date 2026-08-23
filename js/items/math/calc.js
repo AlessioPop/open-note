@@ -124,7 +124,7 @@ function wireCalc(el, it, page){
     if(!mathAim || mathAim.kind !== 'mul' || mathAim.from === it.id) return;
     e.stopPropagation(); e.preventDefault();
     const src = findItem(mathAim.from);
-    mathAim = null; syncMathBar();
+    mathAim = null; syncMathState();
     if(src) makeProduct(page, src.it, it);
   }, true);
 }
@@ -150,7 +150,7 @@ function calcAct(a, it, page, el){
   }
   if(a === 'mul'){
     mathAim = { kind: 'mul', from: it.id, lab: calcLab(it) };
-    setMath(true);
+    syncMathState();
     mathHint('click the card to multiply ' + calcLab(it) + ' by — or drag this onto it');
   }
   if(a === 'split') return calcSplit(page, it);
@@ -198,7 +198,6 @@ function makeProduct(page, drag, target){
   if(!p){
     const A = cardFace(drag), B = cardFace(target);
     if(A && B){
-      setMath(true);
       mathHint(A.vec && B.vec
         ? 'two vectors make no product here — drop one on a matrix instead'
         : 'those sizes do not fit — ' + A.r + '×' + A.c + ' and ' + B.r + '×' + B.c + ' have no product');

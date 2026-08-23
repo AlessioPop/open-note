@@ -215,7 +215,7 @@ const NODE_KINDS = {
       if(!a) return ndErr('nothing is wired in');
       if(a.t === ND_ERR) return a;
       if(a.t !== ND_TBL) return ndErr('this wants a table, not a ' + ndWord(a.t));
-      const c = mxCompile(it.expr);
+      const c = mxFn(it.expr);
       if(c.err) return ndErr(c.err);
       if(!c.fn) return ndErr('nothing typed yet — x is each number in turn');
       const f = c.fn, src = String(it.expr || '');
@@ -233,7 +233,7 @@ const NODE_KINDS = {
       }), a.n);
     },
     body(it){
-      const err = mxCompile(it.expr).err || '';
+      const err = mxFn(it.expr).err || '';
       return '<div class="nrow"><span class="npar">f(x) =</span>' +
         '<input class="nexp" data-k="expr" value="' + esc(it.expr || '') +
         '" spellcheck="false" title="x is each number in turn — sin(x), log(x), x^2, 1/x"></div>' +
@@ -452,7 +452,7 @@ function plotAddNode(f, nit){
   if(!(nz(it.ar, 0) > 0)) it.ar = 0.68;                 // it is a chart from here on
   plotFitData(it);
   queueSave(f.page.id); SND.plop();
-  select(it.id); selectMath(it.id, 'dat', d.id); syncMathBar();
+  select(it.id); selectMath(it.id, 'dat', d.id); syncMathState();
   ndRedrawAll(); ndWake();
   return d;
 }
@@ -914,7 +914,7 @@ function ndBind(el, it, page){
     });
     if(key === 'expr') n.addEventListener('input', () => {
       it.expr = n.value;
-      const err = mxCompile(n.value).err;
+      const err = mxFn(n.value).err;
       n.classList.toggle('bad', !!err);
       if(!err){ queueSave(page.id); ndTouch(it.id); }
     });

@@ -423,26 +423,49 @@ The rest of the marks markdown taught everyone, and they work in every box that 
 
 ## Maths
 
-`M` — or simply dropping a coordinate system on the sheet — puts a maths toolbar under the sheet and hands the mouse to the coordinate systems on the page — until you turn it off, dragging inside one moves the *plane* rather than the item. The same bar carries the wireframe shapes to draw over (**Shapes to draw over**, below), and in maths mode dragging one of those turns it. `Esc` steps back out.
+Maths lives on the things themselves. Select a coordinate system to work inside its grid, use its own toolbar for functions and vectors, and press **⟳** on a wireframe shape when you want to turn it. There is no page-wide maths mode or toolbar.
 
 ### The coordinate system
 
 **＋ Axes** (or *Coordinate system* in the add menu) drops one on the page. It is an item like any other — put it on a layer, size it by its corner, tape things beside it — and it holds everything drawn in it.
 
-- **Drag the axes where you want them.** Pull the x-axis to move the window up and down, the y-axis to move it left and right, or drag anywhere on the paper to move both at once; the point under the mouse stays under the mouse. **The middle mouse button walks the plane about wherever you press**, whatever tool is in your hand. The four boxes in the toolbar set the limits exactly — they take sums, so `pi/2` and `-3/4` are fine.
-- **The wheel zooms the plane about the pointer**, whether or not the maths bar is out — you don't have to turn anything on to zoom a chart. A notch is about 12%, and a trackpad creeps rather than leaping. Two things still get past it: `Ctrl`+wheel is the desk's own zoom everywhere in the app, and a plot you have picked up to move (double-click) is an item again, so the wheel scrolls the desk under it — which is how you scroll past a big chart on a canvas.
-- **Double-click a plot to pick it up.** It goes red, says *move*, and is a thing on a page again: drag it where you want it, size it by its corner, rotate it. Double-click it once more and you are back inside the grid. (Out of math mode a plot is always just an item, so nothing is ever stuck.) **Fill page** sizes it to the paper and squares the window up to match.
+- **Select it, then drag the axes where you want them.** Pull the x-axis to move the window up and down, the y-axis to move it left and right, or drag anywhere on the paper to move both at once; the point under the mouse stays under the mouse. **The middle mouse button walks the plane about wherever you press.**
+- **The wheel zooms the plane about the pointer.** A notch is about 12%, and a trackpad creeps rather than leaping. Two things still get past it: `Ctrl`+wheel is the desk's own zoom everywhere in the app, and a plot you have picked up to move (double-click) is an item again, so the wheel scrolls the desk under it — which is how you scroll past a big chart on a canvas.
+- **Double-click a plot to pick it up.** It goes red, says *move*, and is a thing on a page again: drag it where you want it, size it by its corner, rotate it. Double-click it once more and you are back inside the grid.
 - The window's shape decides the plot's: ask for x from −5 to 5 and y from −4 to 4 and you get a box where **one unit across is one unit up**, so a right angle looks like one and a rotation looks like a rotation. (Drop a table in it and that stops being true, because seconds and metres share no scale — see **Plotting a table** above.)
 - **Drop a table on it** and two of its columns become the points in it, with error bars if you have them, and they stay tied to the table as you edit it — **Plotting a table**, above, has the whole of it.
 - **▦ grid** cycles **solid → dashed → dotted → blank**, and **axes** goes from numbered, to bare, to no axes at all — a blank system is just a frame to draw a vector in.
+- **The numbers along the axes look after themselves.** Zoom out to the millions or in to the millionths and they turn into powers of ten — `1.5×10⁷`, `2×10⁻⁵` — and however far you go no two of them are ever written over each other: a plane keeps its lattice and names every second or third line instead.
+- **Name the axes.** On a selected plot a faint *x* and *y* wait at the arrowheads; click one and type. On a chart the names sit outside the frame, under and beside it, and a typed name wins over the column's heading. The same two boxes are behind the small **advanced axes** gear in the expressions panel.
 
-### Functions
+### The expressions panel
 
-**ƒ(x)** adds a curve and opens a little box to write it in: `x^2`, `sin(2x)/x`, `1/x`, `sqrt(x)+1`, `exp(-x^2)`, `|x|`, `3(x+1)(x-1)`.
+**ƒ(x)** on a plot's toolbar opens the list beside the picture — Desmos-style, one row per thing drawn in it: a colour dot, what you typed, and the same thing typeset underneath as you type. It is part of the plot, so it zooms with the sheet and never prints or exports; the fold button at its top (or `Esc`) puts it away, and the plot remembers whether you had it out.
 
-- Multiplication can be left out (`2x`, `3sin(x)`), `^` binds right to left, and `pi`, `tau`, `e` and `phi` are there along with the usual `sin cos tan asin acos atan sinh cosh tanh sqrt cbrt abs exp ln log log2 log10 floor ceil round sign min max hypot atan2 mod`.
-- Nothing is ever `eval`'d — the formula is compiled by hand, so a typo comes back as a sentence under the box (*"wat is not a function I know"*) instead of a blank plot.
-- The curve is drawn where it goes and **broken where it runs off**, so `1/x` and `tan(x)` come out in pieces instead of joined by a vertical line.
+- **Type in a row and the curve follows.** A half-typed formula keeps the last picture, dimmed, with a sentence saying what is missing (*"a "(" is missing its ")""*) rather than flickering at you.
+- **⏎ adds a row below; ↑ ↓ walk the rows; `Alt`+↑ ↓ move a row up or down** (that is the drawing order too); **⌫ on an empty row takes it off**, `Alt`+⌫ takes off a full one; `Esc` leaves the field, and again closes the panel. **＋ expression** at the bottom does what ⏎ does.
+- **The dot is the switch**: click it to hide the curve (it goes hollow, the row dims, the key shows it hollow too) and again to bring it back. **Right-click or hold it for the colours** — the six of the set, or any colour from the wheel.
+- Series from a table and vectors are in the list as well, with their dot, a **⤢** to fit the view to the points, and ✕. Click a row to pick the thing on the picture.
+- The small **advanced axes** gear opens the lattice switch (**cartesian / polar**), **log x**, **log y**, and the two axis-name fields without taking space from the expressions list.
+
+### What you can write
+
+`x^2`, `sin(2x)/x`, `1/x`, `sqrt(x)+1`, `exp(-x^2)`, `|x|`, `3(x+1)(x-1)` — and rather more than a function of x:
+
+- **Equations in x and y**: `x^2+y^2=1`, `x = y^2`, `sin(x) = cos(y)`. A plain `x^2` is `y = x^2`; writing `y =` is allowed but not needed.
+- **Regions**: `y < x^2`, `y >= 2x-1`, `x^2+y^2 < 4`, and a chain like `0 < y < x`. The inside is shaded in the curve's colour; a strict `<` draws its boundary dashed and `<=` draws it solid.
+- **Polar curves**: `r = cos(3θ)` (type `theta` if you have no θ), or just `cos(3θ)`; a range box under the row says how far round θ goes.
+- **Parametric curves**: `(cos(t), sin(t))`, `(t cos(t), t sin(t))` — t runs 0 to 2π unless the boxes under the row say otherwise.
+- **Complex numbers**: `i` is there, with `re im arg conj` and `|z|`. `{1+i, 2-i, 3}` puts three points on the plane, real part across and imaginary up. `y = e^(i x)` draws its real part solid and its imaginary part dashed in the same colour; `z = e^(i t)` is a curve of points.
+- Multiplication can be left out (`2x`, `3sin(x)`, `(x+1)(x-1)`), `^` binds right to left, `π` and `θ` are read as well as `pi` and `theta`, and `tau`, `e` and `phi` are there along with the usual `sin cos tan asin acos atan sinh cosh tanh sqrt cbrt abs exp ln log log2 log10 floor ceil round sign min max hypot atan2 mod`.
+- Nothing is ever `eval`'d — the formula is compiled by hand, so a typo comes back as a sentence under the row (*"wat is not a function I know"*, *"xy is not something I know — write x·y"*) instead of a blank plot.
+- A curve is drawn where it goes and **broken where it runs off**, so `1/x` and `tan(x)` come out in pieces instead of joined by a vertical line — and `1/x = y` written as an equation does the same.
+
+### Log axes and the polar lattice
+
+**log x** and **log y** (behind the advanced axes gear) rule the axis in decades, with 2…9 drawn faintly between them and named too when only a decade or so is in view. Panning and zooming work in decades; `y = x` on log–log is a straight line. A log axis has no zero and no negative side, so a window straddling zero is pulled onto the positive one — and **a log axis and a basis do not mix**: turning one on puts the standard basis back, and a matrix dropped on the plot is refused with a word.
+
+**polar** draws rings and spokes under everything, through the basis like the square lattice (shear the basis and the rings go elliptical). It is a way of seeing, not a way of writing: Cartesian expressions plot just the same on it, and `r = …` plots just the same on the square one.
 
 ### Vectors
 
@@ -478,7 +501,7 @@ Applying a matrix **walks it in from the identity**, so you watch the vector tur
 
 **⊞ Basis** hands a matrix to a coordinate system as its basis: the grid shears and turns with it, the old square paper stays behind it faintly, and everything drawn in the plot moves because its coordinates now mean something else. **⟲ Basis** puts the standard one back.
 
-**î ĵ** draws the basis vectors at the origin and shades the unit square they span — the area you see *is* the determinant. **Drag their tips** and the paper bends under everything on it, with the toolbar reading the basis out as you go.
+**î ĵ** draws the basis vectors at the origin and shades the unit square they span — the area you see *is* the determinant. **Drag their tips** and the paper bends under everything on it.
 
 A coordinate system is nothing but numbers and SVG, so it costs no library, travels in **backups**, and comes out in print and in an **export** exactly as you left it — the picture, the key underneath, the caption, and every card of working beside it.
 
@@ -505,7 +528,7 @@ Like the plots it is arithmetic and SVG — no library, nothing to download — 
 
 ## Shapes to draw over
 
-A **Cube**, a **Sphere**, a **Torus**, a **Square** and a **Circle** — not pictures of solids, but something to put the pen on top of. Add one from the palette's **Shapes** shelf or from the maths bar, turn it until it sits the way you want it, and draw over it. The sphere arrives **face on** — equator level, poles upright — because that is how one is usually drawn; ⌂ takes it back there.
+A **Cube**, a **Sphere**, a **Torus**, a **Square** and a **Circle** — not pictures of solids, but something to put the pen on top of. Add one from the palette's **Shapes** shelf, turn it until it sits the way you want it, and draw over it. The sphere arrives **face on** — equator level, poles upright — because that is how one is usually drawn; ⌂ takes it back there.
 
 **✎ opens its measurements** — a small panel of sliders beside the shape, so you watch it change as you drag:
 
@@ -514,12 +537,12 @@ A **Cube**, a **Sphere**, a **Torus**, a **Square** and a **Circle** — not pic
 - A **cube** has its three sides — **width, height and depth** — so it can be any box, which is most of what gets drawn over one.
 - **↺** puts a shape's numbers back the way they were born.
 
-**The square and the circle lie flat on the page** — no perspective, no pose, just construction lines in the plane of the paper. While one has the mouse (`M`, or ⟳ on its toolbar), it wears **corner handles: pull one, along x and y only, and the square becomes any rectangle, the circle any ellipse** — the handle follows the pointer whatever the page's zoom and however the item is rotated. The circle takes a **sweep** too, for half a circle or any arc: the pie's straight edges are drawn to the centre, and the centre lines only reach into the part that is kept. Turning a flat shape *in* the page is the item's own red rotate handle, like anything else on the paper.
+**The square and the circle lie flat on the page** — no perspective, no pose, just construction lines in the plane of the paper. After pressing **⟳** on its toolbar, one wears **corner handles: pull one, along x and y only, and the square becomes any rectangle, the circle any ellipse** — the handle follows the pointer whatever the page's zoom and however the item is rotated. The circle takes a **sweep** too, for half a circle or any arc: the pie's straight edges are drawn to the centre, and the centre lines only reach into the part that is kept. Turning a flat shape *in* the page is the item's own red rotate handle, like anything else on the paper.
 
 They are drawn as construction lines and nothing else: **no frame, no background, nothing behind them**, so the paper and the grid on it run straight through and only the lines are added to the page. The contour — the line you would put down first — is the heavy one, the surface's own grid is lighter, and the far side of it is dashed and faint, so you can build through the form the way you would on paper.
 
-- **Drag it to turn it**, in maths mode or after pressing **⟳** in its toolbar. Right turns it right, down brings the top over — the same hand as the Blender viewer. **Let go with speed and it keeps your spin**, dying away like a wheel left alone; a fresh grab takes it back at once. (The flat pair have nothing to turn — the same gesture is their corner handles instead.)
-- **The wheel sizes it at any time, including in the middle of a turn**, and so does holding **Shift** as you drag — press it and let go of it without stopping. **⊖ ⊕** step it, and the corner dot resizes the whole thing on the page as usual. Nothing is clipped at the edge of the item, so winding one up big spills over the page rather than being cut off.
+- **Press ⟳, then drag it to turn it.** Right turns it right, down brings the top over — the same hand as the Blender viewer. **Let go with speed and it keeps your spin**, dying away like a wheel left alone; a fresh grab takes it back at once. (The flat pair have nothing to turn — the same gesture is their corner handles instead.)
+- **While ⟳ is on, the wheel sizes it, including in the middle of a turn**, and so does holding **Shift** as you drag — press it and let go of it without stopping. **⊖ ⊕** step it, and the corner dot resizes the whole thing on the page as usual. Nothing is clipped at the edge of the item, so winding one up big spills over the page rather than being cut off.
 - **◈** switches contour-and-guides / every line / softly shaded. **◐** fades the whole guide back — full, half, faint — so it sits under your drawing instead of competing with it. **◑** cycles its colour, and a guide is one colour throughout so it stays clear of the ink you put on it.
 - **◇** steps to the next shape without losing the pose you found — useful for checking a form against a simpler one. **⌂** goes back to the opening three-quarter view. **✥** (or a double-click) hands it back to the page so you can move it about.
 - **Every line** (◈) adds the box around the circle and the diagonals across the square — the lines a rectangle or an ellipse gets built from.

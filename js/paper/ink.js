@@ -237,7 +237,6 @@ function setDraw(on){
   $('#drawBtn').classList.toggle('on', drawMode);
   $('#inkbar').classList.toggle('open', drawMode);
   if(drawMode){
-    if(mathMode) setMath(false);
     if(typeof setSelectMode === 'function' && selectMode) setSelectMode(false, true);
     select(null); deselectString(); cancelLinking(); closeQuickMenu();
   }

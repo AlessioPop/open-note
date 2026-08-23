@@ -13,14 +13,38 @@ const MATH_STYLES = ['solid', 'dashed', 'dotted'];
 const MDASH = { solid: '', dashed: '15 11', dotted: '0.1 13' };
 const VEC_NAMES = ['v', 'w', 'u', 'a', 'b', 'c'];
 const PLOT_W = 1000;                               // the picture is 1000 wide, like the ink
-let MSEQ = 0;                                      // unique clip ids across every render
-let mathMode = false;                              // the math bar is out and plots take the mouse
 let mathTool = 'pan';                              // 'vec' while a vector is being pulled out
+let mathToolPlot = null;                           // the plot whose local vector button armed it
 let mathSel = null;                                // {pid, kind:'fn'|'vec', id} — what the chip is on
 let mathAim = null;                                // a matrix looking for something to act on
 let hintT = 0;
 const nz = (v, d) => Number.isFinite(+v) ? +v : d;
 const near0 = v => Math.abs(v) < 1e-9 ? 0 : v;
+
+/* Plot tools are local to the selected coordinate system. The only page-wide
+   state left here is transient: one vector drag, or a card waiting for a plot
+   or another card. */
+function syncMathState(){
+  document.body.classList.toggle('mathaim', !!mathAim);
+  document.querySelectorAll('#pageHost .item[data-type="plot"]').forEach(el =>
+    el.classList.toggle('vectool', mathTool === 'vec' && mathToolPlot === el.dataset.id));
+}
+function mathHint(t){
+  const h = $('#saveTag');
+  if(!h) return;
+  h.textContent = t;
+  h.classList.add('show');
+  clearTimeout(hintT);
+  hintT = setTimeout(() => h.classList.remove('show'), 2600);
+}
+function aimHint(aim){
+  if(!aim) return '';
+  return aim.kind === 'basis' ? 'click a coordinate system to make ' + aim.lab + ' its basis'
+    : aim.kind === 'draw' ? 'click the coordinate system to draw ' + aim.lab + ' in'
+    : aim.kind === 'data' ? 'click the coordinate system to plot ' + aim.lab + ' in'
+    : aim.kind === 'mul' ? 'click the card to multiply ' + aim.lab + ' by'
+    : 'click the vector ' + aim.lab + ' should transform';
+}
 
 /* a number the way a person would write it */
 function mfmt(v, dp){
@@ -30,125 +54,7 @@ function mfmt(v, dp){
   return s === '-0' ? '0' : s;
 }
 
-/* ---- a hand-written expression compiler ----
-   "3sin(2x)/x" becomes a function of x. Nothing is ever eval'd, and a typo
-   comes back as a sentence rather than an exception. */
-const MX_FN = {
-  sin:Math.sin, cos:Math.cos, tan:Math.tan, asin:Math.asin, acos:Math.acos, atan:Math.atan,
-  sinh:Math.sinh, cosh:Math.cosh, tanh:Math.tanh, sqrt:Math.sqrt, cbrt:Math.cbrt,
-  abs:Math.abs, exp:Math.exp, ln:Math.log, log:Math.log10, log2:Math.log2, log10:Math.log10,
-  floor:Math.floor, ceil:Math.ceil, round:Math.round, sign:Math.sign, sgn:Math.sign,
-  min:Math.min, max:Math.max, hypot:Math.hypot, atan2:Math.atan2, pow:Math.pow,
-  mod:(a, b) => ((a % b) + b) % b
-};
-const MX_CONST = { pi:Math.PI, tau:Math.PI * 2, e:Math.E, phi:(1 + Math.sqrt(5)) / 2 };
-const MX_SIGNS = { '−':'-', '–':'-', '—':'-', '·':'*', '×':'*', '∗':'*', '÷':'/', '⁄':'/' };
-
-function mxCompile(src){
-  const S = String(src == null ? '' : src);
-  const ts = [];
-  try{
-    for(let i = 0; i < S.length;){
-      const c = S[i];
-      if(c === ' ' || c === '\t'){ i++; continue; }
-      if((c >= '0' && c <= '9') || c === '.'){
-        const m = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/.exec(S.slice(i));
-        if(!m) throw '"' + S.slice(i, i + 4) + '" is not a number I can read';
-        ts.push({ t:'num', v:parseFloat(m[0]) }); i += m[0].length; continue;
-      }
-      if(/[a-zA-Z]/.test(c)){
-        const m = /^[a-zA-Z][a-zA-Z0-9]*/.exec(S.slice(i));
-        ts.push({ t:'name', v:m[0] }); i += m[0].length; continue;
-      }
-      const k = MX_SIGNS[c] || c;
-      if('+-*/^%(),|'.indexOf(k) >= 0){ ts.push({ t:k }); i++; continue; }
-      throw '"' + c + '" is not something I can read';
-    }
-  }catch(err){ return { fn:null, err:String(err), usesX:false }; }
-  ts.push({ t:'end' });
-
-  let p = 0, usesX = false, bars = 0;
-  const at = () => ts[p].t;
-  const eat = t => at() === t ? (p++, true) : false;
-  /* what can start an atom — a "|" only when there isn't one open already,
-     so the closing bar of |x| isn't read as the start of another one */
-  const opens = () => at() === 'num' || at() === 'name' || at() === '(' || (at() === '|' && !bars);
-
-  function expr(){
-    let v = term();
-    for(;;){
-      if(eat('+')){ const a = v, b = term(); v = x => a(x) + b(x); }
-      else if(eat('-')){ const a = v, b = term(); v = x => a(x) - b(x); }
-      else return v;
-    }
-  }
-  function term(){
-    let v = unary();
-    for(;;){
-      if(eat('*')){ const a = v, b = unary(); v = x => a(x) * b(x); }
-      else if(eat('/')){ const a = v, b = unary(); v = x => a(x) / b(x); }
-      else if(eat('%')){ const a = v, b = unary(); v = x => a(x) % b(x); }
-      else if(opens()){ const a = v, b = unary(); v = x => a(x) * b(x); }   /* 2x, 3sin(x), (x+1)(x-1) */
-      else return v;
-    }
-  }
-  function unary(){
-    if(eat('-')){ const a = unary(); return x => -a(x); }
-    if(eat('+')) return unary();
-    return power();
-  }
-  function power(){
-    const b = atom();
-    if(eat('^')){ const e = unary(); return x => Math.pow(b(x), e(x)); }   /* right to left */
-    return b;
-  }
-  function atom(){
-    const t = ts[p++];
-    if(t.t === 'num'){ const v = t.v; return () => v; }
-    if(t.t === '('){ const v = expr(); if(!eat(')')) throw 'a "(" is missing its ")"'; return v; }
-    if(t.t === '|'){
-      bars++;
-      const v = expr();
-      bars--;
-      if(!eat('|')) throw 'a "|" is missing its partner';
-      return x => Math.abs(v(x));
-    }
-    if(t.t === 'name'){
-      const n = t.v, l = n.toLowerCase();
-      if(eat('(')){
-        const args = [];
-        if(!eat(')')){
-          for(;;){ args.push(expr()); if(!eat(',')) break; }
-          if(!eat(')')) throw n + '( is missing its ")"';
-        }
-        const f = MX_FN[l];
-        if(!f) throw n + ' is not a function I know';
-        return x => f.apply(null, args.map(a => a(x)));
-      }
-      if(l === 'x'){ usesX = true; return x => x; }
-      if(MX_CONST[l] != null){ const v = MX_CONST[l]; return () => v; }
-      if(MX_FN[l]) throw n + ' wants its argument in brackets — ' + l + '(x)';
-      throw n + ' is not something I know';
-    }
-    throw 'that expression stops in the middle';
-  }
-  try{
-    if(at() === 'end') return { fn:null, err:null, usesX:false };          /* nothing typed yet */
-    const f = expr();
-    if(at() !== 'end') throw 'there is something left over at the end';
-    f(1);                                                                  /* a dry run catches the rest */
-    return { fn:f, err:null, usesX };
-  }catch(err){ return { fn:null, err:String(err), usesX:false }; }
-}
-/* a cell of a matrix: a constant expression like -1, 1/2 or sqrt(2)/2 */
-function mxNum(src){
-  const c = mxCompile(src);
-  if(c.err) return { v:null, err:c.err };
-  if(!c.fn) return { v:null, err:'that box is empty' };
-  if(c.usesX) return { v:null, err:'x has no value in a matrix' };
-  let v; try{ v = c.fn(0); }catch(e){ v = NaN; }
-  return Number.isFinite(v) ? { v, err:null } : { v:null, err:'that does not come out as a number' };
-}
+/* the expression compiler lives in js/lib/mathexpr.js: mxCompile, mxNum */
 
 /* ---- 2×2 matrices ---- */
 const m2 = m => Array.isArray(m) && m.length === 4 && m.every(Number.isFinite) ? m : [1, 0, 0, 1];
@@ -192,33 +98,125 @@ function datLabels(it){
   }
   return { x: xs.join(', '), y: ys.join(', ') };
 }
+/* ---- numbers on an axis ----
+   How a tick is written: fixed decimals from the step, or, once the numbers
+   are huge or tiny, a mantissa and a power of ten — 1.5×10⁴ — with the power
+   lifted as a <tspan>. The plain text and the width come back with it, for
+   measuring: 19 picture units per glyph of the 34px face, 13 per lifted one. */
+/* the decimals a step needs: its power of ten, and one more for each place
+   its own mantissa carries — 0.25 wants two, 0.2 one, 2 none */
+function axDp(step){
+  const e = Math.floor(Math.log10(Math.abs(step)) + 1e-9), m = Math.abs(step) / Math.pow(10, e);
+  let dp = Math.max(0, -e);
+  for(let k = 0; k < 3 && Math.abs(m * Math.pow(10, k) - Math.round(m * Math.pow(10, k))) > 1e-6; k++) dp++;
+  return Math.min(dp, 12);
+}
+function axLab(v, step, sci){
+  if(Math.abs(v) < 1e-12 * Math.abs(step)) return { t:'0', svg:'0', w:19 };
+  const e = Math.floor(Math.log10(Math.abs(v)) + 1e-9);
+  if(sci == null) sci = axSci(step, v);
+  if(sci){
+    /* as many decimals of the mantissa as the step asks for */
+    const m = mfmt(v / Math.pow(10, e), Math.min(6, axDp(Math.abs(step) / Math.pow(10, e))));
+    const mant = m === '1' ? '' : m === '-1' ? '-' : m + '×';
+    return { t: mant + '10^' + e, w: (mant.length + 2) * 19 + String(e).length * 13,
+             svg: esc(mant) + '10<tspan class="msup" dy="-12" font-size="24">' + e + '</tspan>' };
+  }
+  const t = mfmt(v, axDp(step));
+  return { t, svg: esc(t), w: t.length * 19 };
+}
+const mnumW = l => typeof l === 'string' ? l.length * 19 : l.w;
+/* one way of writing for the whole axis: powers of ten once its step is
+   under a ten-thousandth or its reach is in the millions, else plain */
+const axSci = (step, reach) => Math.abs(step) < 1e-4 || Math.abs(reach) >= 1e6;
+/* the ticks along one axis, {v, lab, minor}. A linear axis steps by a nice
+   number. A log one marks the decades, with 2…9 between them as quiet lines —
+   2 and 5 named too when fewer than two decades are in view. With less than
+   one decade showing it is a linear axis in all but its spacing. */
+function axTicks(a0, a1, step, log){
+  const out = [], reach = Math.max(Math.abs(a0), Math.abs(a1));
+  if(log){
+    const n0 = Math.ceil(Math.log10(a0) - 1e-9), n1 = Math.floor(Math.log10(a1) + 1e-9);
+    if(n1 >= n0 && n1 - n0 <= 40){
+      const few = n1 - n0 < 2, sci = axSci(Math.pow(10, n0), reach);
+      for(let n = n0 - 1; n <= n1; n++){
+        const d = Math.pow(10, n);
+        if(n >= n0) out.push({ v:d, i:n, lab:axLab(d, d, sci), minor:false });
+        for(let m = 2; m <= 9; m++){
+          const v = m * d;
+          if(v > a0 && v < a1) out.push({ v, i:n, lab: few && (m === 2 || m === 5) ? axLab(v, d, sci) : null, minor:true });
+        }
+      }
+      return out;
+    }
+    step = niceStep(a1 - a0);
+  }
+  const i0 = Math.ceil(a0 / step - 1e-9), i1 = Math.floor(a1 / step + 1e-9);
+  if(i1 - i0 > 260) return out;                    /* a window a million steps wide asks for nothing */
+  const sci = axSci(step, reach);
+  for(let i = i0; i <= i1; i++) out.push({ v:near0(i * step), i, lab:axLab(i * step, step, sci), minor:false });
+  return out;
+}
+/* every k-th number, counted from zero so they do not shuffle while panning */
+function axThin(ticks, k){
+  if(k <= 1) return ticks;
+  for(const t of ticks) if(t.lab && (t.minor || t.i % k !== 0)) t.lab = null;
+  return ticks;
+}
+const axWide = t => t.reduce((m, k) => k.lab ? Math.max(m, k.lab.w) : m, 0);
+
 function plotGeom(it){
-  const x0 = nz(it.xmin, -5), x1 = nz(it.xmax, 5), y0 = nz(it.ymin, -3.4), y1 = nz(it.ymax, 3.4);
-  const sx = Math.max(1e-6, x1 - x0), sy = Math.max(1e-6, y1 - y0);
+  const lx = it.lx === 1, ly = it.ly === 1;
+  let x0 = nz(it.xmin, -5), x1 = nz(it.xmax, 5), y0 = nz(it.ymin, -3.4), y1 = nz(it.ymax, 3.4);
+  /* a log axis has no zero and no negative side: a window written before the
+     axis was turned on is pulled over to where it can be drawn */
+  if(lx){ if(!(x1 > 0)){ x0 = 0.1; x1 = 100; } else if(!(x0 > 0)) x0 = x1 / 1000; }
+  if(ly){ if(!(y1 > 0)){ y0 = 0.1; y1 = 100; } else if(!(y0 > 0)) y0 = y1 / 1000; }
+  const tx = lx ? Math.log10 : v => v, ty = ly ? Math.log10 : v => v;
+  const itx = lx ? v => Math.pow(10, v) : v => v, ity = ly ? v => Math.pow(10, v) : v => v;
+  const X0 = tx(x0), X1 = tx(x1), Y0 = ty(y0), Y1 = ty(y1);
+  const sx = Math.max(1e-6, x1 - x0), sy = Math.max(1e-6, y1 - y0);      /* the window, in its own units */
+  const SX = Math.max(1e-6, X1 - X0), SY = Math.max(1e-6, Y1 - Y0);      /* …and as the picture measures it */
   /* The picture is as tall as the window it shows, so a square of coordinates
      comes out square — which is the whole point when there are vectors in it.
      Data is the exception: seconds against metres have no shared scale, and
      insisting on one gives a picture 2.6 times taller than it is wide. So a
      plot that has been handed a table keeps a shape of its own in `ar`, and
      the two axes are then scaled apart, the way any chart is. */
-  const W = PLOT_W, H = clamp(nz(it.ar, 0) > 0 ? W * it.ar : W * sy / sx, W * 0.2, W * 2.6);
-  const B = mbasis(it), det = mdet(B);
-  const kx = W / sx, ky = H / sy;
-  const S = (wx, wy) => [(wx - x0) * kx, H - (wy - y0) * ky];              /* world  → picture */
+  /* A logarithmic view keeps the shape the plot had when log mode began.
+     Decades and linear units do not have a meaningful shared aspect ratio, so
+     deriving the element's height from SY/SX makes a harmless pan or scale
+     toggle stretch the item. Charts already carry their own fixed ratio. */
+  const logAr = clamp(nz(it.logAspect, 0.68), 0.2, 2.6);
+  const W = PLOT_W, H = clamp(nz(it.ar, 0) > 0 ? W * it.ar : (lx || ly) ? W * logAr : W * SY / SX, W * 0.2, W * 2.6);
+  /* A log axis and a basis do not mix: with the picture no longer a linear
+     image of the plane, î and ĵ, the unit square and a sheared lattice would
+     mean nothing. Turning a log axis on puts the standard basis back. */
+  const B = lx || ly ? [1, 0, 0, 1] : mbasis(it), det = mdet(B);
+  const kx = W / SX, ky = H / SY;
+  const S = (wx, wy) => [(tx(wx) - X0) * kx, H - (ty(wy) - Y0) * ky];     /* world  → picture */
   const P = (x, y) => S(B[0] * x + B[1] * y, B[2] * x + B[3] * y);         /* coords → picture */
-  const wAt = (px, py) => [px / kx + x0, (H - py) / ky + y0];              /* picture → world */
+  const wAt = (px, py) => [itx(px / kx + X0), ity((H - py) / ky + Y0)];    /* picture → world */
   const U = Math.abs(det) > 1e-9                                           /* world  → coords */
     ? (wx, wy) => [(B[3] * wx - B[1] * wy) / det, (B[0] * wy - B[2] * wx) / det]
     : (wx, wy) => [wx, wy];
   /* One step across both axes is what keeps a square square, and a plane wants
      that. A chart's axes are measured in different things — seconds against
      metres — so each gets a step of its own, or one of them ends up with its
-     numbers written on top of each other. */
-  const chart = nz(it.ar, 0) > 0;
-  const stepX = chart ? axisStep(sx, W, 130) : niceStep(Math.max(sx, sy));
-  const stepY = chart ? axisStep(sy, H, 72) : stepX;
-  const dpx = clamp(-Math.floor(Math.log10(stepX) + 1e-9), 0, 4);
-  const dpy = clamp(-Math.floor(Math.log10(stepY) + 1e-9), 0, 4);
+     numbers written on top of each other. A plane with a log axis on one side
+     has nothing to share either. */
+  const chart = nz(it.ar, 0) > 0, shared = !chart && !lx && !ly;
+  let stepX = shared ? niceStep(Math.max(sx, sy)) : chart ? axisStep(sx, W, 130) : niceStep(sx);
+  let stepY = shared ? stepX : chart ? axisStep(sy, H, 72) : niceStep(sy);
+  let tX = axTicks(x0, x1, stepX, lx), tY = axTicks(y0, y1, stepY, ly);
+  /* ---- room for the numbers ----
+     A chart may coarsen its step until its numbers fit side by side. A plane
+     keeps its step — the lattice is the point — and names every k-th line
+     instead, so no two numbers are ever written over each other. */
+  if(chart && !lx) for(let k = 0; k < 6 && tX.length > 1 && axWide(tX) + 18 > stepX * kx; k++){ stepX = nextNice(stepX); tX = axTicks(x0, x1, stepX, false); }
+  const gapX = lx ? kx : stepX * kx, gapY = ly ? ky : stepY * ky;
+  tX = axThin(tX, Math.ceil((axWide(tX) + 18) / gapX));
+  tY = axThin(tY, Math.ceil(46 / gapY));
   /* ---- the margin round a chart ----
      A plane writes its numbers along its own axes, through the middle of the
      picture, and needs no room outside it — that is the sketchbook look and it
@@ -227,18 +225,17 @@ function plotGeom(it){
      every chart ever drawn has them. That room has to come from somewhere: the
      picture keeps its 1000 units of plotting area and the viewBox grows around
      it, so nothing inside has to know that the margin is there at all. */
-  const lab = chart ? datLabels(it) : { x:'', y:'' };
+  const dl = chart ? datLabels(it) : { x:'', y:'' };
+  const lab = { x: String(it.xl || dl.x || ''), y: String(it.yl || dl.y || '') };
   const axes = chart && it.axes !== 0, nums = axes && it.axes !== 2;
-  let wide = 1;
-  if(nums)
-    for(let j = Math.ceil(y0 / stepY - 1e-9); j <= Math.floor(y1 / stepY + 1e-9); j++)
-      wide = Math.max(wide, mfmt(j * stepY, dpy).length);
-  const mL = !axes ? 0 : (nums ? clamp(wide * 19 + 26, 60, 320) : 10) + (lab.y ? 52 : 0);
+  const wide = nums ? Math.max(19, axWide(tY)) : 19;
+  const mL = !axes ? 0 : (nums ? clamp(wide + 26, 60, 320) : 10) + (lab.y ? 52 : 0);
   const mB = !axes ? 0 : (nums ? 62 : 10) + (lab.x ? 52 : 0);
   const mT = axes ? 26 : 0;
   const mR = !axes ? 0 : (nums ? 54 : 10);
   return { x0, x1, y0, y1, sx, sy, W, H, B, det, kx, ky, S, P, U, wAt,
-           chart, stepX, stepY, dpx, dpy, lab, axes, nums,
+           lx, ly, tx, ty, itx, ity, X0, X1, Y0, Y1, SX, SY, tX, tY,
+           chart, stepX, stepY, lab, axes, nums,
            mL, mR, mT, mB, VW: mL + W + mR, VH: mT + H + mB };
 }
 /* the coordinates whose picture lands inside the frame — the preimage of the
@@ -252,20 +249,53 @@ function coordBox(g){
   return [Math.min.apply(null, xs), Math.max.apply(null, xs),
           Math.min.apply(null, ys), Math.max.apply(null, ys)];
 }
-function gridD(stx, sty, box, map){
-  const i0 = Math.floor(box[0] / stx), i1 = Math.ceil(box[1] / stx);
-  const j0 = Math.floor(box[2] / sty), j1 = Math.ceil(box[3] / sty);
-  if(i1 - i0 > 260 || j1 - j0 > 260) return ['', ''];   /* a near-singular basis asks for millions */
+/* the lattice: a line at each x across the box, a line at each y along it */
+function gridLines(xs, ys, box, map){
   let v = '', h = '';
-  for(let i = i0; i <= i1; i++){
-    const a = map(i * stx, box[2]), b = map(i * stx, box[3]);
+  for(const x of xs){
+    const a = map(x, box[2]), b = map(x, box[3]);
     v += 'M' + rd1(a[0]) + ' ' + rd1(a[1]) + 'L' + rd1(b[0]) + ' ' + rd1(b[1]);
   }
-  for(let j = j0; j <= j1; j++){
-    const a = map(box[0], j * sty), b = map(box[1], j * sty);
+  for(const y of ys){
+    const a = map(box[0], y), b = map(box[1], y);
     h += 'M' + rd1(a[0]) + ' ' + rd1(a[1]) + 'L' + rd1(b[0]) + ' ' + rd1(b[1]);
   }
-  return [v, h];
+  return v + h;
+}
+/* the multiples of a step inside a stretch — the lines of a linear lattice */
+function stepsIn(st, a0, a1){
+  const i0 = Math.floor(a0 / st), i1 = Math.ceil(a1 / st), out = [];
+  if(i1 - i0 > 260) return out;                    /* a near-singular basis asks for millions */
+  for(let i = i0; i <= i1; i++) out.push(i * st);
+  return out;
+}
+/* rings and spokes — the polar lattice, drawn through the basis like the other
+   one, so it shears with it. On the standard basis a ring is two arcs rather
+   than seventy-two points. */
+function polarGrid(g, box){
+  const R = Math.max.apply(null, [[box[0], box[2]], [box[1], box[2]], [box[0], box[3]], [box[1], box[3]]].map(q => Math.hypot(q[0], q[1])));
+  const st = g.chart ? Math.min(g.stepX, g.stepY) : g.stepX;
+  const n = Math.floor(R / st);
+  if(n > 60 || n < 1) return '';
+  const plain = mIdent(g.B), o = g.P(0, 0);
+  let d = '';
+  for(let k = 1; k <= n; k++){
+    const r = k * st;
+    if(plain){
+      const rx = rd1(r * g.kx), ry = rd1(r * g.ky);
+      d += 'M' + rd1(o[0] - r * g.kx) + ' ' + rd1(o[1]) + 'a' + rx + ' ' + ry + ' 0 1 0 ' + rd1(2 * r * g.kx) + ' 0a' + rx + ' ' + ry + ' 0 1 0 ' + rd1(-2 * r * g.kx) + ' 0';
+    } else {
+      const q = [];
+      for(let i = 0; i <= 72; i++){ const a = i / 72 * Math.PI * 2; q.push(g.P(r * Math.cos(a), r * Math.sin(a))); }
+      d += polyD(q);
+    }
+  }
+  const every = n <= 3 ? 15 : 30;
+  for(let a = 0; a < 360; a += every){
+    const t = a * Math.PI / 180, e = g.P(R * Math.cos(t), R * Math.sin(t));
+    d += mline(o, e);
+  }
+  return d;
 }
 const dashAttr = s => MDASH[s] ? ' stroke-dasharray="' + MDASH[s] + '" stroke-linecap="round"' : '';
 /* every vector wears its head, however short it is: a stubby one gets a smaller
@@ -312,7 +342,10 @@ const vecsOf = it => (it.vecs = it.vecs || []);
 const datOf = it => (it.dat = it.dat || []);
 const datPts = d => Array.isArray(d.pts) ? d.pts : [];
 const DAT_MARKS = ['dots', 'line', 'both'];
-const mathArr = (it, kind) => kind === 'fn' ? fnsOf(it) : kind === 'dat' ? datOf(it) : vecsOf(it);
+const mathArr = (it, kind) => kind === 'fn' ? fnsOf(it) : kind === 'dat' ? datOf(it) : kind === 'vec' ? vecsOf(it) : [];
+/* `on` is absent on everything ever saved, and absent means shown: only an
+   explicit 0 takes a thing off the picture */
+const hidden = o => o.on === 0;
 const mathObj = (it, kind, id) => mathArr(it, kind).find(o => o.id === id) || null;
 function nextColor(it){
   const n = fnsOf(it).length + vecsOf(it).length + datOf(it).length;
@@ -324,29 +357,141 @@ function nextName(it){
   return 'v' + (used.length + 1);
 }
 
+/* what a function is called in the key and the panel: a bare expression is
+   y = …, a bare one in θ is r = …, and anything with its own = or < is itself */
+function fnLabel(f){
+  const src = String(f.expr || ''), c = mxCompile(src);
+  if(!c.ast || c.err || c.rel || c.kind === 'points' || c.kind === 'param') return src || '…';
+  return (c.kind === 'polar' ? 'r = ' : 'y = ') + src;
+}
+
 /* ---- drawing one ---- */
-function fnPath(g, f, box){
-  const c = mxCompile(f.expr);
-  if(!c.fn) return { d:'', err:c.err };
-  const N = 700, lo = -2 * g.H, hi = 3 * g.H;
-  let d = '', pen = false, prev = null;
+/* ---- the sampler ----
+   One walk serves every kind of curve: `at(u)` says where the point for a
+   parameter u is, in coordinates, and the walk takes it through P. A point that
+   is not a number lifts the pen, and so does a jump of more than a picture and
+   a half — that is an asymptote, and the line is not drawn across it. Points far
+   off the picture are pulled in to "far enough", so a path never carries
+   numbers in the millions. Back comes a list of runs of picture points. */
+function plotSample(g, N, u0, u1, at){
+  const runs = [];
+  let run = null, prev = null;
   for(let i = 0; i <= N; i++){
-    const x = box[0] + (box[1] - box[0]) * i / N;
-    let y; try{ y = c.fn(x); }catch(e){ y = NaN; }
-    if(!Number.isFinite(y)){ pen = false; prev = null; continue; }
-    const p = g.P(x, y);
-    p[1] = clamp(p[1], lo, hi);                    /* far off the picture is far enough */
-    p[0] = clamp(p[0], lo, hi);
-    if(prev && Math.hypot(p[0] - prev[0], p[1] - prev[1]) > g.H * 1.6) pen = false;  /* an asymptote */
-    d += (pen ? 'L' : 'M') + rd1(p[0]) + ' ' + rd1(p[1]);
-    pen = true; prev = p;
+    const u = u0 + (u1 - u0) * i / N;
+    let q; try{ q = at(u); }catch(e){ q = null; }
+    if(!q || !Number.isFinite(q[0]) || !Number.isFinite(q[1])){ run = null; prev = null; continue; }
+    const p = g.P(q[0], q[1]);
+    /* A logarithmic axis rejects zero and the negative side. Lift the pen at
+       that boundary instead of writing NaN into the SVG path and losing the
+       otherwise valid positive run with it. */
+    if(!Number.isFinite(p[0]) || !Number.isFinite(p[1])){ run = null; prev = null; continue; }
+    p[0] = clamp(p[0], -2 * g.W, 3 * g.W); p[1] = clamp(p[1], -2 * g.H, 3 * g.H);
+    if(prev && Math.hypot(p[0] - prev[0], p[1] - prev[1]) > g.H * 1.6) run = null;
+    if(!run) runs.push(run = []);
+    run.push(p); prev = p;
   }
-  return { d, err:null };
+  return runs.filter(r => r.length > 1);
+}
+const runsD = runs => runs.map(r => 'M' + r.map(p => rd1(p[0]) + ' ' + rd1(p[1])).join('L')).join('');
+/* the whole run, closed against the far edge of the picture on the side the
+   inequality says — below the curve, above it, left of it, right of it */
+function runsRegion(g, runs, side){
+  return runs.map(r => {
+    const a = r[0], b = r[r.length - 1];
+    const e = side === 'below' ? [[b[0], 3 * g.H], [a[0], 3 * g.H]] : side === 'above' ? [[b[0], -2 * g.H], [a[0], -2 * g.H]]
+            : side === 'left' ? [[-2 * g.W, b[1]], [-2 * g.W, a[1]]] : [[3 * g.W, b[1]], [3 * g.W, a[1]]];
+    return 'M' + r.concat(e).map(p => rd1(p[0]) + ' ' + rd1(p[1])).join('L') + 'z';
+  }).join('');
+}
+const PLOT_BUSY = new Set();                       // plots with a pointer on them: coarser, quicker
+const IMPL_MEMO = new Map();                        // the last few implicit fields, by what made them
+/* the field of an equation or a region, sampled over the picture. Bound to the
+   window, the basis and the text, so a vector dragged across a plot with a
+   circle on it does not cost the circle again. */
+function implField(g, it, c, key){
+  const k = key + '|' + [g.x0, g.x1, g.y0, g.y1, g.W, g.H].map(v => rd1(v)).join(',') + '|' + g.B.join(',') +
+            '|' + (PLOT_BUSY.has(it.id) ? 48 : 96);
+  let fld = IMPL_MEMO.get(k);
+  if(fld) return fld;
+  const ev = c.ev;
+  const F = (px, py) => { const w = g.wAt(px, py), q = g.U(w[0], w[1]); return ev(q[0], q[1], 0); };
+  fld = ctField(F, g.W, g.H, PLOT_BUSY.has(it.id) ? 48 : 96);
+  if(IMPL_MEMO.size > 40) IMPL_MEMO.clear();
+  IMPL_MEMO.set(k, fld);
+  return fld;
+}
+/* one expression, drawn: the region it shades (under the axes), the curve or
+   points it draws (over them), and what the mouse may find */
+function fnDraw(g, it, f, box, live){
+  const out = { reg:'', cur:'', hit:'' };
+  const c = mxCompile(f.expr);
+  if(!c.ast || c.err) return out;
+  const col = esc(f.c || MATH_COLORS[0]), hit = d => live ? '<path class="mhit" data-h="fn:' + esc(f.id) + '" d="' + d + '"/>' : '';
+  const curve = (d, dash) => d ? '<path class="mfn" d="' + d + '" stroke="' + col + '"' + dashAttr(dash || f.s) + '/>' + hit(d) : '';
+  const dom = Array.isArray(f.dom) && f.dom.length === 2 && f.dom.every(Number.isFinite) && f.dom[1] > f.dom[0] ? f.dom : [0, Math.PI * 2];
+  const K = c.kind;
+  if(K === 'expy' || K === 'expx'){
+    const ev = c.ev;
+    if(K === 'expy' && c.complex && c.evc){
+      /* a complex answer over a real x: its real part solid, its imaginary part
+         dashed in the same colour — unless every answer turned out real */
+      const evc = c.evc;
+      let any = false;
+      const re = plotSample(g, 700, box[0], box[1], x => { const z = evc(x, 0, 0); if(Math.abs(z[1]) > 1e-9) any = true; return [x, z[0]]; });
+      out.cur += curve(runsD(re));
+      if(any) out.cur += curve(runsD(plotSample(g, 700, box[0], box[1], x => [x, evc(x, 0, 0)[1]])), 'dashed');
+      return out;
+    }
+    const runs = K === 'expy' ? plotSample(g, 700, box[0], box[1], x => [x, ev(x, 0, 0)])
+                              : plotSample(g, 700, box[2], box[3], y => [ev(0, y, 0), y]);
+    out.cur += curve(runsD(runs));
+    return out;
+  }
+  if(K === 'polar'){
+    const ev = c.ev;
+    out.cur += curve(runsD(plotSample(g, 1440, dom[0], dom[1], th => { const r = ev(0, 0, th); return [r * Math.cos(th), r * Math.sin(th)]; })));
+    return out;
+  }
+  if(K === 'param'){
+    const at = c.evc ? t => c.evc(0, 0, t) : t => [c.evx(0, 0, t), c.evy(0, 0, t)];
+    out.cur += curve(runsD(plotSample(g, 1000, dom[0], dom[1], at)));
+    return out;
+  }
+  if(K === 'points'){
+    for(const q of c.pts){
+      const p = g.P(q[0], q[1]);
+      if(!Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
+      out.cur += '<circle class="mdot" cx="' + rd1(p[0]) + '" cy="' + rd1(p[1]) + '" r="10" fill="' + col + '"/>';
+      if(live) out.hit += '<circle class="mgrab" data-h="fn:' + esc(f.id) + '" cx="' + rd1(p[0]) + '" cy="' + rd1(p[1]) + '" r="17"/>';
+    }
+    return out;
+  }
+  if(K === 'ineq' && (c.sub === 'expy' || c.sub === 'expx')){
+    /* the region leans on a curve: each run of it, closed against the edge */
+    const evb = c.evb;
+    const runs = c.sub === 'expy' ? plotSample(g, 700, box[0], box[1], x => [x, evb(x, 0, 0)])
+                                  : plotSample(g, 700, box[2], box[3], y => [evb(0, y, 0), y]);
+    const side = c.sub === 'expy' ? (c.below ? 'below' : 'above') : (c.below ? 'left' : 'right');
+    out.reg += '<path class="mreg" d="' + runsRegion(g, runs, side) + '" fill="' + col + '"/>';
+    out.cur += curve(runsD(runs), c.strict ? 'dashed' : f.s);
+    return out;
+  }
+  if(K === 'implicit' || K === 'ineq'){
+    if(Math.abs(g.det) <= 1e-9) return out;         /* no way back from the picture to coordinates */
+    const fld = implField(g, it, c, f.expr);
+    if(K === 'ineq') out.reg += '<path class="mreg" d="' + ctFill(fld) + '" fill="' + col + '"/>';
+    out.cur += curve(ctCurve(fld), K === 'ineq' && c.strict ? 'dashed' : f.s);
+    return out;
+  }
+  return out;
 }
 function plotInner(it, live){
   const g = plotGeom(it), B = g.B, plain = mIdent(B);
-  const id = 'mp' + (++MSEQ);
-  const chart = g.chart, stepX = g.stepX, stepY = g.stepY, dpx = g.dpx, dpy = g.dpy;
+  /* the clip is named after the item, so it is unique across every plot on a
+     page — and in an export, which builds them all into one file — and stays
+     the same from one repaint to the next */
+  const id = 'mp-' + esc(it.id);
+  const chart = g.chart, stepX = g.stepX, stepY = g.stepY;
   const box = coordBox(g);
   const sel = mathSel && mathSel.pid === it.id ? mathSel : null;
   const W = rd1(g.W), H = rd1(g.H);
@@ -358,18 +503,31 @@ function plotInner(it, live){
   /* the paper: the lattice of the basis, with the standard one showing through
      faintly behind it once the space has been transformed */
   if((it.grid || 'solid') !== 'blank'){
-    const gd = gridD(stepX, stepY, box, g.P);
-    if(!plain){
-      const gh = gridD(stepX, stepY, [g.x0, g.x1, g.y0, g.y1], g.S);
-      s += '<path class="mgrid mghost" d="' + gh[0] + gh[1] + '"/>';
+    /* a log axis rules its lines where its ticks are, the quiet 2…9 fainter */
+    const major = t => t.filter(k => !k.minor).map(k => k.v), minor = t => t.filter(k => k.minor).map(k => k.v);
+    if(it.pol === 1 && !g.lx && !g.ly){
+      /* Polar is a coordinate system, not a decoration on the square one. */
+      s += '<path class="mpolar g-' + esc(it.grid || 'solid') + '" d="' + polarGrid(g, box) + '"/>';
+    } else {
+      const xs = g.lx ? major(g.tX) : stepsIn(stepX, box[0], box[1]);
+      const ys = g.ly ? major(g.tY) : stepsIn(stepY, box[2], box[3]);
+      if(!plain)
+        s += '<path class="mgrid mghost" d="' + gridLines(stepsIn(stepX, g.x0, g.x1), stepsIn(stepY, g.y0, g.y1), [g.x0, g.x1, g.y0, g.y1], g.S) + '"/>';
+      if(g.lx || g.ly)
+        s += '<path class="mgrid minor g-' + esc(it.grid || 'solid') + '" d="' + gridLines(g.lx ? minor(g.tX) : [], g.ly ? minor(g.tY) : [], box, g.P) + '"/>';
+      s += '<path class="mgrid g-' + esc(it.grid || 'solid') + '" d="' + gridLines(xs, ys, box, g.P) + '"/>';
     }
-    s += '<path class="mgrid g-' + esc(it.grid || 'solid') + '" d="' + gd[0] + gd[1] + '"/>';
   }
   /* the unit square goes with the basis vectors: its area is the determinant */
-  if(it.bshow){
+  if(it.bshow && !g.lx && !g.ly){
     const q = [[0, 0], [1, 0], [1, 1], [0, 1]].map(p => g.P(p[0], p[1]));
     s += '<polygon class="munit" points="' + q.map(p => rd1(p[0]) + ',' + rd1(p[1])).join(' ') + '"/>';
   }
+  /* every expression, worked out once; a region is shaded under the axes or a
+     half-plane would hide the very axis it is drawn against, and a switched-off
+     one stays on the list and off the picture */
+  const drawn = fnsOf(it).filter(f => !hidden(f)).map(f => fnDraw(g, it, f, box, live));
+  for(const d of drawn) s += d.reg;
   if(it.axes !== 0){
     const o = g.S(0, 0);
     const ay = clamp(o[1], 1, g.H - 1), ax = clamp(o[0], 1, g.W - 1);
@@ -396,44 +554,58 @@ function plotInner(it, live){
     const lowX = o[1] > g.H - 46, lowY = o[0] < 46;
     const numY = chart ? g.H + 46 : (lowX ? ay - 15 : ay + 36);
     const numX = chart ? -16 : (lowY ? ax + 13 : ax - 13);
-    const numC = (chart || !lowY) ? 'mnum end' : 'mnum';
-    for(let i = Math.ceil(g.x0 / stepX - 1e-9); i <= Math.floor(g.x1 / stepX + 1e-9); i++){
-      const px = g.S(i * stepX, 0)[0];
-      if(i === 0 && !chart) continue;
+    const numC = (chart || !lowY) ? 'mnum end' : 'mnum start';
+    for(const t of g.tX){
+      if(t.minor && !t.lab) continue;
+      const px = g.S(t.v, 0)[0];
+      if(t.v === 0 && !chart) continue;
       /* on a chart the ticks are on the frame, pointing out, where the numbers
          are — on a plane they cross the axis they belong to */
       tk += chart ? 'M' + rd1(px) + ' ' + rd1(g.H) + 'v13'
                   : 'M' + rd1(px) + ' ' + rd1(ay - 7) + 'v14';
       /* a number sitting on the frame would be sliced in half by it, and one in
          the corner where the two axes meet would land on the other axis's */
-      if(chart || (px > 30 && px < g.W - 30 && (!lowY || Math.abs(px - ax) > 34)))
-        nums += '<text class="mnum" x="' + rd1(px) + '" y="' + rd1(numY) + '">' + esc(mfmt(i * stepX, dpx)) + '</text>';
+      if(t.lab && (chart || (px > 30 && px < g.W - 30 && (!lowY || Math.abs(px - ax) > 34))))
+        nums += '<text class="mnum" x="' + rd1(px) + '" y="' + rd1(numY) + '">' + t.lab.svg + '</text>';
     }
-    for(let j = Math.ceil(g.y0 / stepY - 1e-9); j <= Math.floor(g.y1 / stepY + 1e-9); j++){
-      const py = g.S(0, j * stepY)[1];
-      if(j === 0 && !chart) continue;
+    for(const t of g.tY){
+      if(t.minor && !t.lab) continue;
+      const py = g.S(0, t.v)[1];
+      if(t.v === 0 && !chart) continue;
       tk += chart ? 'M0 ' + rd1(py) + 'h-13'
                   : 'M' + rd1(ax - 7) + ' ' + rd1(py) + 'h14';
-      if(chart || (py > 22 && py < g.H - 14 && (!lowX || Math.abs(py - ay) > 28)))
-        nums += '<text class="' + numC + '" x="' + rd1(numX) + '" y="' + rd1(py + 11) + '">' + esc(mfmt(j * stepY, dpy)) + '</text>';
+      if(t.lab && (chart || (py > 22 && py < g.H - 14 && (!lowX || Math.abs(py - ay) > 28))))
+        nums += '<text class="' + numC + '" x="' + rd1(numX) + '" y="' + rd1(py + 11) + '">' + t.lab.svg + '</text>';
     }
     let furn = '<path class="mtick" d="' + tk + '"/>';
-    /* …and on a plane the 0 is only written where the origin actually is */
-    const origin = o[0] > 30 && o[0] < g.W - 8 && o[1] > 12 && o[1] < g.H - 12;
+    /* …and on a plane the 0 is only written where the origin actually is —
+       a log axis has no origin to write it at */
+    const origin = !g.lx && !g.ly && o[0] > 30 && o[0] < g.W - 8 && o[1] > 12 && o[1] < g.H - 12;
     if(it.axes !== 2) furn += nums + (!chart && origin
       ? '<text class="mnum end" x="' + rd1(ax - 13) + '" y="' + rd1(ay + 36) + '">0</text>' : '');
     /* ---- and what they are called ----
-       The headings the columns were under, centred on the axis each belongs to
-       and set outside it — plt.xlabel and plt.ylabel, down to the y one reading
-       up the side of the picture. */
-    if(g.lab.x) furn += '<text class="mxlab" x="' + rd1(g.W / 2) + '" y="' + rd1(g.H + g.mB - 14) +
-      '">' + esc(g.lab.x) + '</text>';
-    /* Turned a quarter turn anticlockwise, the letters stand *left* of the line
-       they are written along — so the baseline goes at the inner edge of the
-       band kept for it, not the outer, or the tops of them are cut off by the
-       edge of the picture. */
-    if(g.lab.y) furn += '<text class="mylab" transform="translate(' + rd1(38 - g.mL) + ' ' +
-      rd1(g.H / 2) + ') rotate(-90)">' + esc(g.lab.y) + '</text>';
+       On a chart: the headings the columns were under, or what was typed over
+       them, centred on the axis each belongs to and set outside it —
+       plt.xlabel and plt.ylabel, down to the y one reading up the side of the
+       picture. On a plane: at the arrowhead of each axis, inside, and while
+       selected a faint x and y stand there to be clicked and named. */
+    if(chart){
+      if(g.lab.x) furn += '<text class="mxlab" x="' + rd1(g.W / 2) + '" y="' + rd1(g.H + g.mB - 14) +
+        '"' + (live ? ' data-h="lab:x"' : '') + '>' + esc(g.lab.x) + '</text>';
+      /* Turned a quarter turn anticlockwise, the letters stand *left* of the line
+         they are written along — so the baseline goes at the inner edge of the
+         band kept for it, not the outer, or the tops of them are cut off by the
+         edge of the picture. */
+      if(g.lab.y) furn += '<text class="mylab" transform="translate(' + rd1(38 - g.mL) + ' ' +
+        rd1(g.H / 2) + ') rotate(-90)"' + (live ? ' data-h="lab:y"' : '') + '>' + esc(g.lab.y) + '</text>';
+    } else {
+      const ghost = live && selected === it.id;
+      /* above the numbers when the axis is pinned to the bottom and they sit on top of it */
+      if(g.lab.x || ghost) furn += '<text class="mxlab plane' + (g.lab.x ? '' : ' ghost') + '" x="' + rd1(g.W - 48) +
+        '" y="' + rd1(ay - (lowX ? 52 : 16)) + '"' + (live ? ' data-h="lab:x"' : '') + '>' + esc(g.lab.x || 'x') + '</text>';
+      if(g.lab.y || ghost) furn += '<text class="mylab plane' + (g.lab.y ? '' : ' ghost') + '" x="' + rd1(ax + 18) +
+        '" y="' + rd1(40) + '"' + (live ? ' data-h="lab:y"' : '') + '>' + esc(g.lab.y || 'y') + '</text>';
+    }
     /* A chart's numbers and names are written in the margin, and the whole
        picture is inside a clip the width of the plotting area — so on a chart
        they are held back and laid down outside it, once the clip has closed.
@@ -449,34 +621,39 @@ function plotInner(it, live){
      one of them is still the thing you see */
   /* î is labelled above its tip and ĵ beside its own, clear of the numbers
      already written along the axes */
-  if(it.bshow) [['i', [1, 0], 'î', -7, -21], ['j', [0, 1], 'ĵ', 21, 13]].forEach(k => {
+  if(it.bshow && !g.lx && !g.ly) [['i', [1, 0], 'î', -7, -21], ['j', [0, 1], 'ĵ', 21, 13]].forEach(k => {
     const o = g.P(0, 0), b = g.P(k[1][0], k[1][1]), hd = headSize(o, b, 29);
     s += '<path class="mb mb' + k[0] + '" d="' + mline(o, shorten(o, b, hd * 0.7)) + '"/>' +
          '<polygon class="mb mb' + k[0] + ' fill" points="' + arrowPts(o, b, hd) + '"/>' +
          '<text class="mblab mb' + k[0] + '" x="' + rd1(b[0] + k[3]) + '" y="' + rd1(b[1] + k[4]) + '">' + k[2] + '</text>';
   });
-  /* functions */
-  for(const f of fnsOf(it)){
-    const r = fnPath(g, f, box);
-    if(!r.d) continue;
-    s += '<path class="mfn" d="' + r.d + '" stroke="' + esc(f.c || MATH_COLORS[0]) + '"' + dashAttr(f.s) + '/>';
-    if(live) s += '<path class="mhit" data-h="fn:' + esc(f.id) + '" d="' + r.d + '"/>';
-  }
+  /* functions: the curves, over the axes — their regions went down before them */
+  for(const d of drawn) s += d.cur + d.hit;
   /* a table's points: the error bars go down first, then the line through them,
      then the marks on top, so nothing a point says is hidden by its own whisker */
   for(const d of datOf(it)){
+    if(hidden(d)) continue;
     const c = d.c || MATH_COLORS[2], pts = datPts(d), mode = d.m || 'dots';
-    const P = pts.map(p => g.P(nz(p[0], 0), nz(p[1], 0)));
+    const P = [], runs = [];
+    let run = null;
+    for(const p of pts){
+      const q = g.P(nz(p[0], 0), nz(p[1], 0));
+      if(!Number.isFinite(q[0]) || !Number.isFinite(q[1])){ run = null; continue; }
+      P.push(q);
+      if(!run) runs.push(run = []);
+      run.push(q);
+    }
+    const lineD = runsD(runs.filter(r => r.length > 1));
     let eb = '';
     for(const p of pts){
       const x = nz(p[0], 0), y = nz(p[1], 0);
       const ex = Math.abs(nz(p[2], 0)), ey = Math.abs(nz(p[3], 0));
-      if(ey > 0) eb += ebar(g.P(x, y - ey), g.P(x, y + ey), 12);
-      if(ex > 0) eb += ebar(g.P(x - ex, y), g.P(x + ex, y), 12);
+      if(ey > 0){ const a = g.P(x, y - ey), b = g.P(x, y + ey); if(a.concat(b).every(Number.isFinite)) eb += ebar(a, b, 12); }
+      if(ex > 0){ const a = g.P(x - ex, y), b = g.P(x + ex, y); if(a.concat(b).every(Number.isFinite)) eb += ebar(a, b, 12); }
     }
     if(eb) s += '<path class="mdeb" d="' + eb + '" stroke="' + esc(c) + '"/>';
-    if(mode !== 'dots' && P.length > 1)
-      s += '<path class="mdline" d="' + polyD(P) + '" stroke="' + esc(c) + '"' + dashAttr(d.s) + '/>';
+    if(mode !== 'dots' && lineD)
+      s += '<path class="mdline" d="' + lineD + '" stroke="' + esc(c) + '"' + dashAttr(d.s) + '/>';
     /* A point at a time is an element at a time, and a spreadsheet's worth of
        them is a page that never comes back. Past a certain count the same marks
        go down as one path instead, and the invisible circles that make each
@@ -493,8 +670,8 @@ function plotInner(it, live){
         s += '<circle class="mdot" cx="' + rd1(q[0]) + '" cy="' + rd1(q[1]) + '" r="10" fill="' + esc(c) + '"/>';
     }
     if(live){
-      if(mode !== 'dots' && P.length > 1)
-        s += '<path class="mhit" data-h="dat:' + esc(d.id) + '" d="' + polyD(P) + '"/>';
+      if(mode !== 'dots' && lineD)
+        s += '<path class="mhit" data-h="dat:' + esc(d.id) + '" d="' + lineD + '"/>';
       if(!many) for(const q of P)
         s += '<circle class="mgrab" data-h="dat:' + esc(d.id) + '" cx="' + rd1(q[0]) + '" cy="' +
              rd1(q[1]) + '" r="17"/>';
@@ -502,18 +679,21 @@ function plotInner(it, live){
   }
   /* vectors, and where a transformed one came from */
   for(const v of vecsOf(it)){
+    if(hidden(v)) continue;
     const c = v.c || MATH_COLORS[1];
     const a = g.P(nz(v.ox, 0), nz(v.oy, 0)), b = g.P(nz(v.x, 1), nz(v.y, 1));
+    if(!a.concat(b).every(Number.isFinite)) continue;
     if(v.was){
       const wb = g.P(v.was[0], v.was[1]), wh = headSize(a, wb, 21);
-      s += '<path class="mwas" d="' + mline(a, shorten(a, wb, wh * 0.72)) + '" stroke="' + esc(c) + '"/>' +
-           '<polygon class="mwas" points="' + arrowPts(a, wb, wh) + '" fill="' + esc(c) + '"/>' +
-           '<path class="mwarc" d="' + mline(wb, b) + '" stroke="' + esc(c) + '"/>';
+      if(wb.every(Number.isFinite)) s += '<path class="mwas" d="' + mline(a, shorten(a, wb, wh * 0.72)) + '" stroke="' + esc(c) + '"/>' +
+        '<polygon class="mwas" points="' + arrowPts(a, wb, wh) + '" fill="' + esc(c) + '"/>' +
+        '<path class="mwarc" d="' + mline(wb, b) + '" stroke="' + esc(c) + '"/>';
     }
     if(v.comp || (sel && sel.kind === 'vec' && sel.id === v.id)){
       const cx = g.P(nz(v.x, 1), 0), cy = g.P(0, nz(v.y, 1));
-      s += '<path class="mcomp" stroke="' + esc(c) + '" d="' + mline(g.P(0, 0), cx) + mline(cx, b) +
-           mline(g.P(0, 0), cy) + mline(cy, b) + '"/>';
+      const o = g.P(0, 0);
+      if(o.concat(cx, cy).every(Number.isFinite)) s += '<path class="mcomp" stroke="' + esc(c) + '" d="' +
+        mline(o, cx) + mline(cx, b) + mline(o, cy) + mline(cy, b) + '"/>';
     }
     const hd = headSize(a, b, 30), tip = shorten(a, b, hd * 0.7);
     s += '<path class="mvec" d="' + mline(a, tip) + '" stroke="' + esc(c) + '"' + dashAttr(v.s) + '/>' +
@@ -528,7 +708,7 @@ function plotInner(it, live){
   }
   /* …and their tips are the last thing on the picture, so they are always the
      first thing the mouse finds */
-  if(it.bshow && live) [['i', [1, 0]], ['j', [0, 1]]].forEach(k => {
+  if(it.bshow && !g.lx && !g.ly && live) [['i', [1, 0]], ['j', [0, 1]]].forEach(k => {
     const b = g.P(k[1][0], k[1][1]);
     s += '<circle class="mgrab" data-h="bas:' + k[0] + '" cx="' + rd1(b[0]) + '" cy="' + rd1(b[1]) + '" r="21"/>';
   });
@@ -548,9 +728,10 @@ function plotSVG(it, live){
 function plotLegend(it){
   const sel = mathSel && mathSel.pid === it.id ? mathSel : null;
   const pill = (k, o, txt) =>
-    '<button class="mpill' + (sel && sel.kind === k && sel.id === o.id ? ' on' : '') +
-    '" data-o="' + k + ':' + esc(o.id) + '"><i style="background:' + esc(o.c || '#888') + '"></i>' + esc(txt) + '</button>';
-  const out = fnsOf(it).map(f => pill('fn', f, 'y = ' + (f.expr || '?')))
+    '<button class="mpill' + (sel && sel.kind === k && sel.id === o.id ? ' on' : '') + (hidden(o) ? ' off' : '') +
+    '" data-o="' + k + ':' + esc(o.id) + '"><i style="' + (hidden(o) ? 'box-shadow:inset 0 0 0 2px ' : 'background:') +
+    esc(o.c || '#888') + '"></i>' + esc(txt) + '</button>';
+  const out = fnsOf(it).filter(f => f.expr).map(f => pill('fn', f, fnLabel(f)))
     .concat(datOf(it).map(d => pill('dat', d,
       (d.lab || 'data') + ' · ' + datPts(d).length + (datPts(d).length === 1 ? ' point' : ' points'))))
     .concat(vecsOf(it).map(v => pill('vec', v,
@@ -565,8 +746,12 @@ function plotLegend(it){
    would take it past the right edge of the picture. */
 function chipPos(o, kind, g){
   /* a series has the widest box of the three, so it starts at the left edge
-     rather than a third of the way in, where it would hang off the picture */
-  const p = kind === 'vec' ? g.P(nz(o.x, 1), nz(o.y, 1)) : [g.W * (kind === 'dat' ? 0.02 : 0.32), 0];
+     rather than a third of the way in, where it would hang off the picture;
+     an axis name's box sits by the name */
+  const p = kind === 'vec' ? g.P(nz(o.x, 1), nz(o.y, 1))
+          : kind === 'lab' ? (g.chart ? (o.id === 'x' ? [g.W * 0.5, g.H + g.mB - 40] : [-g.mL + 20, g.H * 0.5])
+                                      : (o.id === 'x' ? [g.W - 200, clamp(g.S(0, 0)[1], 1, g.H - 1) - 50] : [clamp(g.S(0, 0)[0], 1, g.W - 1) + 24, 10]))
+          : [g.W * (kind === 'dat' ? 0.02 : 0.32), 0];
   /* the box hangs off the picture, and the picture is the plotting area inset
      into whatever margin a chart carries */
   const L = clamp((p[0] + g.mL) / g.VW * 100, 1, 99), T = clamp((p[1] + g.mT) / g.VH * 100, -6, 86);
@@ -604,6 +789,10 @@ function chipHTML(it, o, kind, g){
       '<button data-a="fit" title="Fit the view to the points">⤢</button>' + del +
       '<div class="merr"></div></div>';
   }
+  if(kind === 'lab')
+    return '<div class="mchip' + (at.flip ? ' flip' : '') + '" data-for="lab:' + esc(o.id) + '" style="' + at.css + '">' +
+      '<span class="mpar">' + o.id + ' axis</span><input class="mlab maxl" data-k="axl" value="' + esc(o.it[o.id + 'l'] || '') +
+      '" title="What the ' + o.id + ' axis is called" spellcheck="false" placeholder="name">' + del + '</div>';
   const body = kind === 'vec'
     ? '<input class="mlab" data-k="lab" value="' + esc(o.lab || '') + '" title="Name" spellcheck="false">' +
       '<span class="mpar">(</span><input class="mval" data-k="x" value="' + esc(mfmt(nz(o.x, 0), 4)) + '">' +
@@ -656,6 +845,7 @@ function paintPlot(el, it){
   const leg = el.querySelector('.mleg');
   if(leg) leg.innerHTML = plotLegend(it);
   syncChip(el, it);
+  if(typeof xpSync === 'function') xpSync(el, it);
   /* a series taken off the plot takes its wire with it — the wires are laid
      from what is actually there, so all this has to do is ask for a pass */
   if(typeof ndWake === 'function') ndWake();
@@ -672,14 +862,14 @@ function mrepaint(it){ const el = plotEl(it); if(el) paintPlot(el, it); }
 /* ---- selection inside a plot ---- */
 function selectMath(pid, kind, id){
   mathSel = kind && id ? { pid, kind, id } : null;
-  repaintPlots(); syncMathBar();
+  repaintPlots(); syncMathState();
 }
 function syncChip(el, it){
   const box = el.querySelector('.mchips');
   if(!box) return;
   const sel = mathSel && mathSel.pid === it.id ? mathSel : null;
-  const o = sel ? mathObj(it, sel.kind, sel.id) : null;
-  if(!o){ box.innerHTML = ''; return; }
+  const o = sel ? (sel.kind === 'lab' ? { id:sel.id, it } : mathObj(it, sel.kind, sel.id)) : null;
+  if(!o || sel.kind === 'fn'){ box.innerHTML = ''; return; }   /* a function is edited in the panel */
   const g = plotGeom(it), key = sel.kind + ':' + sel.id;
   const cur = box.firstElementChild;
   if(cur && cur.dataset.for === key && cur.contains(document.activeElement)){
@@ -729,22 +919,33 @@ function mgrab(el, e, mv, up){
 /* ---- dragging the picture around ---- */
 function dragView(svg, el, it, page, e, axis){
   const g = plotGeom(it), s = svgAt(svg, e), w0 = g.wAt(s[0], s[1]);
-  const x0 = g.x0, x1 = g.x1, y0 = g.y0, y1 = g.y1;
+  const X0 = g.X0, X1 = g.X1, Y0 = g.Y0, Y1 = g.Y1, u0 = g.tx(w0[0]), v0 = g.ty(w0[1]);
+  PLOT_BUSY.add(it.id);                            /* coarser equations while the hand is on it */
   mgrab(svg, e, ev => {
+    /* in the picture's own measure — so a log axis pans by decades, not by units */
     const q = svgAt(svg, ev), w = g.wAt(q[0], q[1]);
-    const dx = (axis === 'y' || axis === 'both') ? w[0] - w0[0] : 0;
-    const dy = (axis === 'x' || axis === 'both') ? w[1] - w0[1] : 0;
-    it.xmin = x0 - dx; it.xmax = x1 - dx;
-    it.ymin = y0 - dy; it.ymax = y1 - dy;
-    paintPlot(el, it); syncMathBar();
-  }, () => queueSave(page.id));
+    const dx = (axis === 'y' || axis === 'both') ? g.tx(w[0]) - u0 : 0;
+    const dy = (axis === 'x' || axis === 'both') ? g.ty(w[1]) - v0 : 0;
+    it.xmin = g.itx(X0 - dx); it.xmax = g.itx(X1 - dx);
+    it.ymin = g.ity(Y0 - dy); it.ymax = g.ity(Y1 - dy);
+    paintPlot(el, it); syncMathState();
+  }, () => { PLOT_BUSY.delete(it.id); paintPlot(el, it); queueSave(page.id); });
+}
+let busyT = 0;
+function plotBusy(el, it){
+  PLOT_BUSY.add(it.id);
+  clearTimeout(busyT);
+  busyT = setTimeout(() => { PLOT_BUSY.delete(it.id); paintPlot(el, it); }, 180);
 }
 function zoomPlot(el, it, page, svg, ev, k){
   const g = plotGeom(it), q = svgAt(svg, ev), w = g.wAt(q[0], q[1]);
-  if(g.sx * k < 1e-4 || g.sx * k > 1e7) return;
-  it.xmin = w[0] + (g.x0 - w[0]) * k; it.xmax = w[0] + (g.x1 - w[0]) * k;
-  it.ymin = w[1] + (g.y0 - w[1]) * k; it.ymax = w[1] + (g.y1 - w[1]) * k;
-  paintPlot(el, it); syncMathBar(); queueSave(page.id);
+  if(g.SX * k < 1e-4 || g.SX * k > 1e7) return;
+  /* about the point under the pointer, in the picture's own measure */
+  const u = g.tx(w[0]), v = g.ty(w[1]);
+  it.xmin = g.itx(u + (g.X0 - u) * k); it.xmax = g.itx(u + (g.X1 - u) * k);
+  it.ymin = g.ity(v + (g.Y0 - v) * k); it.ymax = g.ity(v + (g.Y1 - v) * k);
+  plotBusy(el, it);
+  paintPlot(el, it); syncMathState(); queueSave(page.id);
 }
 
 /* ---- pulling a vector out of the paper ---- */
@@ -765,13 +966,14 @@ function dragNewVec(svg, el, it, page, e){
     paintPlot(el, it);
   }, () => {
     if(!moved || (v.x === v.ox && v.y === v.oy)){     /* a click, not a drag */
-      if(home){ vecsOf(it).pop(); selectMath(it.id, null); mathTool = 'pan'; mrepaint(it); syncMathBar(); return; }
+      if(home){ vecsOf(it).pop(); selectMath(it.id, null); mathTool = 'pan'; mathToolPlot = null; mrepaint(it); syncMathState(); return; }
       v.ox = 0; v.oy = 0;                            /* a tap: from the origin to where you tapped */
     }
     /* one vector per press of the button: the tool puts itself away so the next
        drag moves the plane instead of littering it with arrows */
     mathTool = 'pan';
-    queueSave(page.id); mrepaint(it); syncMathBar();
+    mathToolPlot = null;
+    queueSave(page.id); mrepaint(it); syncMathState();
   });
 }
 function dragVec(svg, el, it, page, e, id, part){
@@ -795,7 +997,28 @@ function dragVec(svg, el, it, page, e, id, part){
     paintPlot(el, it);
   }, () => { if(moved){ queueSave(page.id); mrepaint(it); } });
 }
+const plotLog = it => it.lx === 1 || it.ly === 1;
+/* The linear view kept while logarithmic axes are in use. On a coordinate
+   plane, returning from log mode means returning to an origin-centred window;
+   a data chart instead returns to the exact fitted window it had before. */
+function plotLogHome(it){
+  const d = Array.isArray(it.logHome) && it.logHome.length === 4 && it.logHome.every(Number.isFinite)
+    ? it.logHome : [-5, 5, -3.4, 3.4];
+  if(nz(it.ar, 0) > 0) return d.slice();
+  const sx = Math.max(1e-6, d[1] - d[0]), sy = Math.max(1e-6, d[3] - d[2]);
+  return [-sx / 2, sx / 2, -sy / 2, sy / 2];
+}
+function leaveLog(it, axis){
+  const h = plotLogHome(it);
+  if(axis === 'x'){ it.xmin = h[0]; it.xmax = h[1]; }
+  else { it.ymin = h[2]; it.ymax = h[3]; }
+  if(!plotLog(it)){
+    it.xmin = h[0]; it.xmax = h[1]; it.ymin = h[2]; it.ymax = h[3];
+    delete it.logHome; delete it.logAspect;
+  }
+}
 function dragBasis(svg, el, it, page, e, which){
+  if(plotLog(it)) return mathHint('a log axis and a basis do not mix');
   const b = mbasis(it).slice();
   it.basis = b;
   const st = snapStep(plotGeom(it));
@@ -803,7 +1026,7 @@ function dragBasis(svg, el, it, page, e, which){
     const c = coordAt(svg, it, ev);
     const x = msnap(c.wx, st, ev.shiftKey), y = msnap(c.wy, st, ev.shiftKey);
     if(which === 'i'){ b[0] = x; b[2] = y; } else { b[1] = x; b[3] = y; }
-    paintPlot(el, it); syncMathBar();
+    paintPlot(el, it); syncMathState();
   }, () => { queueSave(page.id); mrepaint(it); });
 }
 
@@ -811,6 +1034,10 @@ function dragBasis(svg, el, it, page, e, which){
 function wirePlot(el, it, page){
   const svg = el.querySelector('svg.mplot');
   if(!svg) return;
+  /* a function written by an older build has no id; the panel needs one.
+     Done here, on the live page only, so print and export leave records alone */
+  for(const f of fnsOf(it)) if(!f.id) f.id = uid();
+  if(typeof xpWire === 'function') xpWire(el, it, page);
   const chips = el.querySelector('.mchips');
   if(PLOT_MOVE.has(it.id)) el.classList.add('mmove');
 
@@ -823,7 +1050,10 @@ function wirePlot(el, it, page){
       return dragView(svg, el, it, page, e, 'both');
     }
     if(e.button !== 0) return;
-    if(!mathMode && !mathAim) return;                /* out of math mode a plot is just an item */
+    /* Once selected, a plot owns gestures inside its grid. The local vector
+       button and cross-item targeting can also arm one gesture directly. */
+    const vectorArmed = mathTool === 'vec' && mathToolPlot === it.id;
+    if(!el.classList.contains('sel') && !mathAim && !vectorArmed) return;
     if(PLOT_MOVE.has(it.id)) return;                 /* …and in move mode it is one again */
     e.stopPropagation(); e.preventDefault();
     if(mathAim) return aimHit({ it, page }, e);
@@ -831,18 +1061,16 @@ function wirePlot(el, it, page){
     const h = e.target.closest ? e.target.closest('[data-h]') : null;
     const parts = h ? String(h.dataset.h).split(':') : [''];
     const kind = parts[0], oid = parts[1];
+    if(kind === 'lab'){ selectMath(it.id, 'lab', oid); const i = chips.querySelector('.mlab'); if(i){ i.focus(); i.select(); } return; }
     if(kind === 'bas') return dragBasis(svg, el, it, page, e, oid);
     if(kind === 'vec' || kind === 'vect' || kind === 'veco') return dragVec(svg, el, it, page, e, oid, kind);
-    if(mathTool === 'vec') return dragNewVec(svg, el, it, page, e);
+    if(vectorArmed) return dragNewVec(svg, el, it, page, e);
     if(kind === 'fn' || kind === 'dat') return selectMath(it.id, kind, oid);
     selectMath(it.id, null);
     dragView(svg, el, it, page, e, kind === 'ax' ? oid : 'both');
   });
-  /* The wheel zooms the plane about the pointer whether or not the maths bar is
-     out — a chart you have just dropped a table into is the usual case, and
-     nobody turns maths mode on to read one. Two ways past it: ctrl+wheel is the
-     desk's own zoom everywhere in the app, and a plot picked up to be moved
-     (double-click) is an item again, so the wheel walks the desk under it. */
+  /* The wheel zooms the plane about the pointer. Ctrl+wheel is still the desk's
+     own zoom, and a plot picked up to be moved is an item again. */
   svg.addEventListener('wheel', e => {
     if(e.ctrlKey || e.metaKey || PLOT_MOVE.has(it.id)) return;
     e.preventDefault(); e.stopPropagation();
@@ -853,7 +1081,7 @@ function wirePlot(el, it, page){
   /* double-click steps out of the grid and back into the notebook, and again to
      step back in — so a plot never stops being a thing on a page */
   el.addEventListener('dblclick', e => {
-    if(!mathMode || e.target.closest('.mchip, .mleg')) return;
+    if(e.target.closest('.mchip, .mleg, .xpanel')) return;
     e.stopPropagation(); e.preventDefault();
     plotMove(el, it, !PLOT_MOVE.has(it.id));
   });
@@ -876,9 +1104,13 @@ function wirePlot(el, it, page){
   });
   chips.addEventListener('input', e => {
     if(e.target.tagName === 'SELECT') return;         // a column picker, handled on change
+    const k = e.target.dataset.k;
+    if(k === 'axl' && mathSel && mathSel.kind === 'lab'){ /* an axis's name */
+      it[mathSel.id + 'l'] = e.target.value.slice(0, 40);
+      queueSave(page.id); paintPlot(el, it); return;
+    }
     const o = mathSel && mathObj(it, mathSel.kind, mathSel.id);
     if(!o) return;
-    const k = e.target.dataset.k;
     if(k === 'lab') o.lab = e.target.value.slice(0, 6);
     else if(k === 'expr') o.expr = e.target.value;
     else if(k === 'x' || k === 'y'){
@@ -892,6 +1124,10 @@ function wirePlot(el, it, page){
   chips.addEventListener('click', e => {
     const b = e.target.closest('button');
     if(!b || !mathSel) return;
+    if(mathSel.kind === 'lab'){                       /* ✕ takes the name off the axis */
+      if(b.dataset.a === 'del'){ delete it[mathSel.id + 'l']; queueSave(page.id); selectMath(it.id, null); }
+      return;
+    }
     const o = mathObj(it, mathSel.kind, mathSel.id);
     if(!o) return;
     const a = b.dataset.a;
@@ -904,7 +1140,7 @@ function wirePlot(el, it, page){
     else if(a === 'style') o.s = MATH_STYLES[(MATH_STYLES.indexOf(o.s || 'solid') + 1) % MATH_STYLES.length];
     else if(a === 'comp') o.comp = o.comp ? 0 : 1;
     else if(a === 'marks') o.m = DAT_MARKS[(DAT_MARKS.indexOf(o.m || 'dots') + 1) % DAT_MARKS.length];
-    else if(a === 'fit'){ plotFitData(it); syncMathBar(); }
+    else if(a === 'fit'){ plotFitData(it); syncMathState(); }
     else if(a === 'del'){
       const arr = mathArr(it, mathSel.kind);
       arr.splice(arr.indexOf(o), 1);
@@ -925,7 +1161,7 @@ function wirePlot(el, it, page){
       const aim = mathAim; mathAim = null;
       const v = mathObj(it, 'vec', p[1]);
       if(v) applyMatrix(aim.m, { it, page }, v);
-      syncMathBar(); return;
+      syncMathState(); return;
     }
     select(it.id);
     selectMath(it.id, p[0], p[1]);
@@ -956,56 +1192,71 @@ function plotFitData(it){
      window with some width to it */
   const px = (x1 - x0) * 0.11 || Math.max(Math.abs(x1) * 0.25, 1);
   const py = (y1 - y0) * 0.11 || Math.max(Math.abs(y1) * 0.25, 1);
+  /* a log axis cannot show the zero a margin would reach down to. Treat the
+     two axes independently so a log-log fit repairs both sides in one pass. */
+  const xmin = it.lx === 1 && x0 - px <= 0 ? (x0 > 0 ? x0 / 1.3 : x1 / 1000) : x0 - px;
+  const ymin = it.ly === 1 && y0 - py <= 0 ? (y0 > 0 ? y0 / 1.3 : y1 / 1000) : y0 - py;
   /* …the same on every side. A chart's numbers are written outside its frame
      now, so the window no longer has to be lopsided to keep the points clear of
      them, and the readings sit in the middle of the picture where they belong. */
-  it.xmin = x0 - px; it.xmax = x1 + px;
-  it.ymin = y0 - py; it.ymax = y1 + py;
+  it.xmin = xmin; it.xmax = x1 + px;
+  it.ymin = ymin; it.ymax = y1 + py;
   return true;
 }
 
 /* ---- what the buttons on a plot do ---- */
-const FN_SEED = ['x^2', 'sin(x)', '1/x', 'sqrt(x)', 'exp(x)', 'x^3-2x'];
 function plotAct(a, it, page){
   const g = plotGeom(it);
+  /* a new function is an empty row in the panel, with the caret in it */
   if(a === 'fn'){
-    const f = { id:uid(), expr:FN_SEED[fnsOf(it).length % FN_SEED.length], c:nextColor(it), s:'solid' };
-    fnsOf(it).push(f);
-    queueSave(page.id); SND.plop();
-    selectMath(it.id, 'fn', f.id);
-    const inp = plotEl(it) && plotEl(it).querySelector('.mchip .mexp');
-    if(inp){ inp.focus(); inp.select(); }
+    const el = plotEl(it);
+    if(el && typeof xpAdd === 'function'){ select(it.id); xpAdd(el, it, page); }
     return;
   }
   if(a === 'vec'){
-    mathTool = mathTool === 'vec' ? 'pan' : 'vec';
+    const armed = mathTool === 'vec' && mathToolPlot === it.id;
+    mathTool = armed ? 'pan' : 'vec';
+    mathToolPlot = armed ? null : it.id;
     if(mathTool === 'vec'){ const e = plotEl(it); if(e) plotMove(e, it, false); }
-    setMath(true); syncMathBar(); return;
+    syncMathState(); return;
   }
-  /* fill the page: the window keeps its width and grows to the paper's shape */
-  if(a === 'fill'){
-    const m = 4, top = 7;
-    it.rot = 0; it.x = m; it.y = top; it.w = 100 - 2 * m;
-    const ar = (pgH() * (100 - top - 6) / 100) / (pgW() * it.w / 100);
-    /* a chart keeps its window and changes shape; a plane keeps its shape and
-       shows more of itself */
-    if(nz(it.ar, 0) > 0) it.ar = clamp(ar, 0.2, 2.6);
-    else {
-      const cy = (nz(it.ymax, 3.4) + nz(it.ymin, -3.4)) / 2, sy = g.sx * clamp(ar, 0.2, 2.6);
-      it.ymin = cy - sy / 2; it.ymax = cy + sy / 2;
-    }
-    const e = plotEl(it);
-    if(e){ plotMove(e, it, false); e.style.left = it.x + '%'; e.style.top = it.y + '%'; e.style.width = it.w + '%'; e.style.transform = 'rotate(0deg)'; }
-    SND.plop();
-  }
-  else if(a === 'grid') it.grid = ['solid', 'dashed', 'dotted', 'blank'][(['solid', 'dashed', 'dotted', 'blank'].indexOf(it.grid || 'solid') + 1) % 4];
+  if(a === 'grid') it.grid = ['solid', 'dashed', 'dotted', 'blank'][(['solid', 'dashed', 'dotted', 'blank'].indexOf(it.grid || 'solid') + 1) % 4];
   else if(a === 'axes') it.axes = it.axes === 0 ? 1 : it.axes === 2 ? 0 : 2;
   else if(a === 'basis') it.bshow = it.bshow ? 0 : 1;
   else if(a === 'home'){
-    it.xmin = -g.sx / 2; it.xmax = g.sx / 2; it.ymin = -g.sy / 2; it.ymax = g.sy / 2;
+    /* the origin to the middle — a log axis, having none, is centred on 1 */
+    if(g.lx){ const r = Math.sqrt(g.x1 / g.x0); it.xmin = 1 / r; it.xmax = r; } else { it.xmin = -g.sx / 2; it.xmax = g.sx / 2; }
+    if(g.ly){ const r = Math.sqrt(g.y1 / g.y0); it.ymin = 1 / r; it.ymax = r; } else { it.ymin = -g.sy / 2; it.ymax = g.sy / 2; }
+  }
+  else if(a === 'logx' || a === 'logy'){
+    const k = a === 'logx' ? 'lx' : 'ly';
+    const axis = k === 'lx' ? 'x' : 'y', turningOn = it[k] !== 1;
+    if(turningOn){
+      if(!plotLog(it)){
+        it.logHome = [g.x0, g.x1, g.y0, g.y1];
+        it.logAspect = g.H / g.W;
+      }
+      it[k] = 1;
+      /* the basis goes back to standard, and the window onto the positive side */
+      if(!mIdent(mbasis(it))){ it.basis = [1, 0, 0, 1]; mathHint('the basis is back to standard — a log axis and a basis do not mix'); }
+      it.bshow = 0;
+      it.pol = 0;                                  /* polar and log are different coordinate systems */
+      const n = plotGeom(it);
+      it.xmin = n.x0; it.xmax = n.x1; it.ymin = n.y0; it.ymax = n.y1;
+    } else { it[k] = 0; leaveLog(it, axis); }
+  }
+  else if(a === 'polar'){
+    const on = it.pol !== 1;
+    if(on && plotLog(it)){
+      const h = plotLogHome(it);
+      it.lx = 0; it.ly = 0;
+      it.xmin = h[0]; it.xmax = h[1]; it.ymin = h[2]; it.ymax = h[3];
+      delete it.logHome; delete it.logAspect;
+    }
+    it.pol = on ? 1 : 0;
   }
   else if(a === 'reset'){ setBasisTo({ it, page }, [1, 0, 0, 1]); return; }
-  queueSave(page.id); mrepaint(it); syncMathBar();
+  queueSave(page.id); mrepaint(it); syncMathState();
 }
 
 /* ---- transformations, shown happening ---- */
@@ -1034,10 +1285,11 @@ function applyMatrix(M, f, v){
     v.x = Math.round(p[0] * 1e6) / 1e6; v.y = Math.round(p[1] * 1e6) / 1e6;
     queueSave(f.page.id);
     if(el) paintPlot(el, it);
-    syncMathBar();
+    syncMathState();
   });
 }
 function setBasisTo(f, M){
+  if(plotLog(f.it) && !mIdent(m2(M))){ mathHint('a log axis and a basis do not mix'); return; }
   const it = f.it, B = mbasis(it).slice(), el = plotEl(it);
   SND.plop();
   mathAnim(760, t => {
@@ -1048,13 +1300,13 @@ function setBasisTo(f, M){
     if(it.bshow == null) it.bshow = 1;
     queueSave(f.page.id);
     if(el) paintPlot(el, it);
-    syncMathBar();
+    syncMathState();
   });
 }
 /* pointing a card at something */
 function startAim(mit, page, kind){
   const plots = pagePlots();
-  if(!plots.length){ mathHint('put a coordinate system on the page first'); setMath(true); return; }
+  if(!plots.length){ mathHint('put a coordinate system on the page first'); return; }
   if(kind === 'draw'){                               /* a vector card, into a plot */
     if(plots.length === 1){ plotAddVec(plots[0], mit); mrepaint(plots[0].it); return; }
     mathAim = { kind, box:mit, lab:mit.lab || 'v' };
@@ -1067,25 +1319,25 @@ function startAim(mit, page, kind){
   } else {
     const all = [];
     plots.forEach(f => vecsOf(f.it).forEach(v => all.push({ f, v })));
-    if(!all.length){ mathHint('draw a vector first — ⇗ Vector, then drag'); setMath(true); return; }
+    if(!all.length){ mathHint('draw a vector first — ⇗ Vector, then drag'); return; }
     if(all.length === 1) return applyMatrix(m2(mit.m), all[0].f, all[0].v);
     mathAim = { kind, m:m2(mit.m), lab:mit.lab || 'M' };
   }
-  setMath(true); syncMathBar();
+  syncMathState(); mathHint(aimHint(mathAim));
 }
 function aimHit(f, e){
   const aim = mathAim;
   if(aim.kind === 'mul'){ mathHint('click the other card — a matrix or a vector'); return; }
-  if(aim.kind === 'draw'){ mathAim = null; plotAddVec(f, aim.box); mrepaint(f.it); syncMathBar(); return; }
-  if(aim.kind === 'data'){ mathAim = null; plotAddTable(f, aim.box); syncMathBar(); return; }
-  if(aim.kind === 'basis'){ mathAim = null; setBasisTo(f, aim.m); syncMathBar(); return; }
+  if(aim.kind === 'draw'){ mathAim = null; plotAddVec(f, aim.box); mrepaint(f.it); syncMathState(); return; }
+  if(aim.kind === 'data'){ mathAim = null; plotAddTable(f, aim.box); syncMathState(); return; }
+  if(aim.kind === 'basis'){ mathAim = null; setBasisTo(f, aim.m); syncMathState(); return; }
   const h = e.target.closest ? e.target.closest('[data-h]') : null;
   const p = h ? String(h.dataset.h).split(':') : [''];
   const v = /^vec/.test(p[0]) ? mathObj(f.it, 'vec', p[1]) : null;
   if(!v){ mathHint('that is not a vector — click one, or Esc'); return; }
   mathAim = null;
   applyMatrix(aim.m, f, v);
-  syncMathBar();
+  syncMathState();
 }
 /* ---- dropping a card onto something ----
    A matrix landing on a vector transforms it, and one landing on the paper
@@ -1143,10 +1395,10 @@ function doMathDrop(page, it, drop, home){
     else if(drop.math.vec && is2) applyMatrix(m2(it.m), f, drop.math.vec);
     else if(it.type === 'calc' || is2){
       const F = cardFace(it);
-      if(F && !F.vec && F.r === 2 && F.c === 2) setBasisTo(f, F.a);
-      else { setMath(true); mathHint('only a 2×2 fits a plane — this is ' + F.r + '×' + F.c); }
+      if(F && !F.vec && F.r === 2 && F.c === 2) setBasisTo(f, F.a);       /* refused, with a word, on a log axis */
+      else { mathHint('only a 2×2 fits a plane — this is ' + F.r + '×' + F.c); }
     }
-    else { setMath(true); mathHint('only a 2×2 fits a plane — this is ' + matDims(it).r + '×' + matDims(it).c); }
+    else { mathHint('only a 2×2 fits a plane — this is ' + matDims(it).r + '×' + matDims(it).c); }
     it.x = home.x; it.y = home.y;                    /* the card goes back where it came from */
     queueSave(page.id);
     const el = document.querySelector('#pageHost .item[data-id="' + it.id + '"]');
@@ -1159,45 +1411,36 @@ function doMathDrop(page, it, drop, home){
 defineItem('plot', {
   add: { plot: base => ({ ...base, type:'plot', w:46, rot:0, cap:'',
                           xmin:-5, xmax:5, ymin:-3.4, ymax:3.4,
-                          grid:'solid', axes:1, bshow:0, basis:[1, 0, 0, 1], fns:[], vecs:[] }) },
-  html: (it, c) => '<figure class="body plot"><div class="mplotbox">' + plotSVG(it, c.live) +
+                          grid:'solid', axes:1, bshow:0, basis:[1, 0, 0, 1], fns:[], vecs:[], xp:1 }) },
+  key: e => typeof xpKey === 'function' && xpKey(e),
+  /* the panel is live-only: print, export and the overview never see it */
+  html: (it, c) => '<figure class="body plot">' + (c.live && typeof xpHTML === 'function' ? xpHTML(it) : '') +
+    '<div class="mplotbox">' + plotSVG(it, c.live) +
     (c.live ? '<div class="mchips"></div>' : '') + '</div>' +
     '<div class="mleg">' + plotLegend(it) + '</div><figcaption></figcaption></figure>',
-  after(){ setMath(true); },         // a new plot hands the mouse to the plane
   forget(it){
     if(mathSel && mathSel.pid === it.id) mathSel = null;
     PLOT_MOVE.delete(it.id);
   },
   tools(mk, it, el, page){
-    mk('ƒ(x)', 'Draw a function in here', () => plotAct('fn', it, page));
+    mk('ƒ(x)', 'The expressions drawn in here — show or hide the list', () => { if(typeof xpToggle === 'function') xpToggle(el, it, page); });
     mk('⇗', 'Vector — drag one out inside the plot', () => plotAct('vec', it, page));
     mk('▦', 'Grid — solid, dashed, dotted or blank', b => { plotAct('grid', it, page); b.title = 'Grid: ' + it.grid; });
     mk('î ĵ', 'Show the basis vectors — drag their tips to change the basis', () => plotAct('basis', it, page));
-    mk('FIT', 'Fill the page with it', () => plotAct('fill', it, page));
     mk('✥', 'Move it about the page — or double-click it', () => plotMove(el, it, !PLOT_MOVE.has(it.id)));
     mk('⌂', 'Put the origin back in the middle', () => plotAct('home', it, page));
     mk('⟲', 'Back to the standard basis', () => plotAct('reset', it, page));
   },
   wire(el, it, page){ wirePlot(el, it, page); }
 });
-onNoteOpen(() => { mathSel = null; PLOT_MOVE.clear(); });
+onNoteOpen(() => {
+  mathSel = null; mathAim = null; mathTool = 'pan'; mathToolPlot = null;
+  PLOT_MOVE.clear(); syncMathState();
+});
 
 /* ---- how it looks ---- */
 addCSS('plot', `
 /* ---------- maths ---------- */
-.mathbar{gap:7px;padding:10px 12px}
-.mathbar button{font-size:13px;padding:8px 11px;border-radius:3px}
-.mathbar .lab{font-size:12px}
-.mathbar .num{width:64px;font-family:var(--mono);font-size:13px;text-align:center;background:rgba(255,255,255,.07);
-  border:1px solid rgba(255,255,255,.14);border-radius:3px;color:#e6e3db;padding:6px 3px;margin-left:4px}
-.mathbar .num:focus{border-color:var(--accent2);outline:none}
-.mathbar .num.bad{border-color:var(--accent);color:#ff9d8a}
-.mathbar .num:disabled{opacity:.35}
-.mathbar .hint{text-transform:none;letter-spacing:.04em;font-style:italic}
-.mathbar .hint.loud{color:var(--accent);opacity:1}
-.mathbar #mBasisTag{text-transform:none;letter-spacing:.04em;color:#fff;opacity:.6}
-.mathbar.noplot #mFn,.mathbar.noplot #mVec,.mathbar.noplot #mGrid,.mathbar.noplot #mFill,
-.mathbar.noplot #mAxis,.mathbar.noplot #mBasis,.mathbar.noplot #mHome,.mathbar.noplot #mReset{opacity:.4}
 .plot{display:block}
 .mplotbox{position:relative}
 svg.mplot{display:block;width:100%;height:auto;background:none}
@@ -1207,17 +1450,24 @@ svg.mplot{display:block;width:100%;height:auto;background:none}
 .mplot .mgrid.g-dashed{stroke-dasharray:13 11}
 .mplot .mgrid.g-dotted{stroke-dasharray:0.1 13;stroke-linecap:round;stroke-width:3.4}
 .mplot .mgrid.mghost{opacity:.34;stroke-dasharray:none}
+.mplot .mgrid.minor{opacity:.38;stroke-width:1.8}
+.mplot path.mpolar{fill:none;stroke:var(--line);stroke-width:2.2;opacity:.9}
+.mplot path.mpolar.g-dashed{stroke-dasharray:13 11}
+.mplot path.mpolar.g-dotted{stroke-dasharray:.1 13;stroke-linecap:round;stroke-width:3}
 .mplot .munit{fill:var(--accent2);opacity:.15;stroke:none}
 .mplot path.max{fill:none;stroke:var(--ink);stroke-width:4;opacity:.85}
 .mplot .maxh{fill:var(--ink);opacity:.85}
 .mplot path.mtick{fill:none;stroke:var(--ink);stroke-width:3;opacity:.6}
 .mplot .mnum{fill:var(--soft);font-family:var(--mono);font-size:34px;text-anchor:middle}
 .mplot .mnum.end{text-anchor:end}
+.mplot .mnum.start{text-anchor:start}
 /* Every "fill:none" here is pinned to path: an arrowhead is a <polygon> of the
    same class, and a stylesheet beats the fill= it is drawn with — which is
    exactly how the heads went missing once already. Same for stroke-linecap: a
    dotted line needs the round caps dashAttr asks for. */
 .mplot path.mfn{fill:none;stroke-width:6.5;stroke-linecap:round;stroke-linejoin:round}
+/* a shaded region: the fill comes from the attribute, so nothing here may set it */
+.mplot path.mreg{fill-opacity:.16;fill-rule:evenodd;stroke:none}
 /* a table's points, its error bars, and what its columns were called */
 .mplot path.mdline{fill:none;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
 .mplot circle.mdot{stroke:var(--paper);stroke-width:2.5}
@@ -1226,7 +1476,53 @@ svg.mplot{display:block;width:100%;height:auto;background:none}
    frame, the y one reading up the side — plt.xlabel and plt.ylabel */
 .mplot .mxlab,.mplot .mylab{fill:var(--ink);opacity:.78;font-family:var(--mono);font-size:32px;
   letter-spacing:1.5px;text-anchor:middle}
+/* on a plane the names stand at the arrowheads, inside; a faint x and y wait
+   there while the plot is selected to be clicked and named */
+.mplot .mxlab.plane{text-anchor:end}
+.mplot .mylab.plane{text-anchor:start}
+.mplot .ghost{opacity:.28}
+.item.sel[data-type="plot"] .mplot [data-h^="lab"]{cursor:text;pointer-events:all}
 .mplot .mdots{stroke:none}
+/* the key under the picture, and the little editing box that comes up on
+   the thing you are working on — shared by everything the plot holds */
+.mleg{display:flex;flex-wrap:wrap;gap:calc(var(--scale)*4px);margin-top:calc(var(--scale)*5px)}
+.mleg:empty{display:none}
+.mpill{display:inline-flex;align-items:center;gap:calc(var(--scale)*4px);font-family:var(--mono);
+  font-size:calc(var(--scale)*12px);letter-spacing:.03em;color:var(--soft);background:none;
+  border:1px solid var(--line);border-radius:2px;padding:calc(var(--scale)*3px) calc(var(--scale)*7px)}
+.mpill i{display:block;width:calc(var(--scale)*9px);height:calc(var(--scale)*9px);border-radius:50%}
+.mpill:hover{color:var(--ink);border-color:var(--accent2)}
+.mpill.on{color:var(--ink);border-color:var(--accent2);background:color-mix(in srgb,var(--accent2) 15%,transparent)}
+.mpill.det{color:var(--accent2);border-style:dashed}
+.mpill.off{opacity:.55}
+.mchip{position:absolute;z-index:24;display:flex;align-items:center;gap:1px;white-space:nowrap;
+  transform:translate(calc(var(--scale)*11px),calc(var(--scale)*-15px));
+  background:var(--ink);color:var(--paper);border-radius:3px;padding:calc(var(--scale)*3px);
+  font-family:var(--mono);font-size:calc(var(--scale)*13px);
+  box-shadow:0 calc(var(--scale)*5px) calc(var(--scale)*14px) rgba(0,0,0,.4)}
+.mchip.flip{transform:translate(calc(var(--scale)*-11px),calc(var(--scale)*-15px))}
+.mchip.flip .merr{left:auto;right:0}
+.mchip input{font:inherit;color:#fff;background:rgba(255,255,255,.1);border:0;border-radius:2px;
+  padding:calc(var(--scale)*2px) calc(var(--scale)*3px);outline:none;user-select:text}
+.mchip input:focus{background:rgba(255,255,255,.22)}
+.mchip input.bad{color:#ff9d8a}
+.mchip .mval{width:calc(var(--scale)*50px);text-align:center}
+.mchip .mlab{width:calc(var(--scale)*30px);text-align:center}
+.mchip .mexp{width:calc(var(--scale)*124px)}
+.mchip .mpar{opacity:.6;padding:0 1px}
+.mchip button{color:var(--paper);line-height:1;border-radius:2px;padding:calc(var(--scale)*4px) calc(var(--scale)*6px)}
+.mchip button:hover{background:var(--accent);color:#fff}
+.mchip button.on{background:rgba(255,255,255,.24)}
+.mchip .mdot{width:calc(var(--scale)*15px);height:calc(var(--scale)*15px);border-radius:50%;padding:0;
+  border:1px solid rgba(255,255,255,.5)}
+.mchip .msty{padding:calc(var(--scale)*4px)}
+.mchip .msty b{display:block;width:calc(var(--scale)*19px);height:0;border-top:calc(var(--scale)*2px) solid var(--paper)}
+.mchip .msty b.s-dashed{border-top-style:dashed}
+.mchip .msty b.s-dotted{border-top-style:dotted}
+.mchip .merr{position:absolute;left:0;top:100%;margin-top:calc(var(--scale)*4px);white-space:normal;
+  max-width:calc(var(--scale)*230px);background:var(--accent);color:#fff;border-radius:2px;
+  padding:calc(var(--scale)*3px) calc(var(--scale)*7px);font-size:calc(var(--scale)*11px)}
+.mchip .merr:empty{display:none}
 .mchip.mdat{flex-wrap:wrap;white-space:normal;gap:2px;max-width:calc(var(--scale)*318px)}
 .mchip select{font:inherit;font-size:calc(var(--scale)*12px);color:#fff;border:0;border-radius:2px;
   background:rgba(255,255,255,.12);padding:calc(var(--scale)*2px);outline:none;
@@ -1250,21 +1546,21 @@ svg.mplot{display:block;width:100%;height:auto;background:none}
 .mplot .mblab{font-family:var(--body);font-size:42px;font-weight:600}
 .mplot path.mhit{fill:none;stroke:transparent;stroke-width:26;stroke-linecap:round;pointer-events:none}
 .mplot .mgrab{fill:transparent;pointer-events:none}
-body.mathing .mplot .mhit,body.mathing .mplot .mgrab{pointer-events:stroke}
-body.mathing .mplot .mgrab{pointer-events:all}
-body.mathing .item[data-type="plot"] svg.mplot{cursor:grab}
-body.mathing .item[data-type="plot"] svg.mplot:active{cursor:grabbing}
-body.vectool .item[data-type="plot"] svg.mplot{cursor:crosshair}
-body.mathing .mplot [data-h="ax:x"]{cursor:ns-resize}
-body.mathing .mplot [data-h="ax:y"]{cursor:ew-resize}
-body.mathing .mplot [data-h^="vec"],body.mathing .mplot [data-h^="bas"]{cursor:move}
+.item.sel[data-type="plot"] .mplot .mhit,.item.sel[data-type="plot"] .mplot .mgrab{pointer-events:stroke}
+.item.sel[data-type="plot"] .mplot .mgrab{pointer-events:all}
+.item.sel[data-type="plot"] svg.mplot{cursor:grab}
+.item.sel[data-type="plot"] svg.mplot:active{cursor:grabbing}
+.item.vectool[data-type="plot"] svg.mplot{cursor:crosshair}
+.item.sel[data-type="plot"] .mplot [data-h="ax:x"]{cursor:ns-resize}
+.item.sel[data-type="plot"] .mplot [data-h="ax:y"]{cursor:ew-resize}
+.item.sel[data-type="plot"] .mplot [data-h^="vec"],.item.sel[data-type="plot"] .mplot [data-h^="bas"]{cursor:move}
 body.mathaim .mplot .mhit,body.mathaim .mplot .mgrab{pointer-events:stroke;cursor:crosshair}
 body.mathaim .item[data-type="plot"]{cursor:crosshair}
 body.mathaim .item[data-type="plot"] .mbg{opacity:.95}
 /* double-click takes a plot out of the grid and back into the notebook */
-body.mathing .item[data-type="plot"].mmove svg.mplot{cursor:grab}
-body.mathing .item[data-type="plot"].mmove .mhit,
-body.mathing .item[data-type="plot"].mmove .mgrab{pointer-events:none}
+.item.sel[data-type="plot"].mmove svg.mplot{cursor:grab}
+.item.sel[data-type="plot"].mmove .mhit,
+.item.sel[data-type="plot"].mmove .mgrab{pointer-events:none}
 .item.mmove .plot{box-shadow:0 0 0 calc(var(--scale)*2px) var(--accent),
   0 calc(var(--scale)*10px) calc(var(--scale)*22px) rgba(0,0,0,.25)}
 .item.mmove .plot::after{content:"✥ move — double-click to work in the grid";position:absolute;
