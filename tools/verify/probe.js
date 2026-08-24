@@ -156,7 +156,7 @@
         ['cube', 'solid'], ['sphere', 'solid'], ['torus', 'solid'],
         ['square', 'solid'], ['circle', 'solid'],
         ['pie', 'chart'], ['bars', 'chart'], ['stack', 'chart'],
-        ['washi', 'washi'], ['sticker', 'sticker'], ['molecule', 'molecule'],
+        ['washi', 'washi'], ['sticker', 'sticker'], ['molecule', 'molecule'], ['feynman', 'feynman'],
         ['circuit', 'circuit'], ['ptable', 'ptable'], ['nuchart', 'nuchart']
       ];
       ok('global maths mode and toolbar are absent', !Q('#mathbar') &&
@@ -6620,8 +6620,8 @@
       page.items = []; await render();
       /* the keys find the molecule under the pointer, so the whole sheet must be on screen */
       fitToDesk(true); await sleep(150);
-      ok('chem: Science holds both molecules and logic circuits', !!TOOL_CATS.science &&
-        palTools('science').length === 5 && ['molecule','circuit'].every(function (kind) {
+      ok('chem: Science holds molecules, Feynman diagrams and logic circuits', !!TOOL_CATS.science &&
+        palTools('science').length === 6 && ['molecule','feynman','circuit'].every(function (kind) {
           return palTools('science').some(function (t) { return t.kind === kind; });
         }),
         palTools('science').map(function (t) { return t.kind; }).join(','));
@@ -7337,6 +7337,123 @@
       ok('static: both molecules build', sm.length === 2);
       ok('static: a picture, no rail, no buttons', !!sm[0].querySelector('svg.molsvg') && !sm[0].querySelector('.molrail') && !sm[0].querySelector('button'));
       ok('static: the 3D picture is there too', sm[0].querySelectorAll('circle.ball').length === 24, sm[0].querySelectorAll('circle.ball').length);
+      /* ---- Feynman diagrams: Standard Model vertices, loops and TikZ-Feynman ---- */
+      page.items = []; await render();
+      addItem('feynman', { x: 10, y: 10 }, page); await sleep(120);
+      var fy = page.items[page.items.length - 1], fel = byType('feynman');
+      ok('feynman: lands empty with a Standard Model rail and validation strip', fy && fy.type === 'feynman' &&
+        fy.vertices.length === 0 && fy.edges.length === 0 && fy.axes === 1 && !!fel.querySelector('.feyrail') &&
+        !!fel.querySelector('.feyinfo') && fel.querySelectorAll('.faxes path').length === 2 &&
+        fel.querySelector('.faxes').textContent === 'xt');
+      select(fy.id);
+      var particleBtn = fel.querySelector('.feyrail [data-a=particle]'); particleBtn.click(); await sleep(40);
+      ok('feynman: particle chip opens the 17-field Standard Model', Q('#smpick').classList.contains('open') &&
+        Q('#smpick').querySelectorAll('.smc').length === 17 && /electron/.test(Q('#smpick .smfacts').textContent),
+        Q('#smpick').querySelectorAll('.smc').length);
+      Q('#smpick .smc[data-p=gamma]').click(); await sleep(30);
+      ok('feynman: taking the photon closes the picker and updates the rail', FEY_PART === 'gamma' && !SM_ANCHOR &&
+        fel.querySelector('.feypart b').textContent === 'γ');
+      var fsearch = QA('.item[data-type=feynman] .tools button').filter(function (b) { return b.textContent === '⌕'; })[0];
+      fsearch.click(); await sleep(40);
+      ok('feynman: common-process search opens with ten validated connected templates', Q('#feylibrary').classList.contains('open') &&
+        QA('#feylibrary [data-process]').length === 10 && QA('#feylibrary [data-process]:disabled').length === 0,
+        QA('#feylibrary [data-process]:disabled').map(function (b) { return b.dataset.process; }).join(','));
+      var fquery = Q('#feylibrary input'); fquery.value = 'beta'; fquery.dispatchEvent(new Event('input')); await sleep(20);
+      ok('feynman: process search filters names, reactions and physics tags', QA('#feylibrary [data-process]').length === 2 &&
+        !!Q('#feylibrary [data-process=beta-minus]'));
+      Q('#feylibrary [data-process=beta-minus]').click(); await sleep(30);
+      ok('feynman: beta decay arrives as one upward-time graph with two shared interaction vertices', fy.process === 'beta-minus' &&
+        feyValidation(fy).ok && feyValidation(fy).interactions === 2 && feyComponent(fy, 0).size === fy.vertices.length &&
+        fy.vertices[0].y > fy.vertices[2].y && /Beta minus decay/.test(fel.querySelector('.feyinfo').textContent),
+        JSON.stringify(feyValidation(fy)));
+      FEY_PART = 'gamma'; FEY_ANTI = 0; FEY_REVERSE = 0;
+      var fbranchBase = {vertices:[{x:0,y:1.5},{x:0,y:-1.5}],edges:[{a:0,b:1,p:'e',anti:0,rev:0,bend:0,mom:'',momSide:1}]};
+      var fbranch = feyPlan(fbranchBase, 'draw', {edge:0}, {x:0,y:0}, {x:1.4,y:-.7}, true);
+      ok('feynman: branching from a propagator splits it into one real shared vertex', fbranch.did && !fbranch.why &&
+        fbranch.sim.vertices.length === 4 && fbranch.sim.edges.length === 3 && feyInc(fbranch.sim, 2).length === 3 &&
+        feyValidation(fbranch.sim).ok && feyComponent(fbranch.sim, 0).size === 4, fbranch.why);
+      var fvertical = feyPlan({vertices:[],edges:[]}, 'draw', {}, {x:2,y:3}, {x:2,y:3}, false);
+      ok('feynman: a tap starts a propagator vertically with time moving upward', fvertical.did &&
+        fvertical.sim.vertices[0].x === fvertical.sim.vertices[1].x && fvertical.sim.vertices[0].y > fvertical.sim.vertices[1].y);
+      /* e+ e- -> gamma -> mu+ mu-: two exact QED vertices */
+      fy.vertices = [{x:-3,y:-1},{x:-1,y:0},{x:-3,y:1},{x:3,y:-1},{x:1,y:0},{x:3,y:1}];
+      fy.edges = [
+        {a:0,b:1,p:'e',anti:0,rev:0,bend:0,mom:'p_1',momSide:1},
+        {a:2,b:1,p:'e',anti:1,rev:1,bend:0,mom:'p_2',momSide:-1},
+        {a:1,b:4,p:'gamma',anti:0,rev:0,bend:0,mom:'k',momSide:1},
+        {a:4,b:3,p:'mu',anti:1,rev:1,bend:0,mom:'',momSide:1},
+        {a:4,b:5,p:'mu',anti:0,rev:0,bend:0,mom:'',momSide:1}
+      ];
+      feyRepaint(fel, fy);
+      ok('feynman: a complete QED s-channel is accepted as two interactions', feyValidation(fy).ok &&
+        feyValidation(fy).interactions === 2 && /Standard Model valid/.test(fel.querySelector('.feyinfo').textContent),
+        JSON.stringify(feyValidation(fy)));
+      ok('feynman: photons are wavy, fermions carry arrows, and external particles are labelled',
+        fel.querySelectorAll('.fe.photon').length === 1 && fel.querySelectorAll('.fa').length === 4 &&
+        fel.querySelectorAll('.fp').length === 4 && fel.querySelectorAll('.fm').length === 3);
+      var impossible = {
+        vertices:[{x:0,y:0},{x:-1,y:-1},{x:-1,y:1},{x:1,y:0}],
+        edges:[{a:1,b:0,p:'e',rev:0},{a:2,b:0,p:'e',rev:1},{a:0,b:3,p:'g',rev:0}]
+      };
+      ok('feynman: a lepton-lepton-gluon vertex is impossible', /no Standard Model interaction/.test(feyWhyBad(impossible)), feyWhyBad(impossible));
+      var wrongFlow = {
+        vertices:[{x:0,y:0},{x:-1,y:-1},{x:-1,y:1},{x:1,y:0}],
+        edges:[{a:1,b:0,p:'e',rev:0},{a:2,b:0,p:'e',rev:0},{a:0,b:3,p:'gamma',rev:0}]
+      };
+      ok('feynman: an impossible fermion-arrow configuration is refused too', /flow through/.test(feyWhyBad(wrongFlow)), feyWhyBad(wrongFlow));
+      var wrongW = {
+        vertices:[{x:0,y:0},{x:-1,y:-1},{x:-1,y:1},{x:1,y:0}],
+        edges:[{a:1,b:0,p:'W',rev:0},{a:2,b:0,p:'W',rev:0},{a:0,b:3,p:'gamma',rev:0}]
+      };
+      ok('feynman: charged W flow is conserved at gauge vertices', /charged W flow/.test(feyWhyBad(wrongW)), feyWhyBad(wrongW));
+      var partial = { vertices:[{x:0,y:0},{x:-1,y:0},{x:1,y:0}],
+        edges:[{a:1,b:0,p:'e',rev:0},{a:0,b:2,p:'gamma',rev:0}] };
+      ok('feynman: an extensible unfinished vertex remains editable but cannot export', !feyValidation(partial).ok &&
+        !feyValidation(partial).bad && feyValidation(partial).incomplete === 1, JSON.stringify(feyValidation(partial)));
+      var loopBase = { vertices:[{x:-3,y:0},{x:-1,y:0},{x:1,y:0},{x:3,y:0}], edges:[
+        {a:0,b:1,p:'gamma',anti:0,rev:0,bend:0},{a:2,b:3,p:'gamma',anti:0,rev:0,bend:0}] };
+      FEY_PART = 'e'; FEY_ANTI = 0; FEY_REVERSE = 0;
+      var lp = feyPlan(loopBase, 'loop', {vertex:1}, {x:-1,y:0}, {x:1,y:0}, true);
+      /* the pointer plan snaps only inside its ordinary reach, so provide the
+         exact two-vertex loop the tool promises once the second end is taken */
+      var loopDiagram = feyClone(loopBase);
+      feyAddE(loopDiagram,1,2,'e',0,0,.3); feyAddE(loopDiagram,1,2,'e',1,1,-.3);
+      ok('feynman: the loop tool makes two curved, circulating propagators that complete both vertices',
+        lp.did && !feyWhyBad(loopDiagram) && feyValidation(loopDiagram).ok && loopDiagram.edges[2].bend === .3 && loopDiagram.edges[3].bend === -.3,
+        feyWhyBad(loopDiagram));
+      var ftex = feyTikzLatex(fy);
+      ok('feynman: LaTeX is a pasteable manual TikZ-Feynman picture, not a document or file wrapper',
+        ftex.indexOf('\\begin{tikzpicture}') === 0 && /\\begin\{feynman\}/.test(ftex) && /\\vertex \(v0\) at/.test(ftex) &&
+        /\\draw\[->, thin\].*\{\$t\$\}/.test(ftex) && /\\diagram\*/.test(ftex) && /momentum=\\\(k\\\)/.test(ftex) &&
+        !/documentclass|usepackage/.test(ftex), ftex.slice(0,320));
+      var fart = feyExportArt(fy);
+      ok('feynman: SVG export is transparent vector artwork without editor ghosts or lasso marks', /<svg/.test(fart.text) &&
+        /class="fe fermion"/.test(fart.text) && /class="faxes"/.test(fart.text) && !/fghost|fsel|flasso/.test(fart.text) &&
+        !Array.from(fart.svg.children).some(function (n) { return n.tagName.toLowerCase() === 'rect'; }), fart.text.slice(0,180));
+      var fexportBtn = QA('.item[data-type=feynman] .tools button').filter(function (b) { return b.textContent === '⇩'; })[0];
+      fexportBtn.click(); await sleep(40);
+      ok('feynman: export offers SVG, PNG and one clipboard-only LaTeX action', Q('#feyexport').classList.contains('open') &&
+        QA('#feyexport button').map(function (b) { return b.dataset.f; }).join('|') === 'svg|png|latex' && /TIKZ-FEYNMAN/.test(Q('#feyexport .feytex').textContent));
+      feyExportClose();
+      var ffiles = [], foldSave = PLAT.saveFile;
+      PLAT.saveFile = function (name, blob) { ffiles.push({ name:name, blob:blob }); return Promise.resolve(); };
+      await feyExportFile(fy, fel, 'svg'); await feyExportFile(fy, fel, 'png');
+      PLAT.saveFile = foldSave;
+      ok('feynman: both picture exports are correctly named, non-empty files', ffiles.length === 2 &&
+        ffiles[0].name === 'Feynman diagram.svg' && ffiles[1].name === 'Feynman diagram.png' && ffiles.every(function (x) { return x.blob.size > 100; }),
+        ffiles.map(function (x) { return x.name + ':' + x.blob.size; }).join('|'));
+      ok('feynman: SVG stays vector and PNG is a real transparent PNG', ffiles[0].blob.type.indexOf('image/svg+xml') === 0 &&
+        ffiles[1].blob.type === 'image/png' && await alphaAtCorner(ffiles[1].blob) === 0,
+        ffiles.map(function (x) { return x.blob.type; }).join('|'));
+      var fcopy = '', fclip = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:function (s) { fcopy=s; return Promise.resolve(); } } });
+      await feyCopyLatex(fy, fel);
+      if(fclip) Object.defineProperty(navigator, 'clipboard', fclip); else delete navigator.clipboard;
+      ok('feynman: Copy LaTeX writes only the TikZ-Feynman block and creates no .tex file', fcopy === ftex &&
+        !/documentclass|usepackage/.test(fcopy) && ffiles.length === 2);
+      var fstatic = buildPage(page, false, {}), fs = fstatic.querySelector('.item[data-type=feynman]');
+      ok('feynman: static output keeps the diagram and drops every editing control', !!fs && !!fs.querySelector('.feysvg') &&
+        !fs.querySelector('.feyrail') && !fs.querySelector('button'));
       /* ---- the periodic table ---- */
       page.items = []; await render();
       addItem('ptable', { x: 10, y: 10 }, page); await sleep(120);
