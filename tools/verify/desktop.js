@@ -108,6 +108,62 @@ const PHASES = {
     await js(`lib.books.length ? openNote(lib.books[0].id) : createNote('verify').then(openNote)`);
     await wait(1200);
     ok('a sheet rendered', await js(`!!document.querySelector('.page')`) === true);
+    /* Chromium makes a prose Enter a <div>. The next list Enter must stay
+       inside it, or the block's virtual newline puts the caret before the
+       marker's space and neither Tab direction recognizes the bullet. */
+    const listKeys = await js(`(() => {
+      const tx = document.createElement('div');
+      tx.className = 'txt'; tx.contentEditable = 'true';
+      tx.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap';
+      tx.innerHTML = 'prose<div>- one</div>';
+      document.body.appendChild(tx); tx.focus();
+      const text = () => mathFlat(tx).s;
+      const put = off => {
+        const p = mathFlatPos(tx, off), r = document.createRange(), s = getSelection();
+        r.setStart(p[0], p[1]); r.collapse(true); s.removeAllRanges(); s.addRange(r);
+      };
+      const key = (shift) => !tx.dispatchEvent(new KeyboardEvent('keydown',
+        { key:'Tab', shiftKey:!!shift, bubbles:true, cancelable:true }));
+      put(text().lastIndexOf('one') + 3);
+      tx.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', bubbles:true, cancelable:true }));
+      const afterEnter = text(), emptyTab = key(false), afterEmptyTab = text();
+      const emptyBack = key(true), afterEmptyBack = text();
+      document.execCommand('insertText', false, 'two');
+      const afterType = text(), tab = key(false), afterTab = text(), back = key(true), afterBack = text();
+      tx.remove(); return { afterEnter, emptyTab, afterEmptyTab, emptyBack, afterEmptyBack,
+                            afterType, tab, afterTab, back, afterBack };
+    })()`);
+    ok('a list begun after prose indents and outdents',
+       listKeys.afterEnter === 'prose\n- one\n- \n' && listKeys.emptyTab &&
+       listKeys.afterEmptyTab === 'prose\n- one\n\t- \n' && listKeys.emptyBack &&
+       listKeys.afterEmptyBack === listKeys.afterEnter &&
+       listKeys.afterType === 'prose\n- one\n- two\n' && listKeys.tab &&
+       listKeys.afterTab === 'prose\n- one\n\t- two\n' && listKeys.back &&
+       listKeys.afterBack === listKeys.afterType, JSON.stringify(listKeys));
+    const groupClip = await js(`(async () => {
+      const srcIdx = { pgmax:16000, settings:{pgw:2000,pgh:1000},
+                       layers:[{id:'src-layer',name:'Base'}] };
+      const pic = { id:'pic-old', type:'image', x:10, y:20, w:15, z:5,
+                    lay:'src-layer', src:'data:image/png;base64,cGljdHVyZQ==' };
+      const note = { id:'note-old', type:'note', x:40, y:50, w:10, z:2,
+                     lay:'src-layer', html:'kept' };
+      const payload = selectionPayload({ items:[pic,note] }, [pic,note], srcIdx);
+      const dstIdx = { pgmax:16000, settings:{pgw:1000,pgh:500}, curLayer:'dst-layer',
+                       layers:[{id:'dst-layer',name:'Base'}] };
+      const dst = { id:'clip-test', items:[] };
+      const out = await pasteSelection(payload, dst, dstIdx, {x:5,y:7}, false);
+      return out.items.map(it => ({ id:it.id, type:it.type, x:it.x, y:it.y, w:it.w,
+                                    src:it.src || '', lay:it.lay }));
+    })()`);
+    const groupPic = groupClip.find(it => it.type === 'image');
+    const groupNote = groupClip.find(it => it.type === 'note');
+    ok('a Chromium group paste keeps image data, scale and relative positions',
+       groupPic && groupNote && groupPic.id !== 'pic-old' && groupNote.id !== 'note-old' &&
+       groupPic.src === 'data:image/png;base64,cGljdHVyZQ==' &&
+       Math.abs(groupPic.x - 5) < .001 && Math.abs(groupPic.y - 7) < .001 &&
+       Math.abs(groupPic.w - 30) < .001 && Math.abs(groupNote.x - 65) < .001 &&
+       Math.abs(groupNote.y - 67) < .001 && Math.abs(groupNote.w - 20) < .001 &&
+       groupPic.lay === 'dst-layer' && groupNote.lay === 'dst-layer', JSON.stringify(groupClip));
     ok('the platform seam is filled in',
        await js(`PLAT.name === 'electron' && typeof PLAT.saveFile === 'function'`) === true,
        await js(`PLAT.name`));

@@ -1,5 +1,5 @@
 /* Open Note — core/select.js
-   marquee selection, and the small set of things a group can do */
+   marquee selection, its clipboard, and the small set of things a group can do */
 
 /* ================= a set, without changing an ordinary pick =================
    `selected` remains the one item whose own toolbar is open. SELECTED contains
@@ -102,6 +102,159 @@ function deleteSelection(){
 
 $('#selectBtn').addEventListener('click', () => setSelectMode(!selectMode));
 $('#selectDelete').addEventListener('click', deleteSelection);
+
+/* ================= the clipboard =================
+   A browser knows how to copy DOM, not canvas records. Left to it, a marquee
+   selection becomes a handful of unrelated clipboard pictures; the picture
+   paste path then puts every one at the view centre and they arrive stacked.
+   Carry one Open Note payload instead: the records, their single group origin,
+   internal strings/wires, and the source sheet size that gives percentages a
+   physical scale. */
+const SELECT_CLIP_MIME = 'application/x-open-note-selection';
+const SELECT_CLIP_FORMAT = 'open-note/selection/1';
+let SELECT_CLIPBOARD = null;                         // fallback when a host strips custom MIME
+
+const selectionClone = x => JSON.parse(JSON.stringify(x));
+const selectionFinite = (x, d) => Number.isFinite(+x) ? +x : d;
+
+function selectionPayload(page, items, idx){
+  items = (items || []).filter(Boolean);
+  if(!page || !items.length) return null;
+  const ids = new Set(items.map(it => it.id));
+  const sw = pgW(idx), sh = pgH(idx);
+  const x0 = Math.min(...items.map(it => selectionFinite(it.x, 0) * sw / 100));
+  const y0 = Math.min(...items.map(it => selectionFinite(it.y, 0) * sh / 100));
+  return {
+    format: SELECT_CLIP_FORMAT, token: uid(), size:{ w:sw, h:sh }, origin:{ x:x0, y:y0 },
+    items: selectionClone(items),
+    links: selectionClone((page.links || []).filter(l => l && ids.has(l.a) && ids.has(l.b))),
+    wires: selectionClone((page.wires || []).filter(w => w && w.from && w.to &&
+      ids.has(w.from.item) && ids.has(w.to.item)))
+  };
+}
+
+/* Every id inside copied records is new, not only the page item's. A deck's
+   cards and blocks, a circuit's nodes and wires, and a plot's chips all keep
+   references of their own. Collect first, then rewrite any exact reference to
+   one of those ids across the whole payload. */
+function selectionFreshIds(root){
+  const fresh = {};
+  const collect = x => {
+    if(!x || typeof x !== 'object') return;
+    if(!Array.isArray(x) && typeof x.id === 'string' && x.id)
+      fresh[x.id] = fresh[x.id] || uid();
+    Object.keys(x).forEach(k => collect(x[k]));
+  };
+  const rewrite = x => {
+    if(!x || typeof x !== 'object') return;
+    Object.keys(x).forEach(k => {
+      const v = x[k];
+      if(typeof v === 'string' && fresh[v]) x[k] = fresh[v];
+      else rewrite(v);
+    });
+  };
+  collect(root); rewrite(root);
+  return fresh;
+}
+
+/* Stored files get new blob ids as well. Sharing the old id would look fine
+   until the source note or source item was deleted, at which point the pasted
+   picture/video/model would turn blank. One source blob copied twice in a set
+   remains one blob in the copy. */
+async function selectionFreshMedia(items){
+  const old = [...new Set((items || []).flatMap(mediaIds))], fresh = {};
+  for(const id of old){
+    const b = await mediaGet(id);
+    if(!b) continue;
+    const nid = uid();
+    if(await mediaSet(nid, b)) fresh[id] = nid;
+  }
+  (items || []).forEach(it => remapMedia(it, id => fresh[id] || id));
+  return fresh;
+}
+
+/* Materialise the payload on `page`. `live === false` is the pure harness path;
+   the real paste saves, redraws, and hands the pasted group back to the select
+   tool. Positions and widths pass through source/destination sheet units, so a
+   group copied from a differently sized canvas keeps both scale and spacing. */
+async function pasteSelection(payload, page, idx, at, live){
+  if(!payload || payload.format !== SELECT_CLIP_FORMAT || !Array.isArray(payload.items) ||
+     !payload.items.length || !page) return null;
+  const copy = selectionClone(payload);
+  selectionFreshIds(copy);
+  await selectionFreshMedia(copy.items);
+
+  const sw = Math.max(1, selectionFinite(copy.size && copy.size.w, PG_BASE));
+  const sh = Math.max(1, selectionFinite(copy.size && copy.size.h, PG_BASE));
+  const dw = pgW(idx), dh = pgH(idx);
+  const ox = selectionFinite(copy.origin && copy.origin.x,
+    Math.min(...copy.items.map(it => selectionFinite(it.x, 0) * sw / 100)));
+  const oy = selectionFinite(copy.origin && copy.origin.y,
+    Math.min(...copy.items.map(it => selectionFinite(it.y, 0) * sh / 100)));
+  const pos = at || viewCentre(page);
+  const lay = (() => {
+    const ls = layers(idx), wanted = idx && idx.curLayer;
+    return (ls.find(L => L.id === wanted) || ls[0]).id;
+  })();
+  const z0 = maxZ(page);
+  const rank = new Map(copy.items.slice().sort((a, b) =>
+    selectionFinite(a.z, 1) - selectionFinite(b.z, 1)).map((it, i) => [it.id, i + 1]));
+  copy.items.forEach(it => {
+    const ux = selectionFinite(it.x, 0) * sw / 100 - ox;
+    const uy = selectionFinite(it.y, 0) * sh / 100 - oy;
+    it.x = selectionFinite(pos.x, 0) + ux / dw * 100;
+    it.y = selectionFinite(pos.y, 0) + uy / dh * 100;
+    if(typeof it.w === 'number') it.w = it.w * sw / dw;
+    it.lay = lay; it.z = z0 + rank.get(it.id);
+  });
+  page.items.push(...copy.items);
+  if(copy.links && copy.links.length) page.links = (page.links || []).concat(copy.links);
+  if(copy.wires && copy.wires.length) page.wires = (page.wires || []).concat(copy.wires);
+
+  if(live !== false){
+    queueSave(page.id); SND.plop();
+    await render();
+    selectMany(copy.items.map(it => it.id));
+  }
+  return copy;
+}
+
+const selectionEditing = () => {
+  const a = document.activeElement;
+  return !!(a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)));
+};
+document.addEventListener('copy', e => {
+  /* An ordinary one-item pick leaves copy to its feature (table cells, code,
+     text). The canvas format is specifically the marquee's multi-item set. */
+  if(SELECTED.size < 2 || selectionEditing()) return;
+  const payload = selectionPayload(sheet(), selectionItems(), index);
+  if(!payload || !e.clipboardData) return;
+  const sig = 'Open Note selection · ' + payload.items.length + ' items · ' + payload.token;
+  SELECT_CLIPBOARD = { sig, payload };
+  try{ e.clipboardData.setData(SELECT_CLIP_MIME, JSON.stringify(payload)); }catch(err){}
+  try{ e.clipboardData.setData('text/plain', sig); }catch(err){}
+  e.preventDefault();
+  SND.tick();
+});
+
+window.addEventListener('paste', e => {
+  if(selectionEditing() || !e.clipboardData) return;
+  let payload = null;
+  try{
+    const raw = e.clipboardData.getData(SELECT_CLIP_MIME);
+    if(raw) payload = JSON.parse(raw);
+  }catch(err){}
+  if(!payload && SELECT_CLIPBOARD){
+    const text = e.clipboardData.getData('text/plain');
+    if(text === SELECT_CLIPBOARD.sig) payload = SELECT_CLIPBOARD.payload;
+  }
+  if(!payload || payload.format !== SELECT_CLIP_FORMAT) return;
+  /* Stop the later generic image-paste listener: this one payload owns every
+     selected image, and importing clipboard renditions as well would recreate
+     the old pile on top. */
+  e.preventDefault(); e.stopImmediatePropagation();
+  pasteSelection(payload, sheet(), index, viewCentre(sheet()), true);
+});
 
 /* ================= the rectangle =================
    It is drawn in the surface's own percentages, so it stays glued to the finger

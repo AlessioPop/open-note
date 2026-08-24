@@ -32,13 +32,21 @@ const LP_BOXES = '.txt,.dtxt,.dot';
 /* An indent is written straight into the box rather than through the editor's
    insertText: an editor normalises whitespace it is handed — a tab can come
    back as a space, a leading space as a non-breaking one — and a step that came
-   back as something else is not a step. Everything else goes the ordinary way,
-   which keeps the browser's own undo. */
+   back as something else is not a step. A list's newline takes insertHTML's
+   text path instead: Chromium's insertText makes a sibling <div>, whose extra
+   structural break moves the flat caret back inside the marker. insertHTML
+   keeps the newline in the current block and, like insertText, keeps undo. */
 function lpPut(box, ed){
-  if(!ed.raw) return mpadPut(box, ed.from, ed.to, ed.text, ed.caret || 0);
+  if(!ed.raw && !ed.line) return mpadPut(box, ed.from, ed.to, ed.text, ed.caret || 0);
   const A = mathFlatPos(box, ed.from), B = mathFlatPos(box, ed.to);
-  const r = document.createRange();
+  const r = document.createRange(), sel = getSelection();
   try{ r.setStart(A[0], A[1]); r.setEnd(B[0], B[1]); }catch(e){ return; }
+  if(ed.line){
+    sel.removeAllRanges(); sel.addRange(r);
+    let done = false;
+    try{ done = document.execCommand('insertHTML', false, ed.text); }catch(e){}
+    if(done){ mpadTo(box, ed.from + (ed.caret || 0)); return; }
+  }
   r.deleteContents();
   if(ed.text) r.insertNode(document.createTextNode(ed.text));
   box.normalize();

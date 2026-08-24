@@ -2204,6 +2204,7 @@
       var e1 = markEnter('- one', 5);
       ok('lists: ⏎ on a bullet makes the next one',
         e1 && e1.text === '\n- ' && e1.from === 5 && e1.caret === 3, JSON.stringify(e1));
+      ok('lists: …and keeps Chromium from splitting that line into another block', e1.line === true);
       var e2 = markEnter('\t- one', 6);
       ok('lists: …at the same depth', e2 && e2.text === '\n\t- ', JSON.stringify(e2));
       var e3 = markEnter('- [x] done', 10);
@@ -2275,6 +2276,25 @@
       ok('lists: …and the box is told to save itself', said > 0, said);
       ok('lists: …leaving no whitespace of any kind behind it',
         text() === '- one\n- two', JSON.stringify(text()));
+      /* Chromium represents a prose Enter with a <div>. A list begun there
+         must keep its next marker in that block, or its virtual trailing break
+         puts the caret before the marker's space and Tab no longer sees a list. */
+      tx.innerHTML = 'prose<div>- one</div>';
+      put(text().lastIndexOf('one') + 3);
+      key('Enter');
+      ok('lists: a bullet begun after prose keeps the next empty marker intact',
+        text() === 'prose\n- one\n- \n', JSON.stringify([tx.innerHTML, text(), caretAt()]));
+      ok('lists: …and ⇥ then ⇧⇥ work before anything is typed on it',
+        key('Tab') === false && text() === 'prose\n- one\n\t- \n' &&
+        key('Tab', true) === false && text() === 'prose\n- one\n- \n',
+        JSON.stringify([tx.innerHTML, text(), caretAt()]));
+      document.execCommand('insertText', false, 'two');
+      ok('lists: typing after that keeps the marker intact',
+        text() === 'prose\n- one\n- two\n', JSON.stringify([tx.innerHTML, text(), caretAt()]));
+      ok('lists: …and ⇥ still pushes that next bullet in', key('Tab') === false &&
+        text() === 'prose\n- one\n\t- two\n', JSON.stringify([tx.innerHTML, text(), caretAt()]));
+      ok('lists: …while ⇧⇥ immediately takes an accidental indent back', key('Tab', true) === false &&
+        text() === 'prose\n- one\n- two\n', JSON.stringify([tx.innerHTML, text(), caretAt()]));
       /* …and ⌃B end to end, on what is picked out */
       tx.textContent = 'make this loud';
       var pick = function (a2, b2) {
@@ -5706,6 +5726,92 @@
         [ma.x - ax, ma.y - ay, mb.x - bx, mb.y - by].map(function (x) { return x.toFixed(2); }).join(','));
       ok('selection: an item outside the rectangle does not move with the set',
         lonely.x === lx && lonely.y === ly, lonely.x + ',' + lonely.y);
+
+      /* The native browser clipboard only sees DOM and pictures. The canvas
+         clipboard carries the records as one group, including its geometry,
+         embedded/stored media and the connections wholly inside the pick. */
+      var mediaOld = uid(), mediaBlob = new Blob(['kept media'], { type:'text/plain' });
+      await mediaSet(mediaOld, mediaBlob);
+      var srcIdx = { pgmax:16000, settings:{ pgw:2000, pgh:1000 },
+                     layers:[{ id:'source-layer', name:'Base' }] };
+      var srcPic = { id:'clip-pic', type:'image', x:10, y:20, w:15, z:9,
+                     lay:'source-layer', src:'data:image/png;base64,cGljdHVyZQ==',
+                     nested:{ id:'clip-inner', ref:'clip-inner' } };
+      var srcFile = { id:'clip-file', type:'file', x:40, y:50, w:10, z:3,
+                      lay:'source-layer', media:mediaOld, name:'kept.txt' };
+      var srcPage = { items:[srcPic, srcFile],
+        links:[{ id:'clip-link', a:srcPic.id, b:srcFile.id, c:2 },
+               { id:'outside-link', a:srcPic.id, b:'not-selected' }],
+        wires:[{ id:'clip-wire', from:{ item:srcPic.id, port:'q' },
+                 to:{ item:srcFile.id, port:'a' } },
+               { id:'outside-wire', from:{ item:srcPic.id }, to:{ item:'not-selected' } }] };
+      var payload = selectionPayload(srcPage, srcPage.items, srcIdx);
+      ok('clipboard: one selection payload keeps only its internal connections',
+        payload.items.length === 2 && payload.links.length === 1 && payload.wires.length === 1,
+        payload.items.length + ',' + payload.links.length + ',' + payload.wires.length);
+      var dstIdx = { pgmax:16000, settings:{ pgw:1000, pgh:500 }, curLayer:'dest-layer',
+                     layers:[{ id:'dest-layer', name:'Base' }] };
+      var dstPage = { id:'clip-dest', items:[], links:[], wires:[] };
+      var pasted = await pasteSelection(payload, dstPage, dstIdx, { x:5, y:7 }, false);
+      var picCopy = pasted.items.find(function (it) { return it.type === 'image'; });
+      var fileCopy = pasted.items.find(function (it) { return it.type === 'file'; });
+      ok('clipboard: paste keeps physical scale across differently sized canvases',
+        Math.abs(picCopy.w - 30) < .001 && Math.abs(fileCopy.w - 20) < .001,
+        picCopy.w + ',' + fileCopy.w);
+      ok('clipboard: …and keeps every relative position instead of stacking the set',
+        Math.abs(picCopy.x - 5) < .001 && Math.abs(picCopy.y - 7) < .001 &&
+        Math.abs(fileCopy.x - 65) < .001 && Math.abs(fileCopy.y - 67) < .001,
+        [picCopy.x, picCopy.y, fileCopy.x, fileCopy.y].join(','));
+      ok('clipboard: embedded pictures survive byte-for-byte',
+        picCopy.src === srcPic.src && !!picCopy.src, picCopy.src);
+      ok('clipboard: every nested id and reference is fresh but still connected',
+        picCopy.id !== srcPic.id && fileCopy.id !== srcFile.id &&
+        picCopy.nested.id !== srcPic.nested.id && picCopy.nested.ref === picCopy.nested.id &&
+        pasted.links[0].a === picCopy.id && pasted.links[0].b === fileCopy.id &&
+        pasted.wires[0].from.item === picCopy.id && pasted.wires[0].to.item === fileCopy.id);
+      var copiedBlob = await mediaGet(fileCopy.media);
+      ok('clipboard: stored media gets an independent blob id and stays readable',
+        fileCopy.media !== mediaOld && copiedBlob && await copiedBlob.text() === 'kept media',
+        fileCopy.media + ' from ' + mediaOld);
+      ok('clipboard: source records are untouched and stacking order is retained',
+        srcPic.id === 'clip-pic' && srcFile.media === mediaOld && picCopy.z > fileCopy.z &&
+        picCopy.lay === 'dest-layer' && fileCopy.lay === 'dest-layer');
+      await mediaDel(mediaOld); await mediaDel(fileCopy.media);
+
+      /* End to end, the copy event replaces native DOM copying and a paste adds
+         exactly one rigid duplicate of the live marquee set. */
+      selectMany([ma.id, mb.id]);
+      var clipBag = {}, clipData = {
+        items:[], setData:function (k, v) { clipBag[k] = v; },
+        getData:function (k) { return clipBag[k] || ''; }
+      };
+      var copyEv = new Event('copy', { bubbles:true, cancelable:true });
+      Object.defineProperty(copyEv, 'clipboardData', { value:clipData });
+      document.dispatchEvent(copyEv);
+      ok('clipboard: Ctrl+C claims a multi-selection in the Open Note format',
+        copyEv.defaultPrevented && !!clipBag[SELECT_CLIP_MIME], Object.keys(clipBag).join(','));
+      var beforePaste = new Set(page.items.map(function (it) { return it.id; }));
+      var pasteEv = new Event('paste', { bubbles:true, cancelable:true });
+      Object.defineProperty(pasteEv, 'clipboardData', { value:clipData });
+      window.dispatchEvent(pasteEv);
+      await sleep(140);
+      var liveCopies = page.items.filter(function (it) { return !beforePaste.has(it.id); });
+      var ca = liveCopies.find(function (it) { return it.gate === ma.gate; });
+      var cb = liveCopies.find(function (it) { return it.gate === mb.gate; });
+      ok('clipboard: Ctrl+V adds one duplicate per selected item, not a rendered-image pile',
+        pasteEv.defaultPrevented && liveCopies.length === 2, liveCopies.length);
+      ok('clipboard: the live paste preserves widths and the rigid spacing',
+        ca && cb && Math.abs(ca.w - ma.w) < .001 && Math.abs(cb.w - mb.w) < .001 &&
+        Math.abs((cb.x - ca.x) - (mb.x - ma.x)) < .001 &&
+        Math.abs((cb.y - ca.y) - (mb.y - ma.y)) < .001,
+        ca && cb ? [ca.w, cb.w, cb.x - ca.x, cb.y - ca.y].join(',') : 'missing copies');
+      var liveIds = new Set(liveCopies.map(function (it) { return it.id; }));
+      page.items = page.items.filter(function (it) { return !liveIds.has(it.id); });
+      page.wires = (page.wires || []).filter(function (w) {
+        return !w || !w.from || !w.to || (!liveIds.has(w.from.item) && !liveIds.has(w.to.item));
+      });
+      page.links = (page.links || []).filter(function (l) { return !l || (!liveIds.has(l.a) && !liveIds.has(l.b)); });
+      await render(); await sleep(40); selectMany([ma.id, mb.id]);
 
       ma.x = 62; ma.y = 68; ma.rot = 19;
       mb.x = 8; mb.y = 48; mb.rot = -27;

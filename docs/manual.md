@@ -57,7 +57,7 @@ Things scale to the paper they are on: a sticky note is the size it would be on 
 
 Every item: drag to move — **it leans into the push and keeps your momentum when you let go**, sliding a little way like paper on a desk (grab it mid-slide and it's simply yours again) — corner dot to resize, **drag the red handle above an item to rotate it** (hold Shift for 15° snapping), ⤒ / ⤓ to send it to the front or the back, ✕ or `Delete` to remove.
 
-For several things, press **□ Select** in the main toolbar and drag a rectangle around them, like selecting desktop icons. The mode finishes on release; drag any selected member to move the whole arrangement, use **✕ Delete** in the same toolbar (or the keyboard's `Delete`) to remove it, and press `Esc` to clear the selection. The gesture is the same with a mouse, pen or finger.
+For several things, press **□ Select** in the main toolbar and drag a rectangle around them, like selecting desktop icons. The mode finishes on release; drag any selected member to move the whole arrangement, use **✕ Delete** in the same toolbar (or the keyboard's `Delete`) to remove it, and press `Esc` to clear the selection. `Ctrl`/`Cmd`+`C` copies the whole set and `Ctrl`/`Cmd`+`V` pastes it into this or another note with its scale, spacing, stacking order, internal strings/wires and pictures intact. The gesture is the same with a mouse, pen or finger.
 
 ## Tables
 

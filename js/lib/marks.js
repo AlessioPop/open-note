@@ -122,7 +122,12 @@ function markEnter(s, off){
   }
   /* a ticked task makes an unticked one — the next thing to do, not another done thing */
   const next = '\n' + L.li.ind + '- ' + (L.li.task ? '[ ] ' : '');
-  return { from: off, to: off, text: next, caret: next.length };
+  /* `line`: Chromium's insertText turns this newline into a sibling <div>.
+     A contenteditable already split into blocks then contributes another
+     structural newline, and the caret lands before the marker's space. The
+     DOM wiring writes this as literal HTML text instead, which stays on the
+     current block and keeps the flat offsets exact. */
+  return { from: off, to: off, text: next, caret: next.length, line: true };
 }
 /* what ⇥ does on a list line: one step in, ⇧⇥ one step back. The caret keeps
    its place in the writing rather than jumping to the marker. */
