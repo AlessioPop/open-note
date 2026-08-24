@@ -7347,12 +7347,18 @@
         fel.querySelector('.faxes').textContent === 'xt');
       select(fy.id);
       var particleBtn = fel.querySelector('.feyrail [data-a=particle]'); particleBtn.click(); await sleep(40);
-      ok('feynman: particle chip opens the 17-field Standard Model', Q('#smpick').classList.contains('open') &&
-        Q('#smpick').querySelectorAll('.smc').length === 17 && /electron/.test(Q('#smpick .smfacts').textContent),
+      ok('feynman: particle chip opens the 17 fields plus proton and neutron composite shortcuts', Q('#smpick').classList.contains('open') &&
+        Q('#smpick').querySelectorAll('.smc').length === 19 && !!Q('#smpick .smcomposite [data-p=p]') && !!Q('#smpick .smcomposite [data-p=n]') && /electron/.test(Q('#smpick .smfacts').textContent),
         Q('#smpick').querySelectorAll('.smc').length);
       Q('#smpick .smc[data-p=gamma]').click(); await sleep(30);
       ok('feynman: taking the photon closes the picker and updates the rail', FEY_PART === 'gamma' && !SM_ANCHOR &&
         fel.querySelector('.feypart b').textContent === 'γ');
+      var fsize0 = fy.fs, fwidth0 = fel.getBoundingClientRect().width, frs = fel.querySelector('.rs'), frr = frs.getBoundingClientRect();
+      frs.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true,button:0,buttons:1,pointerId:71,clientX:frr.left+frr.width/2,clientY:frr.top+frr.height/2}));
+      window.dispatchEvent(new PointerEvent('pointermove', {bubbles:true,buttons:1,pointerId:71,clientX:frr.left+frr.width/2+fwidth0*.3,clientY:frr.top+frr.height/2+fwidth0*.3}));
+      window.dispatchEvent(new PointerEvent('pointerup', {bubbles:true,button:0,pointerId:71,clientX:frr.left+frr.width/2+fwidth0*.3,clientY:frr.top+frr.height/2+fwidth0*.3})); await sleep(30);
+      ok('feynman: the bottom-right handle scales the whole content-sized diagram instead of writing a NaN width', fy.fs > fsize0 &&
+        fel.getBoundingClientRect().width > fwidth0 && !/NaN/.test(fel.getAttribute('style') || ''), fsize0 + ' → ' + fy.fs + ' · ' + fwidth0 + ' → ' + fel.getBoundingClientRect().width);
       var fsearch = QA('.item[data-type=feynman] .tools button').filter(function (b) { return b.textContent === '⌕'; })[0];
       fsearch.click(); await sleep(40);
       ok('feynman: common-process search opens with ten validated connected templates', Q('#feylibrary').classList.contains('open') &&
@@ -7373,8 +7379,67 @@
         fbranch.sim.vertices.length === 4 && fbranch.sim.edges.length === 3 && feyInc(fbranch.sim, 2).length === 3 &&
         feyValidation(fbranch.sim).ok && feyComponent(fbranch.sim, 0).size === 4, fbranch.why);
       var fvertical = feyPlan({vertices:[],edges:[]}, 'draw', {}, {x:2,y:3}, {x:2,y:3}, false);
-      ok('feynman: a tap starts a propagator vertically with time moving upward', fvertical.did &&
-        fvertical.sim.vertices[0].x === fvertical.sim.vertices[1].x && fvertical.sim.vertices[0].y > fvertical.sim.vertices[1].y);
+      ok('feynman: a tap starts a standard-length propagator diagonally with time moving upward', fvertical.did &&
+        Math.abs(Math.abs(fvertical.sim.vertices[0].x-fvertical.sim.vertices[1].x)-Math.abs(fvertical.sim.vertices[0].y-fvertical.sim.vertices[1].y)) < .015 &&
+        Math.abs(Math.hypot(fvertical.sim.vertices[0].x-fvertical.sim.vertices[1].x,fvertical.sim.vertices[0].y-fvertical.sim.vertices[1].y)-FEY_LEN) < .015);
+      var fsnapped = feyPlan({vertices:[],edges:[]}, 'draw', {}, {x:0,y:0}, {x:2,y:-1.75}, true);
+      var fsA = fsnapped.sim.vertices[0], fsB = fsnapped.sim.vertices[1];
+      ok('feynman: a free drag near 45 degrees locks visibly to 45 degrees and the standard length', fsnapped.did && fsnapped.snap &&
+        Math.abs(Math.abs(fsB.x-fsA.x)-Math.abs(fsB.y-fsA.y)) < .015 && Math.abs(Math.hypot(fsB.x-fsA.x,fsB.y-fsA.y)-FEY_LEN) < .015,
+        JSON.stringify({snap:fsnapped.snap,a:fsA,b:fsB}));
+      var foff = feySnapEnd({x:0,y:0},{x:2,y:.9});
+      ok('feynman: the angle lock has a close-by tolerance instead of forcing every stroke', !foff.snapped &&
+        Math.abs(Math.hypot(foff.x,foff.y)-FEY_LEN) < .015, JSON.stringify(foff));
+      FEY_PART = 'd'; FEY_ANTI = 0; FEY_REVERSE = 0;
+      var fsideBase = {vertices:[{x:0,y:0},{x:FEY_LEN,y:0}],edges:[{a:0,b:1,p:'u',anti:0,rev:0,bend:0,mom:'',momSide:1}]};
+      var fside1 = feyPlan(fsideBase,'draw',{edge:0},{x:FEY_LEN/2,y:0},{x:FEY_LEN/2,y:0},false);
+      var fside2 = feyPlan(fside1.sim,'draw',{edge:0},{x:FEY_LEN/2,y:0},{x:FEY_LEN/2,y:0},false);
+      var fm1 = (fside1.sim.vertices[fside1.sim.edges[1].a].y + fside1.sim.vertices[fside1.sim.edges[1].b].y) / 2;
+      var fm2 = (fside2.sim.vertices[fside2.sim.edges[2].a].y + fside2.sim.vertices[fside2.sim.edges[2].b].y) / 2;
+      ok('feynman: hovering a propagator promises the selected particle in a free lane beside it', fside1.kind === 'side' && fside1.side &&
+        fside1.sim.edges.length === 2 && fside1.sim.edges[1].p === 'd' && /fsideguide/.test(feyGhost(fsideBase,fside1)), JSON.stringify(fside1.side));
+      ok('feynman: repeated side snaps fill opposite lanes for proton or neutron quark triplets', fside2.kind === 'side' &&
+        fside2.sim.edges.length === 3 && Math.abs(fm1 + fm2) < .015 && Math.abs(Math.abs(fm1) - FEY_SIDE) < .015, fm1 + ' · ' + fm2);
+      var fsideAbove = feyPlan(fsideBase,'draw',{edge:0},{x:FEY_LEN/2,y:-.12},{x:FEY_LEN/2,y:-.12},false);
+      var fsideBelow = feyPlan(fsideBase,'draw',{edge:0},{x:FEY_LEN/2,y:.12},{x:FEY_LEN/2,y:.12},false);
+      ok('feynman: crossing the source line moves the parallel ghost to the pointer side', fsideAbove.side && fsideBelow.side &&
+        fsideAbove.side.lane === -1 && fsideBelow.side.lane === 1 && fsideAbove.side.a.y < 0 && fsideBelow.side.a.y > 0,
+        JSON.stringify({above:fsideAbove.side,below:fsideBelow.side}));
+      var fturnD = FEY_LEN / Math.SQRT2, fturn = {vertices:[{x:-fturnD,y:fturnD},{x:0,y:0},{x:fturnD,y:fturnD}],edges:[
+        {a:0,b:1,p:'u',anti:0,rev:0,bend:0,mom:'',momSide:1},{a:1,b:2,p:'u',anti:0,rev:0,bend:0,mom:'',momSide:1}]};
+      FEY_PART = 'u';
+      var fturn1 = feyPlan(fturn,'draw',{edge:0},{x:-fturnD/2-.08,y:fturnD/2-.08},{x:-fturnD/2-.08,y:fturnD/2-.08},false);
+      var fturn2 = feyPlan(fturn1.sim,'draw',{edge:1},{x:fturnD/2+.08,y:fturnD/2-.08},{x:fturnD/2+.08,y:fturnD/2-.08},false);
+      var fouter1 = fturn2.sim.edges[2], fouter2 = fturn2.sim.edges[3];
+      var fouterL1 = Math.hypot(fturn2.sim.vertices[fouter1.b].x-fturn2.sim.vertices[fouter1.a].x,fturn2.sim.vertices[fouter1.b].y-fturn2.sim.vertices[fouter1.a].y);
+      var fouterL2 = Math.hypot(fturn2.sim.vertices[fouter2.b].x-fturn2.sim.vertices[fouter2.a].x,fturn2.sim.vertices[fouter2.b].y-fturn2.sim.vertices[fouter2.a].y);
+      var fouterJoins = feyParallelJoins(fturn2.sim), fturnGhost = feyGhost(fturn1.sim,fturn2);
+      var fsharpJoin = fouterJoins[0] && feyJoinSVG(fouterJoins[0],'');
+      ok('feynman: parallel particles around a 135-to-45-degree turn keep both standard-length legs and meet at one sharp corner', fturn1.side && fturn2.side &&
+        fturn2.sim.vertices.length === 7 && Math.abs(fouterL1-FEY_LEN) < .015 && Math.abs(fouterL2-FEY_LEN) < .015 &&
+        fouterJoins.length === 1 && fouterJoins[0].edges.indexOf(2) >= 0 && fouterJoins[0].edges.indexOf(3) >= 0 && /fjoin/.test(fturnGhost) &&
+        fsharpJoin.indexOf('L'+feyU(fouterJoins[0].c.x)+' '+feyU(fouterJoins[0].c.y)+'L') >= 0,
+        JSON.stringify({vertices:fturn2.sim.vertices,edges:fturn2.sim.edges,lengths:[fouterL1,fouterL2],joins:fouterJoins}));
+      ok('feynman: the implicit corner endpoints never receive extra external particle labels',
+        feyTerminalLabel(fturn2.sim,fouter1.b) === '' && feyTerminalLabel(fturn2.sim,fouter2.a) === '');
+      var fturnTex = feyTikzLatex(Object.assign({axes:0,labels:'external'},fturn2.sim));
+      ok('feynman: TikZ-Feynman export carries the sharp continuation without labelling its internal endpoints',
+        /\\draw \[plain\] \(v\d+\) -- \([^\n]+\) -- \(v\d+\)/.test(fturnTex) && (fturnTex.match(/\{\\\(u\\\)\}/g)||[]).length === 4, fturnTex);
+      var fturnTidy = feyClone(fturn2.sim); feyTidy(fturnTidy);
+      var fturnParallelTidy = [2,3].every(function(k){var e=fturnTidy.edges[k],A=fturnTidy.vertices[e.a],B=fturnTidy.vertices[e.b],PA=fturnTidy.vertices[e.pa],PB=fturnTidy.vertices[e.pb],dx=PB.x-PA.x,dy=PB.y-PA.y,L=Math.hypot(dx,dy),nx=-dy/L,ny=dx/L;
+        return Math.abs(Math.hypot(B.x-A.x,B.y-A.y)-FEY_LEN)<.015 && Math.hypot(A.x-(PA.x+nx*FEY_SIDE*e.lane),A.y-(PA.y+ny*FEY_SIDE*e.lane))<.015;});
+      ok('feynman: tidy restores side-snapped lanes without stretching their propagators', fturnParallelTidy, JSON.stringify(fturnTidy));
+      FEY_PART = 'd';
+      var fretype = feyPlan(fsideBase,'retype',{edge:0},{x:FEY_LEN/2,y:0},{x:FEY_LEN/2,y:0},false);
+      ok('feynman: Alt-click replacement remains distinct from the default side snap', fretype.kind === 'retype' &&
+        fretype.sim.edges.length === 1 && fretype.sim.edges[0].p === 'd');
+      var ftidy = {vertices:[{x:0,y:3},{x:-.2,y:1},{x:-2,y:-1},{x:1.7,y:-.4}],edges:[
+        {a:0,b:1,p:'e',bend:0,mom:'p'}, {a:1,b:2,p:'e',bend:0,mom:''}, {a:1,b:3,p:'gamma',bend:0,mom:'k'}]};
+      feyTidy(ftidy);
+      var ftidyGeometry = ftidy.edges.every(function (edge) {var a=ftidy.vertices[edge.a],b=ftidy.vertices[edge.b],dx=b.x-a.x,dy=b.y-a.y;
+        var step=Math.atan2(dy,dx)/FEY_ANGLE;return Math.abs(Math.hypot(dx,dy)-FEY_LEN)<.015&&Math.abs(step-Math.round(step))<.015;});
+      ok('feynman: tidy uses the same 45-degree lattice and standard propagator length', ftidyGeometry &&
+        ftidy.edges[0].mom === 'p' && ftidy.edges[2].mom === 'k', JSON.stringify(ftidy));
       /* e+ e- -> gamma -> mu+ mu-: two exact QED vertices */
       fy.vertices = [{x:-3,y:-1},{x:-1,y:0},{x:-3,y:1},{x:3,y:-1},{x:1,y:0},{x:3,y:1}];
       fy.edges = [
@@ -7406,6 +7471,11 @@
         edges:[{a:1,b:0,p:'W',rev:0},{a:2,b:0,p:'W',rev:0},{a:0,b:3,p:'gamma',rev:0}]
       };
       ok('feynman: charged W flow is conserved at gauge vertices', /charged W flow/.test(feyWhyBad(wrongW)), feyWhyBad(wrongW));
+      var nucleonWeak = {vertices:[{x:0,y:0},{x:-1,y:1},{x:1,y:1},{x:0,y:-1.4}],edges:[
+        {a:1,b:0,p:'n',rev:0},{a:0,b:2,p:'p',rev:0},{a:0,b:3,p:'W',rev:0}]};
+      ok('feynman: proton and neutron are labelled composite fermions with an effective charged-current vertex',
+        feyP('p').mass === '938.272 MeV' && feyP('n').mass === '939.565 MeV' && feyValidation(nucleonWeak).ok,
+        JSON.stringify(feyValidation(nucleonWeak)));
       var partial = { vertices:[{x:0,y:0},{x:-1,y:0},{x:1,y:0}],
         edges:[{a:1,b:0,p:'e',rev:0},{a:0,b:2,p:'gamma',rev:0}] };
       ok('feynman: an extensible unfinished vertex remains editable but cannot export', !feyValidation(partial).ok &&

@@ -5,14 +5,17 @@
 
    The saved graph is deliberately small:
      vertices [{x,y}]
-     edges    [{a,b,p,anti,rev,bend,mom,momSide}]
+     edges    [{a,b,p,anti,rev,bend,mom,momSide,pa?,pb?,lane?}]
 
    `anti` chooses the conjugate label at an external end. `rev` is the arrow
    direction and is kept separately: an internal fermion line can circulate
-   without pretending that each of its segments is a different particle. */
+   without pretending that each of its segments is a different particle.
+   Optional `pa`/`pb` anchor a side-snapped edge to its source route; `lane`
+   lets Tidy restore the exact parallel offset without changing its length. */
 
 let FEY_PART = 'e', FEY_ANTI = 0, FEY_REVERSE = 0, FEY_TOOL = 'draw';
 const FEY_U = 100, FEY_FS = 15, FEY_BL = 2.35, FEY_LEN = 1.75;
+const FEY_ANGLE = Math.PI / 4, FEY_SNAP_TOL = Math.PI / 18, FEY_SIDE = .42;
 const FEY_PAD = .8, FEY_MINW = 6.4, FEY_MINH = 4.2;
 const FEY_SEL = new Map();
 
@@ -33,15 +36,24 @@ const FEY_PARTICLES = {
   g:   { sym:'g', tex:'g', name:'gluon', group:'boson', q:'0', spin:'1', mass:'0', kind:'gluon', color:'#e69a56' },
   Z:   { sym:'Z⁰', tex:'Z^0', name:'Z boson', group:'boson', q:'0', spin:'1', mass:'91.1879 GeV', kind:'boson', color:'#e18667' },
   W:   { sym:'W⁺', antiSym:'W⁻', tex:'W^+', antiTex:'W^-', name:'W boson', group:'boson', q:'±1', spin:'1', mass:'80.3625 GeV', kind:'boson', color:'#df746c' },
-  H:   { sym:'H', tex:'H', name:'Higgs boson', group:'scalar', q:'0', spin:'0', mass:'125.13 GeV', kind:'scalar', color:'#d985ae' }
+  H:   { sym:'H', tex:'H', name:'Higgs boson', group:'scalar', q:'0', spin:'0', mass:'125.13 GeV', kind:'scalar', color:'#d985ae' },
+  p:   { sym:'p', antiSym:'p̄', tex:'p', antiTex:'\\bar p', name:'proton', antiName:'antiproton', group:'hadron', q:'+1', spin:'½', mass:'938.272 MeV', kind:'fermion', family:'nucleon', pair:'n', color:'#df746c' },
+  n:   { sym:'n', antiSym:'n̄', tex:'n', antiTex:'\\bar n', name:'neutron', antiName:'antineutron', group:'hadron', q:'0', spin:'½', mass:'939.565 MeV', kind:'fermion', family:'nucleon', pair:'p', color:'#73a9d8' }
 };
-const FEY_KEYS = ['u','c','t','d','s','b','ve','vmu','vtau','e','mu','tau','gamma','g','Z','W','H'];
+const FEY_KEYS = ['u','c','t','d','s','b','ve','vmu','vtau','e','mu','tau','gamma','g','Z','W','H','p','n'];
 const feyP = key => FEY_PARTICLES[key] || FEY_PARTICLES.e;
 const feyConjugable = key => feyP(key).kind === 'fermion' || key === 'W';
 function feySym(key, anti){ const p = feyP(key); return anti && p.antiSym ? p.antiSym : anti && p.kind === 'fermion' ? p.sym.replace(/^([^⁻⁺]+)([⁻⁺])?$/, '$1̄') : p.sym; }
 function feyTex(key, anti){ const p = feyP(key); return anti && p.antiTex ? p.antiTex : anti && p.kind === 'fermion' ? '\\overline{' + p.tex + '}' : p.tex; }
 const feyRd = v => Math.round(v * 100) / 100;
 const feyU = v => Math.round(v * FEY_U * 10) / 10;
+function feyAngleDelta(a,b){return Math.atan2(Math.sin(a-b),Math.cos(a-b));}
+function feySnapEnd(a,b,forceAngle){
+  const raw=Math.atan2(b.y-a.y,b.x-a.x),locked=Math.round(raw/FEY_ANGLE)*FEY_ANGLE;
+  const snapped=!!forceAngle||Math.abs(feyAngleDelta(raw,locked))<=FEY_SNAP_TOL,angle=snapped?locked:raw;
+  let deg=Math.round(-angle/FEY_ANGLE)*45;deg=((deg%360)+360)%360;
+  return{x:feyRd(a.x+Math.cos(angle)*FEY_LEN),y:feyRd(a.y+Math.sin(angle)*FEY_LEN),snapped,deg};
+}
 
 /* ================= the Standard Model picker ================= */
 let SM_ON = null, SM_ANCHOR = null, SM_KEY = 'e';
@@ -55,7 +67,7 @@ function smGrid(){
     '<div class="smgrid"><em>quarks</em>' + ['u','c','t'].map(smCell).join('') + '<div class="smbosons">' + ['gamma','g'].map(smCell).join('') + '</div>' +
     '<em></em>' + ['d','s','b'].map(smCell).join('') + '<div class="smbosons">' + ['Z','W'].map(smCell).join('') + '</div>' +
     '<em>leptons</em>' + ['ve','vmu','vtau'].map(smCell).join('') + '<div class="smbosons last">' + smCell('H') + '</div>' +
-    '<em></em>' + ['e','mu','tau'].map(smCell).join('') + '<div></div></div><div class="smfacts"></div>';
+    '<em></em>' + ['e','mu','tau'].map(smCell).join('') + '<div></div></div><div class="smcomposite"><em>composite</em>' + ['p','n'].map(smCell).join('') + '</div><div class="smfacts"></div>';
 }
 function smFacts(root, key){
   const p = feyP(key), anti = key === FEY_PART && FEY_ANTI && feyConjugable(key);
@@ -110,10 +122,18 @@ function feyAddE(it, a, b, p, anti, rev, bend){
 function feySplitEdge(it, k, p){
   const old=it.edges[k];if(!old)return-1;
   const v=feyAddV(it,p.x,p.y),first={...old,b:v,bend:0},second={...old,a:v,bend:0,mom:'',momSide:old.momSide===-1?-1:1};
+  if(old.pa!=null){delete first.pa;delete first.pb;delete first.lane;delete second.pa;delete second.pb;delete second.lane;}
   it.edges.splice(k,1,first,second);return v;
 }
 function feyDelV(it, i){
-  it.edges = it.edges.filter(e => e.a !== i && e.b !== i).map(e => ({ ...e, a:e.a > i ? e.a - 1 : e.a, b:e.b > i ? e.b - 1 : e.b }));
+  it.edges = it.edges.filter(e => e.a !== i && e.b !== i).map(e => {
+    const n={...e,a:e.a>i?e.a-1:e.a,b:e.b>i?e.b-1:e.b};
+    if(e.pa!=null){
+      if(e.pa===i||e.pb===i){delete n.pa;delete n.pb;delete n.lane;}
+      else {n.pa=e.pa>i?e.pa-1:e.pa;n.pb=e.pb>i?e.pb-1:e.pb;}
+    }
+    return n;
+  });
   it.vertices.splice(i, 1);
 }
 function feyInc(it, i){
@@ -127,7 +147,7 @@ function feyInc(it, i){
 const feyKind = key => feyP(key).kind;
 const feyIsFermion = key => feyKind(key) === 'fermion';
 const FEY_ALLOWED = (() => {
-  const out = [], fermions = ['u','c','t','d','s','b','ve','vmu','vtau','e','mu','tau'];
+  const out = [], fermions = ['u','c','t','d','s','b','ve','vmu','vtau','e','mu','tau','p','n'];
   fermions.forEach(f => {
     if(feyP(f).q !== '0') out.push([f,f,'gamma']);
     out.push([f,f,'Z']);
@@ -136,6 +156,7 @@ const FEY_ALLOWED = (() => {
   });
   ['u','c','t'].forEach(u => ['d','s','b'].forEach(d => out.push([u,d,'W'])));
   [['ve','e'],['vmu','mu'],['vtau','tau']].forEach(x => out.push([x[0],x[1],'W']));
+  out.push(['p','n','W'],['n','n','gamma']);
   out.push(['W','W','gamma'],['W','W','Z'],['W','W','H'],['Z','Z','H'],['H','H','H'],['g','g','g']);
   out.push(['g','g','g','g'],['W','W','W','W'],['W','W','gamma','gamma'],['W','W','Z','Z'],
     ['W','W','gamma','Z'],['W','W','H','H'],['Z','Z','H','H'],['H','H','H','H']);
@@ -269,8 +290,37 @@ function feyEdgeSVG(it, e, k, cls){
   }
   return out;
 }
+function feySharpJoinPts(A,C,B,count){
+  const out=[],half=Math.max(2,Math.round((count||18)/2));for(let i=0;i<=half;i++){const t=i/half;out.push({x:A.x+(C.x-A.x)*t,y:A.y+(C.y-A.y)*t});}for(let i=1;i<=half;i++){const t=i/half;out.push({x:C.x+(B.x-C.x)*t,y:C.y+(B.y-C.y)*t});}return out;
+}
+function feyParallelJoins(it){
+  const byBase=new Map(),add=(base,other,vertex,edge,k)=>{if(base==null||other==null||!it.vertices[base]||!it.vertices[other]||!it.vertices[vertex])return;const a=byBase.get(base)||[];a.push({other,vertex,edge,k});byBase.set(base,a);};
+  (it.edges||[]).forEach((e,k)=>{if(e.pa==null||e.pb==null)return;add(e.pa,e.pb,e.a,e,k);add(e.pb,e.pa,e.b,e,k);});
+  const out=[];
+  byBase.forEach((records,base)=>{
+    const V=it.vertices[base],roots=(it.edges||[]).map((e,k)=>({e,k})).filter(x=>x.e.pa==null&&x.e.a!==x.e.b&&(x.e.a===base||x.e.b===base));
+    if(roots.length!==2||roots[0].e.p!==roots[1].e.p)return;
+    const other=x=>x.e.a===base?x.e.b:x.e.a,o0=other(roots[0]),o1=other(roots[1]),A0=it.vertices[o0],A1=it.vertices[o1];if(!A0||!A1)return;
+    const l0=Math.hypot(V.x-A0.x,V.y-A0.y),l1=Math.hypot(A1.x-V.x,A1.y-V.y);if(!l0||!l1)return;
+    const d0={x:(V.x-A0.x)/l0,y:(V.y-A0.y)/l0},d1={x:(A1.x-V.x)/l1,y:(A1.y-V.y)/l1};
+    const signed=(r,d)=>{const P=it.vertices[r.vertex];return feyCross(d,{x:P.x-V.x,y:P.y-V.y});};
+    const left=records.filter(r=>r.other===o0).map(r=>({...r,side:signed(r,d0)})),right=records.filter(r=>r.other===o1).map(r=>({...r,side:signed(r,d1)})),used=new Set();
+    left.forEach(a=>{
+      let pick=null,bd=Infinity;right.forEach(b=>{if(used.has(b.k)||a.edge.p!==b.edge.p||a.edge.anti!==b.edge.anti)return;const d=Math.abs(a.side-b.side);if(a.side*b.side>0&&d<bd){bd=d;pick=b;}});
+      if(!pick||bd>FEY_SIDE*.3){return;}used.add(pick.k);const P=it.vertices[a.vertex],Q=it.vertices[pick.vertex];if(a.vertex===pick.vertex)return;
+      const den=feyCross(d0,d1);if(Math.abs(den)<.04)return;const delta={x:Q.x-P.x,y:Q.y-P.y},t=feyCross(delta,d1)/den,C={x:P.x+d0.x*t,y:P.y+d0.y*t};
+      if(Math.hypot(C.x-V.x,C.y-V.y)>Math.max(FEY_SIDE*4.1,Math.abs(a.side)*4.1))return;
+      out.push({a:P,b:Q,c:{x:feyRd(C.x),y:feyRd(C.y)},va:a.vertex,vb:pick.vertex,p:a.edge.p,edges:[a.k,pick.k]});
+    });
+  });
+  return out;
+}
+function feyJoinSVG(join,cls){
+  const p=feyP(join.p),base=feySharpJoinPts(join.a,join.c,join.b,18),pts=feyStyledPts(base,p.kind),c='fe '+p.kind+' fjoin'+(cls?' '+cls:'');
+  return '<path class="'+c+'" d="'+feyPath(pts)+'"/>';
+}
 function feyTerminalLabel(it, i){
-  const inc = feyInc(it, i); if(inc.length !== 1 || (it.labels || 'external') === 'hidden') return '';
+  const inc = feyInc(it, i); if(inc.length !== 1 || (it.labels || 'external') === 'hidden' || feyParallelJoins(it).some(j=>j.va===i||j.vb===i)) return '';
   const q = inc[0], e = q.edge, A = it.vertices[i], j = e.a === i ? e.b : e.a, B = it.vertices[j] || A;
   let dx = A.x - B.x, dy = A.y - B.y, L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
   return '<text class="fp" x="' + feyU(A.x + dx * .28) + '" y="' + feyU(A.y + dy * .28) + '">' + feySym(e.p, !!e.anti) + '</text>';
@@ -287,6 +337,7 @@ function feyBox(it){
   const pts = [];
   (it.vertices || []).forEach(v => pts.push(v));
   (it.edges || []).forEach(e => feyEdgePts(it, e, 20).forEach(p => pts.push(p)));
+  feyParallelJoins(it).forEach(j=>feySharpJoinPts(j.a,j.c,j.b,12).forEach(p=>pts.push(p)));
   if(!pts.length) return { x:-FEY_MINW/2, y:-FEY_MINH/2, w:FEY_MINW, h:FEY_MINH };
   let x0 = Math.min(...pts.map(p => p.x)) - FEY_PAD, x1 = Math.max(...pts.map(p => p.x)) + FEY_PAD;
   let y0 = Math.min(...pts.map(p => p.y)) - FEY_PAD, y1 = Math.max(...pts.map(p => p.y)) + FEY_PAD;
@@ -305,6 +356,7 @@ function feyAxesSVG(it,box){
 function feyDraw(it, live, ghost){
   const box = feyBox(it); let inner = feyAxesSVG(it,box);
   (it.edges || []).forEach((e, k) => { inner += feyEdgeSVG(it, e, k, ''); });
+  feyParallelJoins(it).forEach(j=>{inner+=feyJoinSVG(j,'');});
   (it.vertices || []).forEach((v, i) => { inner += feyVertexSVG(it, v, i); });
   inner += '<g class="fghost">' + (ghost || '') + '</g>';
   return { vb:[feyU(box.x),feyU(box.y),feyU(box.w),feyU(box.h)].join(' '), width:(box.w * FEY_BL).toFixed(2), inner };
@@ -340,10 +392,10 @@ function feyHit(it, p){
 function feyNearV(it, p, not){ let out=-1,bd=.44;(it.vertices||[]).forEach((v,i)=>{if(i===not)return;const d=Math.hypot(v.x-p.x,v.y-p.y);if(d<bd){bd=d;out=i;}});return out; }
 function feyOpenDir(it, i){
   const A=it.vertices[i],ang=[];(it.edges||[]).forEach(e=>{if(e.a===i&&e.b!==i)ang.push(Math.atan2(it.vertices[e.b].y-A.y,it.vertices[e.b].x-A.x));else if(e.b===i&&e.a!==i)ang.push(Math.atan2(it.vertices[e.a].y-A.y,it.vertices[e.a].x-A.x));});
-  if(!ang.length)return-Math.PI/2;
+  if(!ang.length)return-FEY_ANGLE;
   let best=-Math.PI/2,score=-Infinity;
-  for(let k=0;k<24;k++){
-    const a=-Math.PI+k*Math.PI/12,separation=Math.min(...ang.map(b=>Math.abs(Math.atan2(Math.sin(a-b),Math.cos(a-b))))),upward=-Math.sin(a);
+  for(let k=0;k<8;k++){
+    const a=-Math.PI+k*FEY_ANGLE,separation=Math.min(...ang.map(b=>Math.abs(Math.atan2(Math.sin(a-b),Math.cos(a-b))))),upward=-Math.sin(a);
     const s=separation+upward*.28;if(s>score){score=s;best=a;}
   }
   return best;
@@ -351,6 +403,22 @@ function feyOpenDir(it, i){
 function feyParallelBend(it,a,b){
   const n=(it.edges||[]).filter(e=>(e.a===a&&e.b===b)||(e.a===b&&e.b===a)).length;
   if(!n)return 0; const step=Math.ceil(n/2)*.28; return n%2?step:-step;
+}
+const feyCross=(a,b)=>a.x*b.y-a.y*b.x;
+function feyCoincidentV(it,p){let out=-1,bd=.08;(it.vertices||[]).forEach((v,i)=>{const d=Math.hypot(v.x-p.x,v.y-p.y);if(d<bd){bd=d;out=i;}});return out;}
+function feySidePlacement(it,e,p){
+  const A=it.vertices[e.a],B=it.vertices[e.b];if(!A||!B||e.a===e.b)return null;
+  const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy);if(!L)return null;const nx=-dy/L,ny=dx/L,lanes=[];
+  const aim=p?(p.x-A.x)*nx+(p.y-A.y)*ny:0;
+  if(Math.abs(aim)>.025){const side=aim<0?-1:1;for(let k=1;k<=6;k++)lanes.push(side*k);for(let k=1;k<=6;k++)lanes.push(-side*k);}
+  else for(let k=1;k<=6;k++)lanes.push(k,-k);
+  for(const lane of lanes){
+    const a={x:feyRd(A.x+nx*FEY_SIDE*lane),y:feyRd(A.y+ny*FEY_SIDE*lane)},b={x:feyRd(B.x+nx*FEY_SIDE*lane),y:feyRd(B.y+ny*FEY_SIDE*lane)};
+    const occupied=(it.edges||[]).some(q=>{if(q.a===q.b)return false;const C=it.vertices[q.a],D=it.vertices[q.b];if(!C||!D)return false;
+      const same=Math.max(Math.hypot(a.x-C.x,a.y-C.y),Math.hypot(b.x-D.x,b.y-D.y)),flip=Math.max(Math.hypot(a.x-D.x,a.y-D.y),Math.hypot(b.x-C.x,b.y-C.y));return Math.min(same,flip)<FEY_SIDE*.45;});
+    if(!occupied)return{a,b,sourceA:A,sourceB:B,lane};
+  }
+  return null;
 }
 
 /* ================= ghost planning ================= */
@@ -360,8 +428,14 @@ function feyPlan(it, tool, hit, p0, p1, moved){
   if(tool==='erase' && !moved){
     if(hit.vertex!=null){P.gone={vertex:hit.vertex};feyDelV(sim,hit.vertex);P.did=true;P.kind='erase';}
     else if(hit.edge!=null){P.gone={edge:hit.edge};sim.edges.splice(hit.edge,1);P.did=true;P.kind='erase';}
+  } else if(tool==='retype' && !moved && hit.edge!=null){
+    const e=sim.edges[hit.edge];e.p=pick.p;e.anti=pick.anti;e.rev=pick.rev;P.did=true;P.kind='retype';P.changed=hit.edge;
   } else if(tool==='draw'){
-    if(!moved && hit.edge!=null){ const e=sim.edges[hit.edge];e.p=pick.p;e.anti=pick.anti;e.rev=pick.rev;P.did=true;P.kind='retype';P.changed=hit.edge; }
+    if(!moved && hit.edge!=null){
+      const source=sim.edges[hit.edge],side=feySidePlacement(sim,source,p0);
+      if(side){let a=feyCoincidentV(sim,side.a),b=feyCoincidentV(sim,side.b);if(a<0)a=feyAddV(sim,side.a.x,side.a.y);if(b<0)b=feyAddV(sim,side.b.x,side.b.y);if(a!==b){P.changed=feyAddE(sim,a,b,pick.p,pick.anti,pick.rev,source.bend||0);const added=sim.edges[P.changed];added.pa=source.pa==null?source.a:source.pa;added.pb=source.pb==null?source.b:source.pb;const PA=sim.vertices[added.pa],PB=sim.vertices[added.pb],PV=sim.vertices[a],pdx=PB.x-PA.x,pdy=PB.y-PA.y,pL=Math.hypot(pdx,pdy)||1;added.lane=feyRd(((pdx/pL)*(PV.y-PA.y)-(pdy/pL)*(PV.x-PA.x))/FEY_SIDE);P.side=side;P.did=true;P.kind='side';}}
+      else {source.p=pick.p;source.anti=pick.anti;source.rev=pick.rev;P.did=true;P.kind='retype';P.changed=hit.edge;}
+    }
     else {
       let a,b;
       if(moved){
@@ -371,15 +445,15 @@ function feyPlan(it, tool, hit, p0, p1, moved){
         const end=feyHit(sim,p1);
         if(end.vertex!=null&&end.vertex!==a)b=end.vertex;
         else if(end.edge!=null)b=feySplitEdge(sim,end.edge,p1);
-        else {b=feyNearV(sim,p1,a);if(b<0)b=feyAddV(sim,p1.x,p1.y);}
+        else {b=feyNearV(sim,p1,a);if(b<0){const end=feySnapEnd(sim.vertices[a],p1);b=feyAddV(sim,end.x,end.y);if(end.snapped)P.snap={a:sim.vertices[a],b:end,deg:end.deg};}}
       } else if(hit.vertex!=null){
         a=hit.vertex;const d=feyOpenDir(sim,a),A=sim.vertices[a];b=feyAddV(sim,A.x+Math.cos(d)*FEY_LEN,A.y+Math.sin(d)*FEY_LEN);
-      } else { a=feyAddV(sim,p0.x,p0.y+FEY_LEN/2);b=feyAddV(sim,p0.x,p0.y-FEY_LEN/2); }
+      } else {const d=FEY_LEN/Math.SQRT2/2;a=feyAddV(sim,p0.x-d,p0.y+d);b=feyAddV(sim,p0.x+d,p0.y-d);}
       if(a!==b){P.changed=feyAddE(sim,a,b,pick.p,pick.anti,pick.rev,feyParallelBend(sim,a,b));P.did=true;P.kind='edge';}
     }
   } else if(tool==='loop'){
     let a,b;
-    if(moved){ a=hit.vertex!=null?hit.vertex:feyAddV(sim,p0.x,p0.y);b=feyNearV(sim,p1,-1);if(b<0)b=feyAddV(sim,p1.x,p1.y); }
+    if(moved){ a=hit.vertex!=null?hit.vertex:feyAddV(sim,p0.x,p0.y);b=feyNearV(sim,p1,a);if(b<0){const end=feySnapEnd(sim.vertices[a],p1);b=feyAddV(sim,end.x,end.y);if(end.snapped)P.snap={a:sim.vertices[a],b:end,deg:end.deg};} }
     else if(hit.vertex!=null){a=b=hit.vertex;}
     else {a=feyAddV(sim,p0.x,p0.y+FEY_LEN*.75);b=feyAddV(sim,p0.x,p0.y-FEY_LEN*.75);}
     P.changed=[];
@@ -402,12 +476,15 @@ function feyGhost(it,P){
   }
   const changed=Array.isArray(P.changed)?P.changed:[P.changed], oldV=(it.vertices||[]).length;let out='<g class="fplan'+(P.why?' bad':'')+'">';
   changed.forEach(k=>{if(k!=null&&P.sim.edges[k])out+=feyEdgeSVG(P.sim,P.sim.edges[k],k,'preview');});
+  const changedSet=new Set(changed);feyParallelJoins(P.sim).forEach(j=>{if(j.edges.some(k=>changedSet.has(k)))out+=feyJoinSVG(j,'preview');});
   P.sim.vertices.forEach((v,i)=>{if(i>=oldV)out+='<circle class="fpreviewv" cx="'+feyU(v.x)+'" cy="'+feyU(v.y)+'" r="7"/>';});
+  if(P.snap){const a=P.snap.a,b=P.snap.b,nx=-(b.y-a.y)/FEY_LEN,ny=(b.x-a.x)/FEY_LEN;out+='<path class="fsnap" d="M'+feyU(a.x)+' '+feyU(a.y)+'L'+feyU(b.x)+' '+feyU(b.y)+'"/><text class="fsnapt" x="'+feyU(b.x+nx*.2)+'" y="'+feyU(b.y+ny*.2)+'">'+P.snap.deg+'°</text>';}
+  if(P.side){const s=P.side,ax=(s.sourceA.x+s.sourceB.x)/2,ay=(s.sourceA.y+s.sourceB.y)/2,bx=(s.a.x+s.b.x)/2,by=(s.a.y+s.b.y)/2;out+='<path class="fsideguide" d="M'+feyU(ax)+' '+feyU(ay)+'L'+feyU(bx)+' '+feyU(by)+'"/>';}
   return out+'</g>';
 }
 function feyHoverSync(el,it){
   if(!el._feyHov||el._feyDrag||!el.classList.contains('sel')||PLOT_MOVE.has(it.id)||FEY_TOOL==='lasso'||FEY_TOOL==='momentum'){return feyRepaint(el,it,null);}
-  const P=feyPlan(it,FEY_TOOL,feyHit(it,el._feyHov),el._feyHov,el._feyHov,false);feyRepaint(el,it,P.did?{svg:feyGhost(it,P),why:P.why}:null);
+  const tool=FEY_TOOL==='draw'&&el._feyAlt?'retype':FEY_TOOL,P=feyPlan(it,tool,feyHit(it,el._feyHov),el._feyHov,el._feyHov,false);feyRepaint(el,it,P.did?{svg:feyGhost(it,P),why:P.why}:null);
 }
 function feyNo(el,why){
   SND.nope();const info=el.querySelector('.feyinfo');if(info)info.innerHTML='<span class="fno">'+esc(why)+'</span>';
@@ -440,12 +517,12 @@ function feyMenuClose(){FEY_ARM=null;const d=$('#feymenu');if(!d||!d.classList.c
 function feyDeleteSel(it,el,page){const sel=FEY_SEL.get(it.id);if(!sel||!sel.size)return;[...sel].sort((a,b)=>b-a).forEach(i=>feyDelV(it,i));FEY_SEL.delete(it.id);feyMenuClose();feyRepaint(el,it);queueSave(page.id);SND.tick();}
 function feyCopySel(it,el,page){
   const sel=FEY_SEL.get(it.id);if(!sel||!sel.size)return;const idx=[...sel].sort((a,b)=>a-b),map=new Map();idx.forEach(i=>{const v=it.vertices[i],j=feyAddV(it,v.x+.7,v.y+.7);map.set(i,j);});
-  it.edges.slice().forEach(e=>{if(map.has(e.a)&&map.has(e.b)){const n={...e,a:map.get(e.a),b:map.get(e.b)};it.edges.push(n);}});FEY_SEL.set(it.id,new Set(map.values()));feyRepaint(el,it);queueSave(page.id);SND.pop();feyMenuOpen(it,el,page);
+  it.edges.slice().forEach(e=>{if(map.has(e.a)&&map.has(e.b)){const n={...e,a:map.get(e.a),b:map.get(e.b)};if(e.pa!=null){if(map.has(e.pa)&&map.has(e.pb)){n.pa=map.get(e.pa);n.pb=map.get(e.pb);}else{delete n.pa;delete n.pb;delete n.lane;}}it.edges.push(n);}});FEY_SEL.set(it.id,new Set(map.values()));feyRepaint(el,it);queueSave(page.id);SND.pop();feyMenuOpen(it,el,page);
 }
 window.addEventListener('pointerdown',e=>{if(FEY_MENU&&!e.target.closest('#feymenu')&&!e.target.closest('.item[data-type="feynman"]'))feyMenuClose();});
 
 function feyGesture(e,svg,el,it,page){
-  const pid=e.pointerId,p0=feyPt(svg,e),hit=feyHit(it,p0),tool=FEY_TOOL;let moved=false,last=p0,path=tool==='lasso'?[p0]:null;
+  const pid=e.pointerId,p0=feyPt(svg,e),hit=feyHit(it,p0),tool=FEY_TOOL==='draw'&&e.altKey?'retype':FEY_TOOL;let moved=false,last=p0,path=tool==='lasso'?[p0]:null;
   const sel=FEY_SEL.get(it.id),has=sel&&sel.size;let mode=tool;
   if(tool==='lasso'&&has){if(FEY_ARM==='rot')mode='rot';else if(FEY_ARM==='move'||(hit.vertex!=null&&sel.has(hit.vertex)))mode='move';}
   const start=has?[...sel].map(i=>({i,x:it.vertices[i].x,y:it.vertices[i].y})):[],center=has?{x:start.reduce((s,v)=>s+v.x,0)/start.length,y:start.reduce((s,v)=>s+v.y,0)/start.length}:null;
@@ -454,7 +531,7 @@ function feyGesture(e,svg,el,it,page){
     if(mode==='draw'||mode==='loop'){const P=feyPlan(it,mode,hit,p0,p,true);feyRepaint(el,it,{svg:feyGhost(it,P),why:P.why});}
     else if(mode==='lasso'){path.push(p);feyRepaint(el,it,{svg:'<path class="flasso" d="'+feyPath(path)+'"/>',why:''});}
     else if(mode==='move'){start.forEach(v=>{it.vertices[v.i].x=feyRd(v.x+p.x-p0.x);it.vertices[v.i].y=feyRd(v.y+p.y-p0.y);});feyRepaint(el,it);}
-    else if(mode==='rot'){const a0=Math.atan2(p0.y-center.y,p0.x-center.x),a1=Math.atan2(p.y-center.y,p.x-center.x),a=Math.round((a1-a0)/(Math.PI/12))*(Math.PI/12),c=Math.cos(a),s=Math.sin(a);start.forEach(v=>{const x=v.x-center.x,y=v.y-center.y;it.vertices[v.i].x=feyRd(center.x+x*c-y*s);it.vertices[v.i].y=feyRd(center.y+x*s+y*c);});feyRepaint(el,it);}
+    else if(mode==='rot'){const a0=Math.atan2(p0.y-center.y,p0.x-center.x),a1=Math.atan2(p.y-center.y,p.x-center.x),a=Math.round((a1-a0)/FEY_ANGLE)*FEY_ANGLE,c=Math.cos(a),s=Math.sin(a);start.forEach(v=>{const x=v.x-center.x,y=v.y-center.y;it.vertices[v.i].x=feyRd(center.x+x*c-y*s);it.vertices[v.i].y=feyRd(center.y+x*s+y*c);});feyRepaint(el,it);}
     last=p;};
   const up=ev=>{if(ev.pointerId!==pid)return;svg.removeEventListener('pointermove',mv);svg.removeEventListener('pointerup',up);svg.removeEventListener('pointercancel',up);el._feyDrag=false;
     if(ev.type!=='pointerup')return feyRepaint(el,it);
@@ -517,7 +594,7 @@ const FEY_GLYPH={
   draw:'<svg viewBox="0 0 24 24"><path d="M4 12h16"/><path d="M13 8l5 4-5 4"/></svg>',
   loop:'<svg viewBox="0 0 24 24"><path d="M5 12c0-7 14-7 14 0S5 19 5 12Z"/><path d="M12 5l3 2-3 2"/></svg>',
   lasso:'<svg viewBox="0 0 24 24"><ellipse cx="12" cy="10" rx="8" ry="5"/><path d="M8 14.6c-.8 1.7-.7 3.4.5 4.9"/></svg>'};
-function feyRailHTML(){return '<div class="feyrail glass-lite"><button class="feypart" data-a="particle" title="Particle — open the Standard Model"><b></b></button><button data-a="anti" title="Particle or antiparticle / reverse the selected charged field">±</button><button data-a="draw" title="Propagator — drag between vertices">'+FEY_GLYPH.draw+'</button><button data-a="loop" title="Loop — click a vertex for a self-loop, or drag a circulating pair between two vertices">'+FEY_GLYPH.loop+'</button><button data-a="momentum" title="Momentum — click a propagator to add k, p₁, or LaTeX">k</button><button data-a="erase" title="Erase a vertex or propagator">'+icn('eraser')+'</button><button data-a="lasso" title="Lasso — click a connected diagram or draw around part; then turn, move, copy or delete">'+FEY_GLYPH.lasso+'</button></div>';}
+function feyRailHTML(){return '<div class="feyrail glass-lite"><button class="feypart" data-a="particle" title="Particle — open the Standard Model"><b></b></button><button data-a="anti" title="Particle or antiparticle / reverse the selected charged field">±</button><button data-a="draw" title="Propagator — drag between vertices; click a line to place one beside it; Alt-click to replace it">'+FEY_GLYPH.draw+'</button><button data-a="loop" title="Loop — click a vertex for a self-loop, or drag a circulating pair between two vertices">'+FEY_GLYPH.loop+'</button><button data-a="momentum" title="Momentum — click a propagator to add k, p₁, or LaTeX">k</button><button data-a="erase" title="Erase a vertex or propagator">'+icn('eraser')+'</button><button data-a="lasso" title="Lasso — click a connected diagram or draw around part; then turn, move, copy or delete">'+FEY_GLYPH.lasso+'</button></div>';}
 function feyRailSync(el){
   const r=el&&el.querySelector('.feyrail');if(!r)return;const p=feyP(FEY_PART),chip=r.querySelector('.feypart b');chip.textContent=feySym(FEY_PART,FEY_ANTI);chip.style.color=p.color;
   r.querySelector('[data-a=anti]').disabled=!feyConjugable(FEY_PART);r.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.a===FEY_TOOL));
@@ -530,18 +607,29 @@ function feyRailWire(el,it,page){const r=el.querySelector('.feyrail');if(!r)retu
 
 /* ================= tidy ================= */
 function feyTidy(it){
-  const n=it.vertices.length;if(!n)return;const seen=new Set();let ox=0;
+  const n=it.vertices.length;if(!n)return;const old=it.vertices.map(v=>({...v})),parallelLane=new Map(),near=Array.from({length:n},()=>[]),seen=new Set();let ox=0;
+  it.edges.forEach(e=>{if(e.pa==null||!old[e.pa]||!old[e.pb]||!old[e.a])return;const A=old[e.pa],B=old[e.pb],P=old[e.a],dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1,lane=((dx/L)*(P.y-A.y)-(dy/L)*(P.x-A.x))/FEY_SIDE;if(Number.isFinite(lane))parallelLane.set(e,lane);});
+  it.edges.forEach(e=>{if(e.a===e.b||!old[e.a]||!old[e.b])return;if(!near[e.a].includes(e.b))near[e.a].push(e.b);if(!near[e.b].includes(e.a))near[e.b].push(e.a);});
   for(let seed=0;seed<n;seed++){
-    if(seen.has(seed))continue;const comp=[],q=[seed],dist=new Map([[seed,0]]);seen.add(seed);
-    while(q.length){const i=q.shift();comp.push(i);it.edges.forEach(e=>{let j=-1;if(e.a===i&&e.b!==i)j=e.b;else if(e.b===i&&e.a!==i)j=e.a;if(j>=0&&!seen.has(j)){seen.add(j);dist.set(j,dist.get(i)+1);q.push(j);}});}
-    const ext=comp.filter(i=>feyInc(it,i).length===1);if(ext.length){
-      const ys=ext.map(i=>it.vertices[i].y),vertical=Math.max(...ys)-Math.min(...ys)>.3;
-      const root=ext.reduce((a,b)=>vertical?(it.vertices[a].y>it.vertices[b].y?a:b):(it.vertices[a].x<it.vertices[b].x?a:b));
-      dist.clear();dist.set(root,0);const qq=[root];while(qq.length){const i=qq.shift();it.edges.forEach(e=>{let j=-1;if(e.a===i&&e.b!==i)j=e.b;else if(e.b===i&&e.a!==i)j=e.a;if(j>=0&&comp.includes(j)&&!dist.has(j)){dist.set(j,dist.get(i)+1);qq.push(j);}});}
+    if(seen.has(seed))continue;const comp=[],q=[seed];seen.add(seed);
+    while(q.length){const i=q.shift();comp.push(i);near[i].forEach(j=>{if(!seen.has(j)){seen.add(j);q.push(j);}});}
+    let root=seed;const ext=comp.filter(i=>feyInc(it,i).length===1);if(ext.length){
+      const ys=ext.map(i=>old[i].y),vertical=Math.max(...ys)-Math.min(...ys)>.3;
+      root=ext.reduce((a,b)=>vertical?(old[a].y>old[b].y?a:b):(old[a].x<old[b].x?a:b));
     }
-    const levels={};comp.forEach(i=>{const d=dist.get(i)||0;(levels[d]||(levels[d]=[])).push(i);});
-    const widest=Math.max(...Object.values(levels).map(a=>a.length));Object.keys(levels).forEach(ds=>{const arr=levels[ds].sort((a,b)=>it.vertices[a].x-it.vertices[b].x),d=+ds;arr.forEach((i,k)=>{it.vertices[i].x=feyRd(ox+(k-(arr.length-1)/2)*1.4);it.vertices[i].y=feyRd(-d*1.55);});});ox+=Math.max(2.4,widest*1.4+1.2);
+    const placed=new Set([root]),pos=new Map([[root,{x:0,y:0}]]),qq=[root];
+    while(qq.length){
+      const i=qq.shift(),kids=near[i].filter(j=>!placed.has(j)).sort((a,b)=>old[a].x-old[b].x);let dirs;
+      if(kids.length===1)dirs=[old[kids[0]].x<old[i].x?-3:-1];
+      else if(kids.length===2)dirs=[-3,-1];else if(kids.length===3)dirs=[-3,-2,-1];else dirs=kids.map((_,k)=>-3+k);
+      kids.forEach((j,k)=>{placed.add(j);qq.push(j);const a=dirs[k]*FEY_ANGLE,p=pos.get(i);pos.set(j,feySnapEnd(p,{x:p.x+Math.cos(a),y:p.y+Math.sin(a)},true));});
+    }
+    let x0=Math.min(...comp.map(i=>(pos.get(i)||{x:0}).x)),x1=Math.max(...comp.map(i=>(pos.get(i)||{x:0}).x)),y1=Math.max(...comp.map(i=>(pos.get(i)||{y:0}).y));
+    comp.forEach(i=>{const p=pos.get(i)||{x:0,y:0};it.vertices[i].x=feyRd(p.x-x0+ox);it.vertices[i].y=feyRd(p.y-y1);});ox+=Math.max(2.4,x1-x0+FEY_LEN);
   }
+  const wants=new Map(),want=(i,p)=>{if(!feyInc(it,i).every(x=>x.edge.pa!=null))return;const a=wants.get(i)||[];a.push(p);wants.set(i,a);};
+  parallelLane.forEach((lane,e)=>{const A=it.vertices[e.pa],B=it.vertices[e.pb];if(!A||!B)return;const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1,nx=-dy/L,ny=dx/L,off=FEY_SIDE*lane;want(e.a,{x:A.x+nx*off,y:A.y+ny*off});want(e.b,{x:B.x+nx*off,y:B.y+ny*off});e.lane=feyRd(lane);});
+  wants.forEach((a,i)=>{it.vertices[i].x=feyRd(a.reduce((s,p)=>s+p.x,0)/a.length);it.vertices[i].y=feyRd(a.reduce((s,p)=>s+p.y,0)/a.length);});
 }
 
 /* ================= SVG, PNG and TikZ-Feynman export ================= */
@@ -562,14 +650,16 @@ async function feyExportFile(it,el,format){
 }
 const feyTexNum=n=>{const v=Math.round(n*100)/100;return(Object.is(v,-0)?0:v).toString();};
 function feyTikzStyle(e){const p=feyP(e.p);if(p.kind==='fermion')return e.rev?'anti fermion':'fermion';if(e.p==='W')return e.rev?'anti charged boson':'charged boson';if(p.kind==='photon')return'photon';if(p.kind==='gluon')return'gluon';if(p.kind==='scalar')return'scalar';return'boson';}
+function feyTikzJoinStyle(j){const p=feyP(j.p);if(p.kind==='fermion')return'plain';if(p.kind==='photon')return'photon';if(p.kind==='gluon')return'gluon';if(p.kind==='scalar')return'scalar';return'boson';}
 function feyTikzLatex(it){
   const valid=feyValidation(it);if(!valid.ok)throw new Error(valid.bad||valid.incomplete+' incomplete interaction'+(valid.incomplete===1?'':'s'));
-  const box=feyBox(it),degree=it.vertices.map((v,i)=>feyInc(it,i).length),lines=['\\begin{tikzpicture}','  \\begin{feynman}'];
+  const box=feyBox(it),degree=it.vertices.map((v,i)=>feyInc(it,i).length),joins=feyParallelJoins(it),joined=new Set(joins.flatMap(j=>[j.va,j.vb])),lines=['\\begin{tikzpicture}','  \\begin{feynman}'];
   if(it.axes!==0)lines.push('    \\draw[->, thin] (0.18,0.18) -- (1.08,0.18) node[right] {$x$};','    \\draw[->, thin] (0.18,0.18) -- (0.18,1.08) node[above] {$t$};');
-  it.vertices.forEach((v,i)=>{let lab='';if(degree[i]===1&&(it.labels||'external')!=='hidden'){const e=feyInc(it,i)[0].edge;lab=' {\\('+feyTex(e.p,!!e.anti)+'\\)}';}lines.push('    \\vertex (v'+i+') at ('+feyTexNum(v.x-box.x)+'cm,'+feyTexNum(box.y+box.h-v.y)+'cm)'+lab+';');});
+  it.vertices.forEach((v,i)=>{let lab='';if(degree[i]===1&&!joined.has(i)&&(it.labels||'external')!=='hidden'){const e=feyInc(it,i)[0].edge;lab=' {\\('+feyTex(e.p,!!e.anti)+'\\)}';}lines.push('    \\vertex (v'+i+') at ('+feyTexNum(v.x-box.x)+'cm,'+feyTexNum(box.y+box.h-v.y)+'cm)'+lab+';');});
   lines.push('    \\diagram* {');it.edges.forEach(e=>{const opts=[feyTikzStyle(e)],p=feyP(e.p);if(e.a===e.b)opts.push('out=40','in=140','looseness=5');else if(e.bend>0)opts.push('bend left='+Math.round(Math.abs(e.bend)*100));else if(e.bend<0)opts.push('bend right='+Math.round(Math.abs(e.bend)*100));
     const da=degree[e.a],db=degree[e.b],labels=it.labels||'external';if(labels==='all'||(labels!=='hidden'&&da>1&&db>1&&p.kind!=='fermion'))opts.push('edge label=\\('+feyTex(e.p,!!e.anti)+'\\)');if(e.mom)opts.push((e.momSide===-1?"momentum'":"momentum")+'=\\('+e.mom+'\\)');lines.push('      (v'+e.a+') -- ['+opts.join(', ')+'] (v'+e.b+'),');});
-  lines.push('    };','  \\end{feynman}','\\end{tikzpicture}');return lines.join('\n');
+  lines.push('    };');joins.forEach(j=>{lines.push('    \\draw ['+feyTikzJoinStyle(j)+'] (v'+j.va+') -- ('+feyTexNum(j.c.x-box.x)+'cm,'+feyTexNum(box.y+box.h-j.c.y)+'cm) -- (v'+j.vb+');');});
+  lines.push('  \\end{feynman}','\\end{tikzpicture}');return lines.join('\n');
 }
 async function feyCopyLatex(it,el){try{const s=feyTikzLatex(it);if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('Clipboard unavailable');await navigator.clipboard.writeText(s);SND.tick();const info=el.querySelector('.feyinfo');if(info)info.innerHTML='<span class="fok">TikZ-Feynman copied</span>';}catch(err){feyNo(el,'copy refused · '+((err&&err.message)||err));}}
 let FEY_EXPORT=null;
@@ -580,6 +670,15 @@ window.addEventListener('pointerdown',e=>{if(FEY_EXPORT&&!e.target.closest('#fey
 
 function feyProps(b,it,el,page){openProps(b,{title:'Feynman diagram',rows:[{t:'btn',label:'',text:()=> 'Axes: '+(it.axes===0?'hidden':'time ↑ · space →'),act(){it.axes=it.axes===0?1:0;}},{t:'btn',label:'',text:()=>{const v=it.labels==null?'external':it.labels;return'Particle labels: '+v;},act(){const a=['external','all','hidden'],v=it.labels==null?'external':it.labels;it.labels=a[(a.indexOf(v)+1)%a.length];}},{t:'btn',label:'',text:()=> 'Interaction dots: '+(it.dots===0?'hidden':'shown'),act(){it.dots=it.dots===0?1:0;}}],onchange(){feyRepaint(el,it);},onsave(){queueSave(page.id);},onreset(){it.axes=1;it.labels='external';it.dots=1;feyRepaint(el,it);}});}
 function feyMove(el,it,on){if(on)PLOT_MOVE.add(it.id);else PLOT_MOVE.delete(it.id);el.classList.toggle('mmove',!!on);select(it.id);SND.pop();}
+function feyResizeTo(el,it,fs){it.fs=clamp(fs,9,140);el.style.setProperty('--fs',it.fs);wakeRopes();}
+function feyResizeWire(el,it,page){
+  const h=el.querySelector('.rs');if(!h)return;h.addEventListener('pointerdown',e=>{
+    if(e.button!==0)return;e.stopPropagation();e.preventDefault();const pid=e.pointerId,x0=e.clientX,y0=e.clientY,fs0=it.fs||FEY_FS,r0=el.getBoundingClientRect(),w0=Math.max(1,r0.width),h0=Math.max(1,r0.height);try{h.setPointerCapture(pid);}catch(err){}
+    const move=ev=>{if(ev.pointerId!==pid)return;const dx=(ev.clientX-x0)/w0,dy=(ev.clientY-y0)/h0,d=Math.abs(dx)>=Math.abs(dy)?dx:dy;feyResizeTo(el,it,fs0*Math.max(.1,1+d));};
+    const up=ev=>{if(ev.pointerId!==pid)return;try{if(h.hasPointerCapture(pid))h.releasePointerCapture(pid);}catch(err){}window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);queueSave(page.id);SND.plop();};
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
+  });
+}
 
 /* ================= the item ================= */
 defineItem('feynman',{
@@ -594,9 +693,9 @@ defineItem('feynman',{
     mk('✥','Move the widget about the page',()=>feyMove(el,it,!PLOT_MOVE.has(it.id)));
   },
   wire(el,it,page){
-    if(PLOT_MOVE.has(it.id))el.classList.add('mmove');feyRailWire(el,it,page);feyRailSync(el);const fig=el.querySelector('.fey'),svg=el.querySelector('.feysvg');el._feyHov=null;el._feyDrag=false;
+    if(PLOT_MOVE.has(it.id))el.classList.add('mmove');feyRailWire(el,it,page);feyRailSync(el);feyResizeWire(el,it,page);const fig=el.querySelector('.fey'),svg=el.querySelector('.feysvg');el._feyHov=null;el._feyDrag=false;el._feyAlt=false;
     fig.addEventListener('pointerdown',e=>{if(e.button!==0||!e.target.closest('.feysvg')||!el.classList.contains('sel')||PLOT_MOVE.has(it.id))return;e.stopPropagation();e.preventDefault();closeQuickMenu();closeStandardModel();feyGesture(e,svg,el,it,page);});
-    fig.addEventListener('pointermove',e=>{if(e.pointerType==='touch'||el._feyDrag||!el.classList.contains('sel')||PLOT_MOVE.has(it.id)||!e.target.closest('.feysvg'))return;el._feyHov=feyPt(svg,e);feyHoverSync(el,it);});
+    fig.addEventListener('pointermove',e=>{if(e.pointerType==='touch'||el._feyDrag||!el.classList.contains('sel')||PLOT_MOVE.has(it.id)||!e.target.closest('.feysvg'))return;el._feyHov=feyPt(svg,e);el._feyAlt=!!e.altKey;feyHoverSync(el,it);});
     fig.addEventListener('pointerleave',()=>{el._feyHov=null;if(!el._feyDrag)feyRepaint(el,it);});
   },
   forget(it){FEY_SEL.delete(it.id);PLOT_MOVE.delete(it.id);if(FEY_MENU&&FEY_MENU.it===it)feyMenuClose();if(FEY_EXPORT&&FEY_EXPORT.it===it)feyExportClose();if(FEY_LIBRARY&&FEY_LIBRARY.it===it)feyLibraryClose();},
@@ -614,6 +713,8 @@ defineItem('feynman',{
 .feysvg .fsel{fill:color-mix(in srgb,var(--accent2) 14%,transparent);stroke:var(--accent2);stroke-width:3;stroke-dasharray:8 6}
 .feysvg .fghost .fplan .fe{stroke:var(--accent2);stroke-dasharray:13 9}.feysvg .fghost .fplan .fa,.feysvg .fghost .fplan .fpreviewv{fill:var(--accent2)}.feysvg .fghost .fplan text{fill:var(--accent2)}
 .feysvg .fghost .fplan.bad .fe{stroke:#e03c28}.feysvg .fghost .fplan.bad .fa,.feysvg .fghost .fplan.bad .fpreviewv{fill:#e03c28}.feysvg .fghost .fplan.bad text{fill:#e03c28}
+.feysvg .fghost .fsnap{fill:none;stroke:var(--accent2);stroke-width:2;stroke-dasharray:5 7;opacity:.44}.feysvg .fghost .fsnapt{font-family:var(--mono);font-size:22px;fill:var(--accent2);stroke:var(--paper);stroke-width:7;paint-order:stroke;text-anchor:middle;dominant-baseline:central}
+.feysvg .fghost .fsideguide{fill:none;stroke:var(--accent2);stroke-width:2.5;stroke-dasharray:4 5;opacity:.52}
 .feysvg .fgone{fill:none;stroke:#e03c28;stroke-width:22;stroke-linecap:round;opacity:.38}.feysvg .fgonev{fill:rgba(224,60,40,.13);stroke:#e03c28;stroke-width:4;stroke-dasharray:9 7}
 .feysvg .flasso{fill:color-mix(in srgb,var(--accent2) 7%,transparent);stroke:var(--accent2);stroke-width:3;stroke-dasharray:9 7}
 .feyinfo{font-family:var(--mono);font-size:.62em;letter-spacing:.055em;color:var(--soft);padding:.32em 0 0 .2em;min-height:1.1em;white-space:nowrap;cursor:move}.feyinfo .dim{opacity:.58}.feyinfo .fwait{color:var(--accent2)}.feyinfo .fno{color:#e03c28}.feyinfo .fok{color:var(--accent)}
@@ -621,6 +722,7 @@ defineItem('feynman',{
 .item.sel[data-type="feynman"] .feysvg{cursor:crosshair}.item.sel[data-type="feynman"] .feysvg.nogo{cursor:not-allowed}.item.mmove[data-type="feynman"] .feysvg{cursor:move}
 .feyrail{position:absolute;right:100%;top:0;margin-right:calc(var(--scale)*8px);display:none;flex-direction:column;gap:3px;padding:4px;border-radius:11px;z-index:21}.item.sel .feyrail{display:flex}
 .feyrail button{width:calc(var(--scale)*28px);height:calc(var(--scale)*28px);border-radius:7px;color:rgba(233,234,239,.8);background:rgba(255,255,255,.04);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);font-family:var(--mono);font-size:calc(var(--scale)*12px);display:grid;place-items:center;transition:background .12s,color .12s,transform .12s}.feyrail button:hover{background:rgba(255,255,255,.11);color:#fff}.feyrail button:active{transform:scale(.94)}.feyrail button.on{background:var(--accent);color:#fff;box-shadow:none}.feyrail button:disabled{opacity:.28}.feyrail button svg{width:62%;height:62%;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.feyrail .feypart b{font-size:calc(var(--scale)*12px)}
+.smcomposite{display:grid;grid-template-columns:54px repeat(2,80px);gap:4px;align-items:stretch;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.07)}.smcomposite>em{display:flex;align-items:center;justify-content:flex-end;padding-right:7px;color:rgba(233,234,239,.42);font-size:8px;font-style:normal;letter-spacing:.08em;text-transform:uppercase}.smcomposite .smc{min-height:42px}
 .smpick{position:fixed;z-index:84;display:none;width:470px;padding:11px;border-radius:16px;color:#e9eaef;font-family:var(--mono);will-change:transform,filter,opacity}.smpick.open{display:block}.smhead{display:grid;grid-template-columns:54px repeat(3,1fr) 1.25fr;gap:4px;padding:0 2px 5px;color:rgba(233,234,239,.48);font-size:8px;letter-spacing:.1em;text-transform:uppercase;text-align:center}.smgrid{display:grid;grid-template-columns:54px repeat(3,1fr) 1.25fr;gap:4px}.smgrid>em{display:flex;align-items:center;justify-content:flex-end;padding-right:7px;color:rgba(233,234,239,.42);font-size:8px;font-style:normal;letter-spacing:.08em;text-transform:uppercase}.smbosons{display:grid;grid-template-columns:1fr 1fr;gap:4px}.smbosons.last{grid-template-columns:1fr}.smc{--pc:#999;position:relative;min-height:51px;border-radius:10px;background:color-mix(in srgb,var(--pc) 17%,rgba(255,255,255,.035));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pc) 32%,transparent);color:#f3f4f7;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:transform .12s,background .12s,box-shadow .12s}.smc:hover,.smc.hot{transform:translateY(-1px);background:color-mix(in srgb,var(--pc) 27%,rgba(255,255,255,.04));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pc) 60%,transparent),0 5px 14px rgba(0,0,0,.2)}.smc b{font-size:16px;line-height:1;color:color-mix(in srgb,var(--pc) 76%,white)}.smc span{font-size:7.5px;margin-top:4px;opacity:.56;text-transform:capitalize}.smc i{position:absolute;left:6px;top:5px;font-size:7px;font-style:normal;opacity:.35}.smfacts{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;min-height:46px;margin-top:7px;padding:4px 8px 0}.smfacts>b{font-size:25px;color:color-mix(in srgb,var(--pc) 76%,white)}.smfacts strong{display:block;font-size:11px;letter-spacing:.04em}.smfacts small{display:block;margin-top:3px;font-size:8.5px;opacity:.52;letter-spacing:.05em}
 .feymenu{position:fixed;z-index:83;display:none;gap:3px;padding:4px;border-radius:11px;will-change:transform,filter,opacity}.feymenu.open{display:flex}.feymenu button{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:42px;padding:5px 6px 4px;border-radius:8px;color:rgba(233,234,239,.82);background:rgba(255,255,255,.04);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);font-family:var(--mono);font-size:14px;transition:background .12s,color .12s,transform .12s}.feymenu button span{font-size:8.5px;letter-spacing:.07em;opacity:.75}.feymenu button:hover{background:rgba(255,255,255,.11);color:#fff}.feymenu button:active{transform:scale(.96)}.feymenu button.on{background:var(--accent);color:#fff;box-shadow:none}
 .feymomentum{position:fixed;z-index:84;display:none;width:230px;padding:10px;border-radius:13px;color:#e9eaef;font-family:var(--mono);will-change:transform,filter,opacity}.feymomentum.open{display:block}.feymomentum label{display:block;font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:rgba(233,234,239,.55)}.feymomentum input{display:block;width:100%;box-sizing:border-box;margin-top:5px;padding:7px 9px;border:0;outline:0;border-radius:8px;color:#f1f2f5;background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);font-family:var(--mono)}.feymomentum input:focus{box-shadow:inset 0 0 0 1.5px var(--accent)}.feymomentum>div{display:flex;gap:4px;justify-content:flex-end;margin-top:7px}.feymomentum button{padding:5px 7px;border-radius:7px;color:rgba(233,234,239,.76);background:rgba(255,255,255,.05);font-size:8.5px}.feymomentum button:hover{background:var(--accent);color:#fff}
