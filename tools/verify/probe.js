@@ -1019,6 +1019,31 @@
       var ck = byType('check');
       if (ck) ok('check: two tasks', ck.querySelectorAll('.ckrow').length === 2,
         'rows=' + ck.querySelectorAll('.ckrow').length);
+      var pic = byType('image'), picImg = pic && pic.querySelector('img');
+      ok('image: the browser cannot peel the pixels into a native drag shadow',
+        !!picImg && picImg.draggable === false &&
+        picImg.dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true })) === false);
+    });
+
+    /* ---- clipboard pictures land in the part of the canvas being viewed ---- */
+    await stage('image paste', async function () {
+      var page = sheet(), keep = page.items.slice();
+      page.items = []; await render();
+      var cv = document.createElement('canvas'); cv.width = 160; cv.height = 90;
+      var cx = cv.getContext('2d'); cx.fillStyle = '#c33'; cx.fillRect(0, 0, 160, 90);
+      var blob = await new Promise(function (res) { cv.toBlob(res, 'image/png'); });
+      var at = viewCentre(page);
+      await fileToImage(new File([blob], 'clipboard.png', { type: 'image/png' }), at);
+      var pasted = page.items[0];
+      ok('image paste: it uses the current view position',
+        pasted && Math.abs(pasted.x - at.x) < .001 && Math.abs(pasted.y - at.y) < .001,
+        pasted && pasted.x + ',' + pasted.y + ' wanted ' + at.x + ',' + at.y);
+      ok('image paste: a landscape screenshot has a one-page-sized default',
+        pasted && Math.abs(pasted.w - imageDefaultW(160 / 90)) < .001 && pasted.w < 20,
+        pasted && pasted.w);
+      ok('image paste: its aspect ratio is kept for sensible portrait sizing',
+        pasted && Math.abs(pasted.ar - 160 / 90) < .001, pasted && pasted.ar);
+      page.items = keep; await render();
     });
 
     /* ---- a writing box is as wide as its writing ----
