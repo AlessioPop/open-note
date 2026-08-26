@@ -180,14 +180,19 @@ function mpadMatch(word, kind){
 const MPAD = { box:null, list:[], i:0, at:0, word:'', of:'', s:'', off:0, reg:null,
                on:false, mute:false, sig:'' };
 
+const mpadPlain = box => !!(box && box.matches && box.matches('textarea[data-mathpad]'));
 function mpadBox(){
-  const a = document.activeElement, sel = mathBoxSel();
+  const a = document.activeElement;
+  if(mpadPlain(a)) return a;
+  const sel = mathBoxSel();
   if(!a || !sel || !a.isContentEditable || !a.closest) return null;
   return a.closest(sel);
 }
+function mpadText(box){ return mpadPlain(box) ? box.value : mathFlat(box).s; }
 /* where the caret is, in the flattened writing — and where the other end of a
    selection is, when there is one */
 function mpadCaret(box){
+  if(mpadPlain(box)) return { a:box.selectionStart, b:box.selectionEnd };
   const s = getSelection();
   if(!s.rangeCount) return null;
   const r = s.getRangeAt(0);
@@ -199,6 +204,14 @@ function mpadCaret(box){
    execCommand keeps the browser's own undo — and fires the `input` the item is
    listening on to save itself — so it is tried before the hands-on path. */
 function mpadPut(box, from, to, text, caret){
+  if(mpadPlain(box)){
+    box.focus({ preventScroll:true });
+    box.setRangeText(text, from, to, 'end');
+    const at = from + caret;
+    box.setSelectionRange(at, at);
+    box.dispatchEvent(new Event('input', { bubbles:true }));
+    return;
+  }
   const sel = getSelection(), r = document.createRange();
   const A = mathFlatPos(box, from), B = mathFlatPos(box, to);
   try{ r.setStart(A[0], A[1]); r.setEnd(B[0], B[1]); }catch(e){ return; }
@@ -215,6 +228,10 @@ function mpadPut(box, from, to, text, caret){
   mpadTo(box, from + caret);
 }
 function mpadTo(box, off){
+  if(mpadPlain(box)){
+    box.focus({ preventScroll:true });
+    box.setSelectionRange(off, off); return;
+  }
   const P = mathFlatPos(box, off), r = document.createRange(), sel = getSelection();
   try{ r.setStart(P[0], P[1]); }catch(e){ return; }
   r.collapse(true);
@@ -223,6 +240,10 @@ function mpadTo(box, off){
 /* …and the same for a run of it, which is what a re-indented block needs so
    that the next ⇥ still has it picked out */
 function mpadPick(box, a, b){
+  if(mpadPlain(box)){
+    box.focus({ preventScroll:true });
+    box.setSelectionRange(a, b); return;
+  }
   const A = mathFlatPos(box, a), B = mathFlatPos(box, b), r = document.createRange(), sel = getSelection();
   try{ r.setStart(A[0], A[1]); r.setEnd(B[0], B[1]); }catch(e){ return mpadTo(box, b); }
   sel.removeAllRanges(); sel.addRange(r);
@@ -324,10 +345,24 @@ function mpadRows(){
    centred on the *box*, not on the caret. Sideways it therefore stands still
    while the line is being typed; a panel sliding a letter to the right on every
    keystroke is unreadable, which is the whole thing it is there to be. */
+function mpadTextRect(box){
+  const cs = getComputedStyle(box), mirror = document.createElement('div'), mark = document.createElement('span');
+  mirror.style.cssText = 'position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;white-space:pre-wrap;overflow-wrap:break-word;box-sizing:border-box;';
+  for(const prop of ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing','lineHeight','paddingTop','paddingRight','paddingBottom','paddingLeft','textTransform','textIndent','wordSpacing','tabSize'])
+    mirror.style[prop] = cs[prop];
+  mirror.style.width = box.clientWidth + 'px';
+  mirror.textContent = box.value.slice(0, box.selectionStart);
+  mark.textContent = '\u200b'; mirror.appendChild(mark); document.body.appendChild(mirror);
+  const br = box.getBoundingClientRect(), lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.45;
+  const left = br.left + mark.offsetLeft - box.scrollLeft, top = br.top + mark.offsetTop - box.scrollTop;
+  mirror.remove();
+  return { left, right:left + 1, top, bottom:top + lh, width:1, height:lh };
+}
 function mpadPlace(){
   const el = mpadEl(), sel = getSelection();
-  if(!sel.rangeCount) return null;
-  let r = sel.getRangeAt(0).getBoundingClientRect();
+  if(!MPAD.box) return null;
+  let r = mpadPlain(MPAD.box) ? mpadTextRect(MPAD.box)
+    : sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
   const box = MPAD.box.getBoundingClientRect();
   if(!r || (!r.height && !r.top && !r.left)) r = box;
   const w = el.offsetWidth, h = el.offsetHeight;
@@ -353,14 +388,14 @@ function mpadSync(){
   if(!box || !document.contains(box)) return mpadHide();
   const c = mpadCaret(box);
   if(!c || c.a !== c.b) return mpadHide();
-  const flat = mathFlat(box);
-  if(tickInFence(flat.s, c.a)) return mpadHide();      // that is code, not a formula
-  const reg = mpadRegion(flat.s, c.a);
+  const source = mpadText(box);
+  if(tickInFence(source, c.a)) return mpadHide();      // that is code, not a formula
+  const reg = mpadRegion(source, c.a);
   if(!reg) return mpadHide();
   if(c.a !== MPAD.off || box !== MPAD.box) MPAD.mute = false;   // a moved caret is asking again
-  MPAD.box = box; MPAD.s = flat.s; MPAD.off = c.a; MPAD.reg = reg;
+  MPAD.box = box; MPAD.s = source; MPAD.off = c.a; MPAD.reg = reg;
 
-  const w = MPAD.mute ? null : mpadWord(flat.s, c.a);
+  const w = MPAD.mute ? null : mpadWord(source, c.a);
   const was = MPAD.at + ' ' + MPAD.word + ' ' + MPAD.of;
   MPAD.at = w ? w.at : -1; MPAD.word = w ? w.word : ''; MPAD.of = w ? w.of : '';
   MPAD.list = w ? mpadMatch(w.word, w.kind) : [];
@@ -368,7 +403,7 @@ function mpadSync(){
   MPAD.i = clamp(MPAD.i, 0, Math.max(0, MPAD.list.length - 1));
 
   const el = mpadEl();
-  mpadDraw(flat.s.slice(reg.o, reg.c), reg.disp);
+  mpadDraw(source.slice(reg.o, reg.c), reg.disp);
   mpadRows();
   if(!MPAD.on){
     MPAD.on = true;
@@ -447,7 +482,7 @@ document.addEventListener('beforeinput', e => {
   const c = mpadCaret(box);
   if(!c) return;
   e.preventDefault();
-  const s = mathFlat(box).s;
+  const s = mpadText(box);
   if(c.a !== c.b){                                   // a pair around what is picked
     const t = s.slice(c.a, c.b);
     mpadPut(box, c.a, c.b, e.data + t + e.data, t.length + 2);

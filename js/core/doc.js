@@ -41,6 +41,7 @@ async function openNote(id){
   lib.lastOpen = id; queueLib();
   await render();
   $('#shelf').classList.remove('open');
+  if(typeof navCanvasOpened === 'function') navCanvasOpened(id);
   SND.flip();
 }
 

@@ -33,7 +33,7 @@ document.addEventListener('keydown', e => {
   const c = mpadCaret(box);
   if(!c) return;
   const a = Math.min(c.a, c.b), b = Math.max(c.a, c.b);
-  const s = mathFlat(box).s;
+  const s = mpadText(box);
   const f = tkFence(s, a, b);
   if(!f) return;
   const ed = f.pen.key(s, a, b, e, f.lang);

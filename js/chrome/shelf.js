@@ -7,7 +7,7 @@ async function openShelf(){
   $('#drawer').classList.remove('open');
   $('#vidModal').classList.remove('open');
   const sh = $('#shelf');
-  sh.classList.toggle('noBook', !curNoteId);
+  sh.classList.toggle('noBook', !curNoteId && !(typeof navMdId !== 'undefined' && navMdId));
   sh.classList.add('open');                      // visible before building, so fit() can measure
   await buildShelf();
 }
@@ -42,14 +42,18 @@ async function buildShelf(){
     nameEl.addEventListener('pointerdown', e => e.stopPropagation());
     nameEl.addEventListener('click', e => e.stopPropagation());
     nameEl.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); nameEl.blur(); } });
-    nameEl.addEventListener('blur', () => { b.name = nameEl.textContent.trim() || 'Untitled'; nameEl.textContent = b.name; queueLib(); });
+    nameEl.addEventListener('blur', () => {
+      b.name = nameEl.textContent.trim() || 'Untitled'; nameEl.textContent = b.name; queueLib();
+      if(typeof navRender === 'function') navRender();
+    });
     const del = card.querySelector('.del');
     del.addEventListener('pointerdown', e => e.stopPropagation());
     del.addEventListener('click', async e => {
       e.stopPropagation();
       if(!confirm('Delete "' + (b.name || 'this note') + '" and everything on it? This cannot be undone.')) return;
       await deleteNote(b.id);
-      $('#shelf').classList.toggle('noBook', !curNoteId);
+      $('#shelf').classList.toggle('noBook', !curNoteId && !(typeof navMdId !== 'undefined' && navMdId));
+      if(typeof navRender === 'function') navRender();
       buildShelf();
     });
     grid.appendChild(card);
@@ -66,7 +70,9 @@ async function buildShelf(){
 
 $('#shelfBtn').addEventListener('click', openShelf);
 document.querySelector('.brand').addEventListener('click', openShelf);
-$('#shelfClose').addEventListener('click', () => { if(curNoteId) $('#shelf').classList.remove('open'); });
+$('#shelfClose').addEventListener('click', () => {
+  if(curNoteId || typeof navMdId !== 'undefined' && navMdId) $('#shelf').classList.remove('open');
+});
 
 /* ---- how it looks ---- */
 addCSS('shelf', `

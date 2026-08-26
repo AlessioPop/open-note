@@ -157,12 +157,33 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <body data-theme="graph">
 <svg width="0" height="0" style="position:absolute"><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter></svg>
 
+<aside class="navigator" id="navigator" aria-label="File explorer">
+  <div class="nav-head">
+    <div>
+      <div class="nav-kicker">Library</div>
+      <div class="nav-title">Open Note</div>
+    </div>
+    <button class="nav-icon-btn" id="navClose" title="Hide file explorer" aria-label="Hide file explorer">✕</button>
+  </div>
+  <div class="nav-namebox" id="navNameBox" hidden>
+    <label id="navNameLabel" for="navNameInput">Name</label>
+    <input id="navNameInput" spellcheck="false" autocomplete="off">
+    <div><button id="navNameCancel">Cancel</button><button id="navNameSave">Create</button></div>
+  </div>
+  <label class="nav-search"><span aria-hidden="true">⌕</span><input id="navSeek" type="search" placeholder="Find a file" spellcheck="false" autocomplete="off"></label>
+  <div class="nav-tree" id="navTree" role="tree" aria-label="Folders and files"></div>
+  <div class="nav-foot"><span id="navCount">0 files</span></div>
+</aside>
+<button class="nav-scrim" id="navScrim" aria-label="Hide file explorer" tabindex="-1"></button>
+<div class="nav-menu" id="navMenu" role="menu" aria-label="File actions" hidden></div>
+
 <div class="app">
   <header class="bar">
     <span class="brand" title="Your notes">Open Note</span>
     <span class="save" id="saveTag">saved</span>
     <span class="sp"></span>
-    <button class="btn" id="shelfBtn" title="Your notes">☰ Notes</button>
+    <button class="btn" id="navBtn" title="Toggle file explorer (Ctrl+Shift+E)" aria-pressed="false">▤ Files</button>
+    <button class="btn" id="shelfBtn" title="Canvas note gallery">▦ Gallery</button>
     <button class="btn" id="layBtn" title="Layers — pick one to work on, the rest go faint (L)">▤ Layers</button>
     <button class="btn" id="setBtn">⚙ Menu</button>
   </header>
@@ -170,6 +191,52 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
   <div class="stage" id="stage">
     <div class="book" id="book"><div id="pageHost"></div></div>
   </div>
+
+  <section class="md-host" id="mdHost" aria-label="Markdown editor" hidden>
+    <header class="md-bar">
+      <div class="md-identity">
+        <span class="md-kind">Markdown</span>
+        <input id="mdName" aria-label="Markdown file name" spellcheck="false">
+      </div>
+      <span class="sp"></span>
+      <label class="md-theme" title="Appearance saved with this Markdown file">
+        <span>Theme</span>
+        <select id="mdTheme" aria-label="Markdown theme">
+          <option value="canvas">Canvas</option>
+          <option value="graph">Paper</option>
+          <option value="dark">Darkroom</option>
+          <option value="blue">Blueprint</option>
+          <option value="kraft">Kraft</option>
+        </select>
+      </label>
+      <div class="md-modes" role="group" aria-label="Markdown view">
+        <button id="mdWriteBtn" class="on" aria-pressed="true">Write</button>
+        <button id="mdPreviewBtn" aria-pressed="false">Preview</button>
+      </div>
+      <button class="md-download" id="mdDownload" title="Save a copy of this Markdown file">⇩ .md</button>
+    </header>
+    <div class="md-format" id="mdFormat" role="toolbar" aria-label="Markdown formatting">
+      <button data-md-act="heading" title="Heading">H</button>
+      <span class="md-format-rule"></span>
+      <button data-md-act="bold" title="Bold (Ctrl+B)" aria-label="Bold"><strong>B</strong></button>
+      <button data-md-act="italic" title="Italic (Ctrl+I)" aria-label="Italic"><em>I</em></button>
+      <button data-md-act="code" title="Inline code" aria-label="Inline code">&lt;/&gt;</button>
+      <button data-md-act="codeblock" title="Code block" aria-label="Code block">⌗</button>
+      <span class="md-format-rule"></span>
+      <button data-md-act="bullet" title="Bulleted list" aria-label="Bulleted list">•—</button>
+      <button data-md-act="task" title="Task list" aria-label="Task list">☐</button>
+      <button data-md-act="rule" title="Horizontal rule" aria-label="Horizontal rule">—</button>
+      <span class="md-format-rule"></span>
+      <button data-md-act="math" title="Inline equation ($…$)" aria-label="Inline equation">x²</button>
+      <button data-md-act="mathblock" title="Display equation ($$…$$)" aria-label="Display equation">∑</button>
+      <span class="md-format-hint">$ opens the equation helper</span>
+    </div>
+    <div class="md-paper">
+      <textarea id="mdSource" data-mathpad aria-label="Markdown source" placeholder="# Start writing…" spellcheck="true"></textarea>
+      <article class="md-preview" id="mdPreview"></article>
+    </div>
+    <footer class="md-status"><span id="mdWords">0 words</span><span>Markdown · saved locally</span></footer>
+  </section>
 
   <div class="tools-bar">
     <button class="btn" id="qaddBtn" title="Add to the sheet — Space, Shift+A or right-click">+ Add…</button>
@@ -192,9 +259,9 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 
 <div class="shelf" id="shelf">
   <div class="shelfHead">
-    <h2>Notes</h2>
-    <div class="sub">pick one up, or start something new</div>
-    <button class="btn" id="shelfClose" title="Back to the open note">✕ Back to the note</button>
+    <h2>Canvas gallery</h2>
+    <div class="sub">a visual overview of your endless sheets</div>
+    <button class="btn" id="shelfClose" title="Back to the open file">✕ Back to the file</button>
   </div>
   <div class="bkgrid" id="bkGrid"></div>
 </div>
@@ -299,6 +366,7 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <input type="file" id="cardVid" accept="video/*" hidden>
 <input type="file" id="cardObj" accept=".obj,.mtl,model/obj,image/*" multiple hidden>
 <input type="file" id="cardFile" hidden>
+<input type="file" id="navFileInput" multiple hidden>
 <div class="peek" id="peek"></div>
 <div class="scope" id="scope"></div>
 <div class="fview foldview" id="fold"></div>
@@ -411,6 +479,7 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <script src="js/chrome/markpad.js"></script>
 <script src="js/chrome/map.js"></script>
 <script src="js/chrome/shelf.js"></script>
+<script src="js/chrome/navigator.js"></script>
 <script src="js/chrome/print.js"></script>
 <script src="js/chrome/backup.js"></script>
 <script src="js/chrome/export.js"></script>

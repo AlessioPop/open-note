@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1805 assertions, driven in headless Firefox
+tools/verify/       the harness: 1862 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -171,11 +171,12 @@ right up until it loses the session.
 | `glass.js` | 69 | the glass material and the warp that every floating panel shares |
 | `palette.js` | 229 | the palette — shelves, labelled groups, tiles and search, drawn from the registry |
 | `props.js` | 328 | the properties popover — glass sliders, steppers, the sweep dial, a deed button and a row of colour swatches with a wheel; `openProps()` for any feature with measurements, and `placePanel()`, the above-then-beside-then-below rule every panel an item opens off its toolbar follows |
-| `mathpad.js` | 514 | writing maths: the `$` that pairs itself and opens out into a display block (and the `` ` `` that pairs itself by `lib/ticks.js`'s rules), the completion list built from the compiler's own tables, and the formula typeset under the caret as it is written. The rules are plain functions over (text, offset), so the harness can drive them without a caret |
+| `mathpad.js` | 549 | writing maths: the `$` that pairs itself and opens out into a display block (and the `` ` `` that pairs itself by `lib/ticks.js`'s rules), the completion list built from the compiler's own tables, and the formula typeset under the caret as it is written. It serves contenteditable canvas writing and plain Markdown textareas through one selection/text seam. The rules are plain functions over (text, offset), so the harness can drive them without a caret |
 | `tickpad.js` | 45 | typing inside a ```fence``` in any writing box: ⇥ and ⇧⇥, ⏎ keeping the indent, brackets and quotes closing themselves. None of the rules are here — they are the code cell's, reached through the registry's code pen |
-| `markpad.js` | 83 | what the keyboard does to the marks in a writing box. A list: ⏎ making the next bullet and ending the list on an empty one, ⇥ and ⇧⇥ moving one in and out. None of the rules are here either — they are `lib/marks.js`'s, and inside a fence they stand aside for `tickpad.js`. A key another handler has already taken is read off `defaultPrevented`, and an indent is written into the box by hand rather than through the editor's `insertText`, which is free to turn a tab it is handed into a space. Then ⌃B and ⌃I, which put the stars round what is picked out or take them off — the shortcut writes the mark rather than markup, so the browser's own bold never gets the key |
+| `markpad.js` | 91 | what the keyboard does to the marks in a writing box. A list: ⏎ making the next bullet and ending the list on an empty one, ⇥ and ⇧⇥ moving one in and out. None of the rules are here either — they are `lib/marks.js`'s, and inside a fence they stand aside for `tickpad.js`. A key another handler has already taken is read off `defaultPrevented`, and an indent is written into the box by hand rather than through the editor's `insertText`, which is free to turn a tab it is handed into a space. Then ⌃B and ⌃I, shared with Markdown through the same plain-text seam, which put the stars round what is picked out or take them off — the shortcut writes the mark rather than markup, so the browser's own bold never gets the key |
 | `map.js` | 174 | the map: the whole sheet, and where you are standing on it |
 | `shelf.js` | 100 | the shelf of notes |
+| `navigator.js` | 984 | the toggleable library tree: nested folders, contextual actions, drag-to-folder/root, Markdown authoring and preview, and imported-file readers. Markdown reuses the registered code pen and the shared maths/compiler keyboard instead of owning parallel renderers |
 | `print.js` | 32 | print / PDF |
 | `backup.js` | 80 | back up and restore |
 | `export.js` | 90 | the standalone `.html` |
@@ -726,7 +727,7 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1805 assertions**, and they are the real specification of this app. Among them:
+**1862 assertions**, and they are the real specification of this app. Among them:
 that all 78 script files load without throwing; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a

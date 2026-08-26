@@ -53,7 +53,8 @@ window.addEventListener('keydown', e => {
     /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
   if(editing){ if(e.key === 'Escape') document.activeElement.blur(); return; }
   if($('#shelf').classList.contains('open')){
-    if(e.key === 'Escape' && curNoteId) $('#shelf').classList.remove('open');
+    if(e.key === 'Escape' && (curNoteId || typeof navMdId !== 'undefined' && navMdId))
+      $('#shelf').classList.remove('open');
     return;
   }
   if(!index) return;

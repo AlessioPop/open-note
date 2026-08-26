@@ -81,7 +81,7 @@ document.addEventListener('keydown', e => {
   if(!box) return;
   const c = mpadCaret(box);
   if(!c) return;
-  const s = mathFlat(box).s;
+  const s = mpadText(box);
   const ed = markWrap(s, Math.min(c.a, c.b), Math.max(c.a, c.b), k === 'b' ? '**' : '*');
   if(!ed) return;
   e.preventDefault(); e.stopPropagation();

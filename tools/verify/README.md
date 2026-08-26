@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 1805 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 1862 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,7 +22,7 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 1805 assertions, and they should
+It prints a pass/fail count and every failure. 1862 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers

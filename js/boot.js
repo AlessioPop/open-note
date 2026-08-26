@@ -59,11 +59,21 @@ async function downloadBook(o){
   installItemCSS();                               // the features' own styles join the stylesheet
   lib = await kvGet(K_LIB);
   if(!lib){ lib = { lastOpen: null, books: [], retiredBooks: true }; await kvSet(K_LIB, lib); }
+  if(typeof navNormalizeLibrary === 'function' && navNormalizeLibrary()) await kvSet(K_LIB, lib);
   const d = await db();
   if(!d){ const t = $('#saveTag'); t.textContent = 'no browser storage — use Back up!'; t.classList.add('show'); }
   await retireBooks();
-  if(!lib.books.length) await openNote(await createNote('My note'));
+  const lastFile = lib.lastEntry && lib.lastEntry.kind === 'markdown' &&
+    lib.files && lib.files.some(f => f.id === lib.lastEntry.id && f.kind === 'markdown');
+  if(!lib.books.length && !(lib.files || []).length) await openNote(await createNote('My note'));
+  else if(lastFile) await navOpenMarkdown(lib.lastEntry.id, false);
   /* straight back to whatever was open — a note app opens the note, not the shelf */
   else if(lib.lastOpen && lib.books.some(b => b.id === lib.lastOpen)) await openNote(lib.lastOpen);
-  else await openShelf();
+  else if(lib.books.length) await openNote(lib.books[0].id);
+  else {
+    const md = (lib.files || []).find(f => f.kind === 'markdown');
+    if(md) await navOpenMarkdown(md.id, false);
+    else await openNote(await createNote('My note'));
+  }
+  if(typeof navBoot === 'function') navBoot();
 })();
