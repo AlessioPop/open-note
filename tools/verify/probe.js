@@ -144,6 +144,67 @@
       ok('grain: and off again', document.body.classList.contains('nograin'));
     });
 
+    /* ---- the library tree and its Markdown document ---- */
+    await stage('library and Markdown', async function () {
+      var canvasId = curNoteId, stamp = 'verify-nav-' + Date.now();
+      var orphanBook = { id:stamp + '-book', name:'Recovered canvas', parentId:'missing-folder' };
+      var orphanFile = { id:stamp + '-file', kind:'markdown', name:'Recovered.md',
+        parentId:'missing-folder', content:'' };
+      var cycleA = { id:stamp + '-a', name:'Cycle A', parentId:stamp + '-b' };
+      var cycleB = { id:stamp + '-b', name:'Cycle B', parentId:stamp + '-a' };
+      lib.books.push(orphanBook); lib.files.push(orphanFile); lib.notebooks.push(cycleA, cycleB);
+      ok('library: normalization reports repaired data', navNormalizeLibrary() === true);
+      ok('library: orphaned files and canvases come back to root',
+        orphanBook.parentId === null && orphanFile.parentId === null,
+        orphanBook.parentId + ' / ' + orphanFile.parentId);
+      ok('library: a folder cycle is broken without hiding either folder',
+        !cycleA.parentId || !cycleB.parentId, cycleA.parentId + ' / ' + cycleB.parentId);
+      lib.books = lib.books.filter(function (e) { return e.id !== orphanBook.id; });
+      lib.files = lib.files.filter(function (e) { return e.id !== orphanFile.id; });
+      lib.notebooks = lib.notebooks.filter(function (e) { return e.id !== cycleA.id && e.id !== cycleB.id; });
+
+      var safe = navMarkdownHTML('# Heading\n\n- [ ] task\n\n[site](https://example.com) [bad](javascript:alert(1))');
+      ok('Markdown: headings, tasks and safe links compile',
+        /<h1>Heading<\/h1>/.test(safe) && /class="tasks"/.test(safe) && /href="https:\/\/example.com"/.test(safe));
+      ok('Markdown: unsafe links never become anchors',
+        safe.indexOf('javascript:') < 0 && (safe.match(/<a /g) || []).length === 1, safe);
+
+      var md = { id:stamp + '-md', kind:'markdown', name:'Audit.md', parentId:null, theme:'dark',
+        content:'# Audit\n\n- [ ] verify theme\n\n$$x^2$$\n\n```js\nconst n = 1;\n```',
+        created:Date.now(), updated:Date.now() };
+      lib.files.push(md); await navOpenMarkdown(md.id, false);
+      ok('Markdown: a library file opens as a document',
+        navMdId === md.id && document.body.classList.contains('md-open') && !Q('#mdHost').hidden);
+      ok('Markdown: its saved theme is applied and selected',
+        document.body.dataset.theme === 'dark' && Q('#mdTheme').value === 'dark',
+        document.body.dataset.theme + ' / ' + Q('#mdTheme').value);
+      ok('Markdown: opening restores the plain source', Q('#mdSource').value === md.content);
+      navSetMarkdownMode('preview'); await sleep(80);
+      ok('Markdown: preview shares marks, maths and the registered code pen',
+        !!Q('#mdPreview h1') && !!Q('#mdPreview .tasks input') && !!Q('#mdPreview math') && !!Q('#mdPreview .cbx.cfence'));
+      var task = Q('#mdPreview [data-md-task]'); task.checked = true;
+      task.dispatchEvent(new Event('change', { bubbles:true }));
+      ok('Markdown: preview tasks rewrite the stored source', /- \[x\] verify theme/.test(md.content), md.content);
+      navSetMarkdownMode('write');
+      Q('#mdSource').value = 'format me'; Q('#mdSource').setSelectionRange(0, 6); navMdAction('bold');
+      ok('Markdown: formatting tools write Markdown and preserve the selection',
+        Q('#mdSource').value === '**format** me' && Q('#mdSource').selectionStart === 2 &&
+        Q('#mdSource').selectionEnd === 8, Q('#mdSource').value);
+      Q('#mdTheme').value = 'blue'; Q('#mdTheme').dispatchEvent(new Event('change', { bubbles:true }));
+      ok('Markdown: changing theme updates both file and document',
+        md.theme === 'blue' && document.body.dataset.theme === 'blue');
+      navSetMarkdownTheme('not-a-theme');
+      ok('Markdown: an invalid restored theme safely follows the canvas',
+        md.theme === 'canvas' && document.body.dataset.theme === index.theme,
+        md.theme + ' / ' + document.body.dataset.theme);
+
+      await openNote(canvasId);
+      lib.files = lib.files.filter(function (e) { return e.id !== md.id; });
+      await flush();
+      ok('Markdown: returning to canvas restores its theme and closes the document',
+        !navMdId && !document.body.classList.contains('md-open') && document.body.dataset.theme === index.theme);
+    });
+
     /* ---- every add-menu kind actually adds what it says ---- */
     await stage('addItem', async function () {
       var page = sheet();
@@ -4280,7 +4341,8 @@
       ok('axes: a step below a ten-thousandth puts the whole axis in powers of ten', axLab(0.000025, 0.000005).t === '2.5×10^-5' && axLab(0.00025, 0.00005).t === '2.5×10^-4' && axLab(0.0002, 0.00005).t === '2×10^-4',
          [axLab(0.000025, 0.000005).t, axLab(0.00025, 0.00005).t, axLab(0.0002, 0.00005).t].join(' '));
       ok('axes: …and a plain step keeps a plain axis', axLab(0.00025, 0.00025).t === '0.00025' && axLab(15000, 5000).t === '15000');
-      ok('axes: a number is 19 a glyph', mnumW('1000') === 76 && axLab(1000, 1000).w === 76);
+      var labelW = function (text) { return String(text).length * 19; };
+      ok('axes: a number is 19 a glyph', labelW('1000') === 76 && axLab(1000, 1000).w === 76);
       g = set({ xmin: 0, xmax: 2e7, ymin: 0, ymax: 1.36e7 });
       var sup = QA('#pageHost .item[data-type="plot"] .mnum tspan');
       ok('axes: a window in the millions writes its numbers as powers of ten', sup.length > 2, sup.length);
@@ -4291,7 +4353,7 @@
       var tooClose = false;
       for (var i = 1; i < xs.length; i++) {
         var a = xs[i - 1], b = xs[i];
-        if (Math.abs(+b.getAttribute('x') - +a.getAttribute('x')) < (mnumW(a.textContent) + mnumW(b.textContent)) / 2) tooClose = true;
+        if (Math.abs(+b.getAttribute('x') - +a.getAttribute('x')) < (labelW(a.textContent) + labelW(b.textContent)) / 2) tooClose = true;
       }
       ok('axes: …and no two of them touch', xs.length > 1 && !tooClose, xs.length);
       g = set({ xmin: -5000, xmax: 5000, ymin: -3400, ymax: 3400 });
@@ -4929,13 +4991,14 @@
       ok('logic: and the other way round is a different row', V(page, cu) === 0, V(page, cu));
       ok('logic: a custom gate is named by what is written on it', lgDef(cu).name === 'A-not-B');
       /* the palette tile is the same drawing as the thing it puts on the paper */
-      var noIcon = LG_ORDER.filter(function (k) {
+      var lgOrder = LG_PALETTE.reduce(function (all, group) { return all.concat(group.kinds); }, []);
+      var noIcon = lgOrder.filter(function (k) {
         return !ICONS['lg-' + k] || ICONS['lg-' + k].length < 40; });
       ok('logic: every gate ships the tile that draws it', noIcon.length === 0 &&
-        LG_ORDER.length === Object.keys(LG_GATES).length, noIcon.join(','));
+        lgOrder.length === Object.keys(LG_GATES).length, noIcon.join(','));
       ok('logic: and no tile carries writing too small to read',
-        LG_ORDER.every(function (k) { return (ICONS['lg-' + k].match(/<text/g) || []).length <= 1; }),
-        LG_ORDER.filter(function (k) {
+        lgOrder.every(function (k) { return (ICONS['lg-' + k].match(/<text/g) || []).length <= 1; }),
+        lgOrder.filter(function (k) {
           return (ICONS['lg-' + k].match(/<text/g) || []).length > 1; }).join(','));
       var cleanAnd = lgSym(mk('and'), false, 0), cleanNot = lgSym(mk('not'), false, 0);
       ok('logic: symbol stubs stop at the outline instead of showing a tip inside the body',
@@ -5017,7 +5080,7 @@
         railHeads.join('|') === 'Input controls|Output controls|Logic gates|Flip-flops',
         railHeads.join('|'));
       ok('circuit: the side rail contains every component once',
-        envEl.querySelectorAll('.lcrail [data-gate]').length === LG_ORDER.length,
+        envEl.querySelectorAll('.lcrail [data-gate]').length === lgOrder.length,
         envEl.querySelectorAll('.lcrail [data-gate]').length + ' components');
       ok('circuit: every component in the larger rail has a visible name',
         [].slice.call(envEl.querySelectorAll('.lcrail [data-gate]')).every(function (b) {
@@ -7179,7 +7242,7 @@
         el.querySelectorAll('.molsvg text.lh').length + ' H, ' + el.querySelectorAll('.molsvg circle.lpd').length + ' dots');
       it.sty = 'skel'; molRepaint(el, it);
       /* ---- 3D ---- */
-      molView(el, it, page, '3d'); await sleep(30);
+      molSetPeek(el, it, page, 100, true); await sleep(30);
       ok('mol: 3D draws a ball for every atom, hydrogens included', el.querySelectorAll('.molsvg.m3d circle.ball').length === 24,
         el.querySelectorAll('.molsvg.m3d circle.ball').length);
       ok('mol: 3D bonds as half-sticks', el.querySelectorAll('.molsvg.m3d line.stick').length >= 50);
@@ -7564,12 +7627,14 @@
          there is: they have to end where the ore does. */
       ok('nuc: NUBASE parses whole', NUC.length === 5646 && NUC_GS.length === 3558 && NUC_MAP.size === 3558,
         NUC.length + ' entries, ' + NUC_GS.length + ' ground states');
-      var nbad = [];
+      var nbad = [], nucDiagnosticName = function (e) {
+        return e ? e.sym + '-' + e.a + (e.tag || '') : '';
+      };
       NUC.forEach(function (e) {
-        if (!isFinite(e.z) || !isFinite(e.n) || !isFinite(e.a) || e.n < 0 || e.z + e.n !== e.a) nbad.push(nucPlain(e) + ' bad numbers');
-        if (e.me != null && !isFinite(e.me)) nbad.push(nucPlain(e) + ' bad mass');
-        if (e.t != null && e.t !== Infinity && !(e.t >= 0)) nbad.push(nucPlain(e) + ' bad half-life "' + e.hl + '"');
-        if (!e.gs && !e.parent) nbad.push(nucPlain(e) + ' is a state of nothing');
+        if (!isFinite(e.z) || !isFinite(e.n) || !isFinite(e.a) || e.n < 0 || e.z + e.n !== e.a) nbad.push(nucDiagnosticName(e) + ' bad numbers');
+        if (e.me != null && !isFinite(e.me)) nbad.push(nucDiagnosticName(e) + ' bad mass');
+        if (e.t != null && e.t !== Infinity && !(e.t >= 0)) nbad.push(nucDiagnosticName(e) + ' bad half-life "' + e.hl + '"');
+        if (!e.gs && !e.parent) nbad.push(nucDiagnosticName(e) + ' is a state of nothing');
       });
       ok('nuc: every nuclide has numbers that are numbers', nbad.length === 0, nbad.slice(0, 4).join(' | '));
       var abad = [];

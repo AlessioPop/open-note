@@ -182,7 +182,6 @@ const nucSup = s => String(s).replace(/-/g, '⁻').replace(/\d/g, d => NUC_SUP[+
 const NUC_TAGS = { m:'ᵐ', n:'ⁿ', p:'ᵖ', x:'ˣ' };
 /* ²³⁸U, ⁹⁹ᵐTc — the mass number and the state set over the symbol */
 const nucName = e => e ? nucSup(e.a) + (e.tag ? (NUC_TAGS[e.tag] || e.tag) : '') + e.sym : '';
-const nucPlain = e => e ? e.sym + '-' + e.a + (e.tag || '') : '';
 function nucSci(x, sig){
   if(!Number.isFinite(x)) return '—';
   const ex = Math.floor(Math.log10(Math.abs(x)));

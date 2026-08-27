@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1862 assertions, driven in headless Firefox
+tools/verify/       the harness: 1876 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -45,8 +45,8 @@ name — it asks the registry.
    what a phone's WebView will want. They share one scope: a `const` or
    `function` in one file is visible in every file loaded after it, and (at run
    time) in the ones before it too. Nothing is on `window`.
-3. **One scope, so names are the contract.** 1400-odd top-level names across 69
-   files and no two collide, because every file prefixes what it owns —
+3. **One scope, so names are the contract.** The top-level names across all
+   script files do not collide, because every file prefixes what it owns —
    `chem*`, `nuc*`, `tb*`, `nd*`. A new file must do the same. Nothing enforces
    it, which is exactly why it is written down here.
 4. **The registry is the only seam a feature needs.** Adding a kind of item is
@@ -138,30 +138,30 @@ right up until it loses the session.
 |---|---:|---|
 | `registry.js` | 188 | `defineItem()`, `defineTool()`, `defineSelectionAction()`, `defineMathBox()`, `defineCodePen()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
 | `store.js` | 68 | IndexedDB for the note, its sheet and its blobs, with an in-memory fallback |
-| `util.js` | 92 | `uid` `$` `clamp` `esc` `copyText`, sheet sizes and page units, the theme palettes, the stored-HTML sanitiser |
+| `util.js` | 95 | `uid` `$` `clamp` `esc` `copyText`, sheet sizes and page units, the theme palettes, the stored-HTML sanitiser |
 | `state.js` | 39 | the open note, its sheet, the selection, the zoom — and `sheet()`, the only way to ask for the paper |
 | `save.js` | 41 | debounced writes back to the store — the two doors every change goes through, which is what undo listens at |
 | `history.js` | 252 | **`undo()` / `redo()`** — what the sheet said before a change and what it says after, including rebasing live clock state, and where one step ends and the next begins |
-| `theme.js` | 89 | the theme presets, the colour overrides and the paper grain |
+| `theme.js` | 95 | the theme presets, shared palette application, the colour overrides and the paper grain |
 | `zoom.js` | 153 | zoom, panning the desk, and holding the paper still while either changes |
 | `richtext.js` | 34 | editing text in place, and wrapping a selection in `$$…$$` — the compiling itself is `richify()`/`plainify()` in `lib/ticks.js` |
 | `media.js` | 21 | handing stored blobs to the page as object URLs |
-| `item.js` | 267 | **`buildItem()`** — builds any item from its spec; also what an item owns and deleting one or a selection |
+| `item.js` | 292 | **`buildItem()`** — builds any item from its spec; also what an item owns and deleting one or a selection |
 | `drag.js` | 188 | rotate, drag and resize — the throw for one item and rigid movement for a selected group |
-| `select.js` | 156 | the toolbar's one-shot marquee, the selected-id set, bulk deletion and feature-owned group actions |
+| `select.js` | 319 | the toolbar's one-shot marquee, the selected-id set, bulk deletion and feature-owned group actions |
 | `page.js` | 101 | **`buildPage()`** — the paper, its items and its ink, live or static |
 | `sheet.js` | 207 | **`growSheet()`** — the rails, and every stored fraction remapped so nothing moves when the paper does |
-| `add.js` | 58 | **`addItem()`** — makes whatever the palette asked for, at the size this paper wants |
-| `keys.js` | 116 | **`render()`** and the keyboard |
-| `doc.js` | 73 | making, opening and deleting a note |
+| `add.js` | 57 | **`addItem()`** — makes whatever the palette asked for, at the size this paper wants |
+| `keys.js` | 119 | **`render()`** and the keyboard |
+| `doc.js` | 74 | making, opening and deleting a note |
 
 ### `js/paper/` — drawn on the sheet, belonging to no one item
 
 | File | Lines | What it does |
 |---|---:|---|
 | `layers.js` | 187 | the layer stack and the panel |
-| `ink.js` | 331 | the stylus, the nib, and the ink on the sheet |
-| `strings.js` | 478 | pins, strings and arrows between items, and the two Decor tiles that start one |
+| `ink.js` | 339 | the stylus, the nib, and the ink on the sheet |
+| `strings.js` | 467 | pins, strings and arrows between items, and the two Decor tiles that start one |
 
 ### `js/chrome/` — the tools around the sheet
 
@@ -169,14 +169,15 @@ right up until it loses the session.
 |---|---:|---|
 | `icons.js` | 72 | the line-icon set — `icn('table')` — and `defineIcon()` for a feature's own. Loads ahead of the items so they can register icons while loading |
 | `glass.js` | 69 | the glass material and the warp that every floating panel shares |
-| `palette.js` | 229 | the palette — shelves, labelled groups, tiles and search, drawn from the registry |
+| `palette.js` | 224 | the palette — shelves, labelled groups, tiles and search, drawn from the registry |
 | `props.js` | 328 | the properties popover — glass sliders, steppers, the sweep dial, a deed button and a row of colour swatches with a wheel; `openProps()` for any feature with measurements, and `placePanel()`, the above-then-beside-then-below rule every panel an item opens off its toolbar follows |
 | `mathpad.js` | 549 | writing maths: the `$` that pairs itself and opens out into a display block (and the `` ` `` that pairs itself by `lib/ticks.js`'s rules), the completion list built from the compiler's own tables, and the formula typeset under the caret as it is written. It serves contenteditable canvas writing and plain Markdown textareas through one selection/text seam. The rules are plain functions over (text, offset), so the harness can drive them without a caret |
 | `tickpad.js` | 45 | typing inside a ```fence``` in any writing box: ⇥ and ⇧⇥, ⏎ keeping the indent, brackets and quotes closing themselves. None of the rules are here — they are the code cell's, reached through the registry's code pen |
 | `markpad.js` | 91 | what the keyboard does to the marks in a writing box. A list: ⏎ making the next bullet and ending the list on an empty one, ⇥ and ⇧⇥ moving one in and out. None of the rules are here either — they are `lib/marks.js`'s, and inside a fence they stand aside for `tickpad.js`. A key another handler has already taken is read off `defaultPrevented`, and an indent is written into the box by hand rather than through the editor's `insertText`, which is free to turn a tab it is handed into a space. Then ⌃B and ⌃I, shared with Markdown through the same plain-text seam, which put the stars round what is picked out or take them off — the shortcut writes the mark rather than markup, so the browser's own bold never gets the key |
 | `map.js` | 174 | the map: the whole sheet, and where you are standing on it |
-| `shelf.js` | 100 | the shelf of notes |
-| `navigator.js` | 984 | the toggleable library tree: nested folders, contextual actions, drag-to-folder/root, Markdown authoring and preview, and imported-file readers. Markdown reuses the registered code pen and the shared maths/compiler keyboard instead of owning parallel renderers |
+| `shelf.js` | 106 | the shelf of notes |
+| `navigator.js` | 650 | the toggleable library tree: nested folders, contextual actions, drag-to-folder/root and imported-file readers |
+| `markdown.js` | 305 | Markdown authoring, preview, per-file themes and plain-text editing. It reuses the registered code pen and the shared maths/compiler keyboard instead of owning parallel renderers |
 | `print.js` | 32 | print / PDF |
 | `backup.js` | 80 | back up and restore |
 | `export.js` | 90 | the standalone `.html` |
@@ -191,31 +192,32 @@ shelf** — a new file under `items/science/` had better call
 
 | File | Lines | Registers |
 |---|---:|---|
-| `write/text.js` | 47 | `text` — five styles: heading, text, handwriting, mono, marker |
-| `write/note.js` | 30 | `note` |
-| `write/check.js` | 93 | `check` |
+| `write/text.js` | 49 | `text` — five styles: heading, text, handwriting, mono, marker |
+| `write/note.js` | 32 | `note` |
+| `write/check.js` | 96 | `check` |
 | `write/code.js` | 865 | `code` — the terminal-style code cell: one hand-rolled scanner driven by a table per language (12 of them), the editor schemes as CSS variables plus a Theme scheme mixed from the note's colours, the copy button, typing that recolours under the caret with brackets that close themselves, the band a long one clips to, and the folder glyph and viewer. `cdKey()` is that keyboard as a plain function over (writing, selection, key), and the code pen it registers is the same cell built into a ```fence``` in a sentence — bar, picker, colours and all, less the traffic lights |
 | `write/deck.js` | 1317 | `deck` — flip cards, the scope, the scoreboard |
 | `math/table.js` | 1659 | `table` — the grid, the formula compiler, rows and columns, the band a long one shows, folding it to an icon, reading a workbook in, and handing two columns to a plot |
-| `math/plot.js` | 1493 | `plot` — the coordinate system: the window and its log axes, the lattice (square or polar), ticks that turn into powers of ten and never overlap, one sampler for every kind of curve (explicit, polar, parametric, complex), the marching-squares equations and shaded regions through `lib/contour.js`, the vectors, a table's points, and the axis names you click to edit |
-| `math/plotpanel.js` | 526 | the expressions panel beside a plot — one row per thing drawn, the colour dot that is also the switch, the typeset preview, the keyboard, the polar/log/name footer. Live-only: print and export never build it |
-| `math/chart.js` | 967 | `chart` — pie / donut / 3D / sketch, plain bars and a stacked bar; the legend that edits the rows, validated palettes (ten slots) and the note-coloured ramps, and the label engine: four placements, cornered leader lines, and labels you drag anywhere that remember their offset |
+| `math/plot.js` | 1572 | `plot` — the coordinate system: the window and its log axes, the lattice (square or polar), ticks that turn into powers of ten and never overlap, one sampler for every kind of curve (explicit, polar, parametric, complex), the marching-squares equations and shaded regions through `lib/contour.js`, the vectors, a table's points, and the axis names you click to edit |
+| `math/plotpanel.js` | 565 | the expressions panel beside a plot — one row per thing drawn, the colour dot that is also the switch, the typeset preview, the keyboard, the polar/log/name footer. Live-only: print and export never build it |
+| `math/chart.js` | 962 | `chart` — pie / donut / 3D / sketch, plain bars and a stacked bar; the legend that edits the rows, validated palettes (ten slots) and the note-coloured ramps, and the label engine: four placements, cornered leader lines, and labels you drag anywhere that remember their offset |
 | `math/cards.js` | 397 | `matrix`, `vecbox` — any size through the ✎ panel, the label algebra (`M⁻¹` undone is `M`), determinants between bars, eigen rows |
-| `math/calc.js` | 264 | `calc` — the written-out product: the animated working, folding it to just the answer, taking it apart again, and standing in as an operand itself |
+| `math/calc.js` | 263 | `calc` — the written-out product: the animated working, folding it to just the answer, taking it apart again, and standing in as an operand itself |
 | `math/node.js` | 1099 | `node` — five kinds of card, the little graph they make, the wires between them, and the colour wheel |
-| `logic/gate.js` | 1729 | `logic` — the component definitions, shared symbols, five-state evaluator, clock scheduler, truth tables and backward-compatible standalone logic items |
-| `logic/circuit.js` | 905 | `circuit` — the contained editor, categorized drag palette, resizable local pan/zoom viewport, common-circuit library, nested port wires and signal-flow layout |
+| `logic/gate.js` | 1819 | `logic` — the component definitions, shared symbols, five-state evaluator, clock scheduler, truth tables and backward-compatible standalone logic items |
+| `logic/circuit.js` | 982 | `circuit` — the contained editor, categorized drag palette, resizable local pan/zoom viewport, common-circuit library, nested port wires and signal-flow layout |
 | `science/ptable.js` | 154 | `ptable` — the periodic table as a reference card, and `openElementPicker()`, the popover every element chip opens |
 | `science/nuchart.js` | 680 | `nuchart` — the chart of the nuclides: 5646 squares as ten paths, the magic-number rules, four colourings, pan and zoom on a viewBox, Karlsruhe-split squares for the long-lived metastable states, arrows to every daughter and the whole decay chain, and a foot that works the Q values out as you press |
 | `science/fits.js` | 617 | `fits` — an astronomy file as a shortcut, and the reader behind it: `hdu.info()`, the header in three aligned columns with a search over all of them, COMMENT and HISTORY runs folded in place, every data unit given as a shape and a type rather than as numbers, and columns you pick and drag off the window onto the sheet, where they land as an ordinary table |
-| `science/molecule.js` | 2608 | `molecule` — the 2D editor with its glass rail and ChemDraw gestures: the ghost the pointer casts ahead of every click and the valence check that refuses the ones that could not exist, the chain and the row of fused rings dragged out under a running count, the ⟮CH₂⟯ₙ repeat bracket that folds a long chain short without touching the molecule, the lasso and its turn/chirality/move/copy menu, the hydrogen bond kept in a list of its own so chem.js never sees it but respected by tidy, the hotkeys, the three drawing styles, the ⌕ name-or-SMILES box, flat transparent 2D/3D SVG and PNG exports plus clipboard-only ChemFig LaTeX with shifted skeletal double bonds, direct whole-widget corner resizing, and the quiet >/< disclosure for a simultaneous live 3D companion, additive correspondence highlighting with a neutral ghost-free pointer and a screen-space aura above the three 3D looks, momentum orbit, and separately coloured measurement picks |
-| `media/image.js` | 56 | `image` |
+| `science/molecule.js` | 2606 | `molecule` — the 2D editor with its glass rail and ChemDraw gestures: the ghost the pointer casts ahead of every click and the valence check that refuses the ones that could not exist, the chain and the row of fused rings dragged out under a running count, the ⟮CH₂⟯ₙ repeat bracket that folds a long chain short without touching the molecule, the lasso and its turn/chirality/move/copy menu, the hydrogen bond kept in a list of its own so chem.js never sees it but respected by tidy, the hotkeys, the three drawing styles, the ⌕ name-or-SMILES box, flat transparent 2D/3D SVG and PNG exports plus clipboard-only ChemFig LaTeX with shifted skeletal double bonds, direct whole-widget corner resizing, and the quiet >/< disclosure for a simultaneous live 3D companion, additive correspondence highlighting with a neutral ghost-free pointer and a screen-space aura above the three 3D looks, momentum orbit, and separately coloured measurement picks |
+| `science/feynman.js` | 734 | `feynman` — lattice-aligned particle diagrams, Standard Model vertex validation and transparent SVG, PNG and TikZ-Feynman exports |
+| `media/image.js` | 78 | `image` |
 | `media/video.js` | 87 | `video` |
 | `media/model.js` | 614 | `model` — the `.obj` parser and the shared WebGL canvas |
 | `media/slides.js` | 927 | `slides` — the deck on the sheet, and the reader: the spring-driven reel, the grid of every slide, the filmstrip, the zoom, the notes, and a slide taken out as a picture |
 | `media/file.js` | 448 | `file` — attachments, the icons everything wears in a folder, and the reader |
 | `media/folder.js` | 368 | `folder` |
-| `shapes/solid.js` | 847 | `solid` — five wireframe guides to draw over, each carrying its own measurements |
+| `shapes/solid.js` | 806 | `solid` — five wireframe guides to draw over, each carrying its own measurements |
 | `decor/washi.js` | 33 | `washi` |
 | `decor/sticker.js` | 41 | `sticker` |
 
@@ -231,19 +233,19 @@ on a task.
 
 | File | Lines | What it does |
 |---|---:|---|
-| `sound.js` | 81 | the studio sounds, generated live. No audio files |
+| `sound.js` | 193 | the studio sounds, generated live. No audio files |
 | `spring.js` | 125 | springs and momentum: analytic springs, release velocity, flick projection. What the throws, spins and card-tosses all move on |
 | `mathexpr.js` | 502 | the expression compiler: text → a small tree → a real evaluator, a complex one, and a LaTeX emitter; `mxCompile` says what kind of thing was typed (a function of x, an equation, a region, a polar or parametric curve, a list of points) and `mxNum`/`mxFn` are the two narrow doors the cards, the window boxes and the formula node use |
 | `contour.js` | 180 | marching squares over a picture-sized grid: the zero line of a field as chained polylines (a pole is told from a root by bisecting towards it), and the region it is positive as row-merged rectangles plus cell polygons |
-| `latex.js` | 459 | LaTeX → MathML. No library, nothing downloaded — plus the flatten/scan pair that tells a caret which formula it is standing in, which `chrome/mathpad.js` writes with |
+| `latex.js` | 460 | LaTeX → MathML. No library, nothing downloaded — plus the flatten/scan pair that tells a caret which formula it is standing in, which `chrome/mathpad.js` writes with |
 | `ticks.js` | 296 | code ticks: `` `a phrase` `` and ```` ```a block``` ````, compiled and taken apart the way `latex.js` does formulas — plus what typing a backtick does, and `richify()`/`plainify()`, the pair every writing surface in the app goes through — marks, then ticks, then maths, and unwound in the opposite order. A fenced block itself is built by whatever registered the code pen — the code cell does — and setting its language from the bar rewrites the fence's own opening line, then leaves the box to save itself on the `input` that follows |
-| `marks.js` | 499 | the marks writing wears: `# ` `## ` `### ` a heading, `- ` a bullet, `- [ ] ` a task with a box to tick, `---` a rule, `**bold**`, `*italic*`, and `->` an arrow — compiled and taken apart the way `latex.js` does formulas. First of the three passes, so a heading or a bullet may hold a formula or a phrase of code while a `#` or an `->` inside a fence or a formula is left where it is; a heading is sized in `em`, keeps the face of the box it is in, and differs from the step above it only in size, and a nested bullet carries a hairline down from the one it belongs to. `markEnter()`, `markTab()` and `markWrap()` are here too — what ⏎, ⇥ and ⌃B/⌃I do, over (text, offset) with no DOM in sight — and every marker reads a non-breaking space as a space, since that is what a browser's editor leaves behind wherever it thinks a space might collapse |
+| `marks.js` | 504 | the marks writing wears: `# ` `## ` `### ` a heading, `- ` a bullet, `- [ ] ` a task with a box to tick, `---` a rule, `**bold**`, `*italic*`, and `->` an arrow — compiled and taken apart the way `latex.js` does formulas. First of the three passes, so a heading or a bullet may hold a formula or a phrase of code while a `#` or an `->` inside a fence or a formula is left where it is; a heading is sized in `em`, keeps the face of the box it is in, and differs from the step above it only in size, and a nested bullet carries a hairline down from the one it belongs to. `markEnter()`, `markTab()` and `markWrap()` are here too — what ⏎, ⇥ and ⌃B/⌃I do, over (text, offset) with no DOM in sight — and every marker reads a non-breaking space as a space, since that is what a browser's editor leaves behind wherever it thinks a space might collapse |
 | `matrix.js` | 255 | the n×m arithmetic the cards lean on: multiply, transpose, determinant, inverse, powers, and eigen (Hessenberg + shifted QR, null-space eigenvectors) |
 | `fits.js` | 477 | a `.fits` → its HDUs, their headers, and the shape of every data unit; the walk steps over the data without touching it, so a four-gigabyte cube opens as fast as a small one. Then one column of a binary table, on request — planned before it is read, so what comes back is bounded whatever the file weighs |
 | `workbook.js` | 518 | `.xlsx`, `.ods` and `.csv` → plain rows of plain strings. No library: a workbook is a zip of XML, and the browser has an unzipper |
 | `pptx.js` | 1907 | `.pptx` → slides that draw themselves as SVG. The same zip, then DrawingML: the colour engine, the preset and freehand geometry, fills and lines, the inheritance chain a slide hangs off, and the text laid out by hand |
 | `chem.js` | 1015 | the chemistry: the molecular graph, implicit hydrogens and lone pairs, Hill formulas and masses, rings and aromaticity, a graph hash that names what you draw, SMILES in and out, the 2D layout with exact regular-polygon arcs for constrained rings, the 3D embedding and VSEPR |
-| `nuclide.js` | 265 | the physics of the nuclide chart: reading NUBASE in, every decay mode as a step in (protons, neutrons), Q values and separation energies subtracted from the masses, binding energy per nucleon, and the chain down to whatever a nuclide ends on |
+| `nuclide.js` | 264 | the physics of the nuclide chart: reading NUBASE in, every decay mode as a step in (protons, neutrons), Q values and separation energies subtracted from the masses, binding energy per nucleon, and the chain down to whatever a nuclide ends on |
 
 ### `js/data/` — tables, not code
 
@@ -727,8 +729,10 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1862 assertions**, and they are the real specification of this app. Among them:
-that all 78 script files load without throwing; that a fresh note is one empty
+**1876 assertions**, and they are the real specification of this app. Among them:
+that all 81 script files load without throwing; that library normalization
+recovers orphaned entries and breaks folder cycles; that Markdown previews,
+editing, tasks and saved themes work end to end; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a
 third on the real one; that every add-menu entry adds the type it claims to;

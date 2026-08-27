@@ -432,17 +432,6 @@ function createLink(page, aId, bId, kind){
   }
   SND.pop();
 }
-/* rebuild every live rope from the current link records */
-function rebuildRopes(){
-  if(!BOARD) return;
-  deselectString();
-  ROPES.forEach(r => { r.path.remove(); if(r.chip) r.chip.remove(); });
-  ROPES = [];
-  for(const en of BOARD.entries)
-    (en.page.links || []).forEach(l =>
-      addRope({ page: en.page, link: l, ap: en.page.id, a: l.a, bp: en.page.id, b: l.b }));
-  wakeRopes();
-}
 /* ---- the two tiles on the Decor shelf ----
    Neither makes an item: a string and an arrow are a record in page.links drawn
    between two items, so both entries are `pick` — they arm the gesture and let

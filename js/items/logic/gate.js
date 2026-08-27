@@ -1673,7 +1673,6 @@ const LG_PALETTE = [
     kinds: ['and', 'or', 'not', 'buf', 'nand', 'nor', 'xor', 'xnor', 'tri', 'cust'] },
   { label: 'Flip-flops', order: 40, kinds: ['srff', 'dff', 'jkff', 'tff'] }
 ];
-const LG_ORDER = LG_PALETTE.flatMap(g => g.kinds);
 LG_PALETTE.forEach(group => group.kinds.forEach(k => {
   defineIcon('lg-' + k, lgIcon(k));
 }));

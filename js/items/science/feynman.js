@@ -40,7 +40,6 @@ const FEY_PARTICLES = {
   p:   { sym:'p', antiSym:'p̄', tex:'p', antiTex:'\\bar p', name:'proton', antiName:'antiproton', group:'hadron', q:'+1', spin:'½', mass:'938.272 MeV', kind:'fermion', family:'nucleon', pair:'n', color:'#df746c' },
   n:   { sym:'n', antiSym:'n̄', tex:'n', antiTex:'\\bar n', name:'neutron', antiName:'antineutron', group:'hadron', q:'0', spin:'½', mass:'939.565 MeV', kind:'fermion', family:'nucleon', pair:'p', color:'#73a9d8' }
 };
-const FEY_KEYS = ['u','c','t','d','s','b','ve','vmu','vtau','e','mu','tau','gamma','g','Z','W','H','p','n'];
 const feyP = key => FEY_PARTICLES[key] || FEY_PARTICLES.e;
 const feyConjugable = key => feyP(key).kind === 'fermion' || key === 'W';
 function feySym(key, anti){ const p = feyP(key); return anti && p.antiSym ? p.antiSym : anti && p.kind === 'fermion' ? p.sym.replace(/^([^⁻⁺]+)([⁻⁺])?$/, '$1̄') : p.sym; }

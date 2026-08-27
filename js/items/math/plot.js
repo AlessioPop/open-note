@@ -125,7 +125,6 @@ function axLab(v, step, sci){
   const t = mfmt(v, axDp(step));
   return { t, svg: esc(t), w: t.length * 19 };
 }
-const mnumW = l => typeof l === 'string' ? l.length * 19 : l.w;
 /* one way of writing for the whole axis: powers of ten once its step is
    under a ten-thousandth or its reach is in the millions, else plain */
 const axSci = (step, reach) => Math.abs(step) < 1e-4 || Math.abs(reach) >= 1e6;

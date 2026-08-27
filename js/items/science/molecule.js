@@ -1036,7 +1036,6 @@ function molDraw3D(it, live, el){
 /* `view:'3d'` belonged to the old either/or viewer. Read it once as a fully
    opened companion, then keep the paper drawing present from here on. */
 const molPeek = it => clamp(it.peek == null ? (it.view === '3d' ? 100 : 0) : (+it.peek || 0), 0, 100);
-const molDraw = (it, live, el, ghost) => molDraw2D(it, live, ghost);
 /* the chosen atoms, read: one is a shape, two a distance, three an angle, four a twist */
 function molMeasure(it, emb){
   const p = MOL_PICK && MOL_PICK.id === it.id ? MOL_PICK.atoms.map(i => emb.atoms[i]).filter(Boolean) : [];
@@ -1738,7 +1737,6 @@ function molSetPeek(el, it, page, value, loud){
   if(loud) SND.pop();
   if(peek > 0 && it.auto) molAutoSpin(el, it, page);
 }
-function molView(el, it, page, v){ molSetPeek(el, it, page, v === '3d' ? 100 : 0, true); }
 function molHome(el, it, page){ molStopSpin(it); it.yaw = 0; it.pitch = 0; it.zoom = 1; molRepaint(el, it); queueSave(page.id); }
 function molMove(el, it, on){
   if(on) PLOT_MOVE.add(it.id); else PLOT_MOVE.delete(it.id);

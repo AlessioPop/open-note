@@ -7,7 +7,7 @@ Everything you can put on the sheet. For running the app see the [README](../REA
 The app opens on the file you had open last. **▤ Files** in the top bar (or `Ctrl`/`Cmd`+`Shift`+`E`) opens the Obsidian-style file explorer down the left. It shows nested folders and everything filed inside them. The explorer remembers whether it was open and which folders were expanded.
 
 - **Right-click** the empty explorer background to make a root-level Markdown file, canvas or folder, or to import there. Right-click a folder to do the same inside it. Use its `>` disclosure to open or close it, or drag any tree entry onto it to move that entry inside. Drop an entry on the explorer background to move it back to the root.
-- Markdown files autosave as you type. **Write / Preview** switches between source and the rendered document, and **⇩ .md** saves a copy to disk.
+- Markdown files autosave as you type. **Write / Preview** switches between source and the rendered document, **Theme** can follow the current canvas or save an independent Paper, Darkroom, Blueprint or Kraft palette with the file, and **⇩ .md** saves a copy to disk.
 - Imported files stay in the local library. Imported `.md` files become editable; `.xlsx`, `.ods`, `.csv` and `.tsv` open in the table reader; FITS files open in the FITS reader; PDFs open in the document viewer; images and video use their viewers; other files remain openable shortcuts. Files can also be dropped onto the explorer or directly onto a folder.
 - Right-click an entry to open, rename, move it to the root or delete it. The hover pencil and **✕** remain as quick versions of the last two actions.
 - The search box filters names and paths. Removing a folder moves its contents up one level rather than deleting them with it.

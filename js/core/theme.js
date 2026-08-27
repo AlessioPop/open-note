@@ -10,19 +10,25 @@
 const HEXCOL = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 /* what the desk actually comes out as: the override if there is a good one, else
    the preset's own */
-const deskOf = s => HEXCOL.test((s || {}).desk || '')
-  ? s.desk : (THEME_VARS[index.theme] || THEME_VARS.graph).desk;
-function applyTheme(){
-  document.body.dataset.theme = index.theme || 'graph';
-  $('#themeSel').value = index.theme || 'graph';
-  const s = index.settings || {};
+const deskOf = (s, theme) => HEXCOL.test((s || {}).desk || '')
+  ? s.desk : (THEME_VARS[theme || (index && index.theme)] || THEME_VARS.graph).desk;
+/* Apply just the colour layer. Canvas notes add sheet sizing, grain and picker
+   state below; document features such as Markdown can share the palette without
+   pretending to be a canvas or duplicating the override cleanup. */
+function applyThemeColors(theme, settings){
+  const name = THEME_VARS[theme] ? theme : 'graph';
+  const s = settings || {};
+  document.body.dataset.theme = name;
   ['paper','ink','line','accent','accent2','desk'].forEach(v => {
     if(HEXCOL.test(s[v] || '')) document.body.style.setProperty('--' + v, s[v]);
     else document.body.style.removeProperty('--' + v);
   });
-  /* the root paints the window canvas, but the presets are written on the body, so
-     the desk it should be painting is handed to it here */
-  document.documentElement.style.setProperty('--desk', deskOf(s));
+  document.documentElement.style.setProperty('--desk', deskOf(s, name));
+}
+function applyTheme(){
+  const theme = index.theme || 'graph';
+  applyThemeColors(theme, index.settings);
+  $('#themeSel').value = index.theme || 'graph';
   applyPageSize();
   syncGrain();
   syncPickers();
