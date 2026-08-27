@@ -32,6 +32,9 @@ async function flush(){
     const b = lib.books.find(x => x.id === curNoteId);
     if(b) b.updated = Date.now();
   }
+  /* the day's record, kept by chrome/dashboard.js — it reads the library it is
+     about to be written with and needs telling nothing about what changed */
+  if(typeof dashMark === 'function') dashMark();
   await kvSet(K_LIB, lib);
   const d = await db();
   const t = $('#saveTag');

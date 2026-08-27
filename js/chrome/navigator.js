@@ -320,7 +320,10 @@ async function navRename(kind, id){
   if(!name) return;
   if(kind === 'markdown' && !/\.md$/i.test(name)) name += '.md';
   name = navUniqueName(name, e.parentId || null, kind, id);
+  const was = e.name;
   e.name = name; e.updated = Date.now(); queueLib();
+  /* every [[link]] to it is written as a name, so the name has to travel */
+  if(kind !== 'folder' && typeof wkRewrite === 'function') wkRewrite(was, name);
   if(kind === 'markdown' && navMdId === id) $('#mdName').value = name;
   navRender();
   if($('#shelf').classList.contains('open')) buildShelf();

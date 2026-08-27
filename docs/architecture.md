@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1876 assertions, driven in headless Firefox
+tools/verify/       the harness: 1993 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -178,6 +178,8 @@ right up until it loses the session.
 | `shelf.js` | 106 | the shelf of notes |
 | `navigator.js` | 650 | the toggleable library tree: nested folders, contextual actions, drag-to-folder/root and imported-file readers |
 | `markdown.js` | 305 | Markdown authoring, preview, per-file themes and plain-text editing. It reuses the registered code pen and the shared maths/compiler keyboard instead of owning parallel renderers |
+| `wiki.js` | 381 | `[[links]]` between library files: the syntax, what a name resolves to, the list that offers one while you type, the rewrite that carries a rename, and `wkIndex()` — the nodes and edges the dashboard's graph is drawn from |
+| `dashboard.js` | 754 | the dashboard — the month, what you were last in, and the year in days. It owns `lib.activity`, the one record in the app of days rather than of last-touched, and `dashMark()` is what `core/save.js` calls on every flush |
 | `print.js` | 32 | print / PDF |
 | `backup.js` | 80 | back up and restore |
 | `export.js` | 90 | the standalone `.html` |
@@ -235,6 +237,7 @@ on a task.
 |---|---:|---|
 | `sound.js` | 193 | the studio sounds, generated live. No audio files |
 | `spring.js` | 125 | springs and momentum: analytic springs, release velocity, flick projection. What the throws, spins and card-tosses all move on |
+| `graph.js` | 130 | where the dots go: a force-directed layout, laid out into the shape of the frame it will be read in, deterministic so the same library lands the same way twice |
 | `mathexpr.js` | 502 | the expression compiler: text → a small tree → a real evaluator, a complex one, and a LaTeX emitter; `mxCompile` says what kind of thing was typed (a function of x, an equation, a region, a polar or parametric curve, a list of points) and `mxNum`/`mxFn` are the two narrow doors the cards, the window boxes and the formula node use |
 | `contour.js` | 180 | marching squares over a picture-sized grid: the zero line of a field as chained polylines (a pole is told from a root by bisecting towards it), and the region it is positive as row-merged rectangles plus cell polygons |
 | `latex.js` | 460 | LaTeX → MathML. No library, nothing downloaded — plus the flatten/scan pair that tells a caret which formula it is standing in, which `chrome/mathpad.js` writes with |
@@ -729,9 +732,19 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1876 assertions**, and they are the real specification of this app. Among them:
-that all 81 script files load without throwing; that library normalization
-recovers orphaned entries and breaks folder cycles; that Markdown previews,
+**1993 assertions**, and they are the real specification of this app. Among them:
+that all 84 script files load without throwing; that library normalization
+recovers orphaned entries and breaks folder cycles; that a `[[link]]` finds its
+file whatever its case or extension, ignores one written inside code, survives
+a rename of either end, and appears in the graph's index at both of its ends;
+that a display equation opened on its own line compiles as one block rather
+than reaching across the lines around it, that a click on a line carrying a
+formula lands where it was aimed because the source behind the compiled run is
+counted rather than the glyphs on screen, and that undo in a Markdown document
+puts the whole document back; that the dashboard counts
+local days rather than UTC ones, counts writing rather than reading, never
+counts the same save twice, seeds itself from the timestamps a library already
+had, and draws fifty-three weeks with the days still to come left blank; that Markdown previews,
 editing, tasks and saved themes work end to end; that a fresh note is one empty
 sheet 1980 × 1320 with four rails and no page furniture at all; that the
 sheet-unit helpers are exact no-ops on a 660-unit sheet and scale by exactly a

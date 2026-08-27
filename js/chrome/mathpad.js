@@ -341,34 +341,42 @@ function mpadRows(){
   }
   ul.style.display = MPAD.list.length ? '' : 'none';
 }
-/* Under the caret's line, or over it when the desk runs out underneath — but
-   centred on the *box*, not on the caret. Sideways it therefore stands still
-   while the line is being typed; a panel sliding a letter to the right on every
-   keystroke is unreadable, which is the whole thing it is there to be. */
-function mpadTextRect(box){
+/* Inline maths sits under the caret's line and stays centred on the writing
+   box. A display equation is different: its pad is anchored above the opening
+   $$, so the source and the lines being written below it are never covered. */
+function mpadTextRect(box, off){
   const cs = getComputedStyle(box), mirror = document.createElement('div'), mark = document.createElement('span');
   mirror.style.cssText = 'position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;white-space:pre-wrap;overflow-wrap:break-word;box-sizing:border-box;';
   for(const prop of ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing','lineHeight','paddingTop','paddingRight','paddingBottom','paddingLeft','textTransform','textIndent','wordSpacing','tabSize'])
     mirror.style[prop] = cs[prop];
   mirror.style.width = box.clientWidth + 'px';
-  mirror.textContent = box.value.slice(0, box.selectionStart);
+  mirror.textContent = box.value.slice(0, off == null ? box.selectionStart : off);
   mark.textContent = '\u200b'; mirror.appendChild(mark); document.body.appendChild(mirror);
   const br = box.getBoundingClientRect(), lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.45;
   const left = br.left + mark.offsetLeft - box.scrollLeft, top = br.top + mark.offsetTop - box.scrollTop;
   mirror.remove();
   return { left, right:left + 1, top, bottom:top + lh, width:1, height:lh };
 }
+function mpadSourceRect(box, off){
+  if(mpadPlain(box)) return mpadTextRect(box, off);
+  const P = mathFlatPos(box, off), r = document.createRange();
+  try{ r.setStart(P[0], P[1]); }catch(e){ return null; }
+  r.collapse(true); return r.getBoundingClientRect();
+}
 function mpadPlace(){
   const el = mpadEl(), sel = getSelection();
   if(!MPAD.box) return null;
-  let r = mpadPlain(MPAD.box) ? mpadTextRect(MPAD.box)
+  const display = !!(MPAD.reg && MPAD.reg.disp);
+  let r = display ? mpadSourceRect(MPAD.box, MPAD.reg.a)
+    : mpadPlain(MPAD.box) ? mpadTextRect(MPAD.box)
     : sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
   const box = MPAD.box.getBoundingClientRect();
   if(!r || (!r.height && !r.top && !r.left)) r = box;
   const w = el.offsetWidth, h = el.offsetHeight;
-  let y = r.bottom + 10;
-  if(y + h > innerHeight - 8) y = Math.max(8, r.top - h - 10);
-  el.style.left = clamp(box.left + box.width / 2 - w / 2, 8, Math.max(8, innerWidth - w - 8)) + 'px';
+  let y = display ? Math.max(8, r.top - h - 10) : r.bottom + 10;
+  if(!display && y + h > innerHeight - 8) y = Math.max(8, r.top - h - 10);
+  const x = display ? r.left - w / 2 : box.left + box.width / 2 - w / 2;
+  el.style.left = clamp(x, 8, Math.max(8, innerWidth - w - 8)) + 'px';
   el.style.top  = clamp(y, 8, Math.max(8, innerHeight - h - 8)) + 'px';
   return r;
 }

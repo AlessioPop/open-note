@@ -165,9 +165,17 @@
 
       var safe = navMarkdownHTML('# Heading\n\n- [ ] task\n\n[site](https://example.com) [bad](javascript:alert(1))');
       ok('Markdown: headings, tasks and safe links compile',
-        /<h1>Heading<\/h1>/.test(safe) && /class="tasks"/.test(safe) && /href="https:\/\/example.com"/.test(safe));
+        /<h1[^>]*>Heading<\/h1>/.test(safe) && /class="tasks"/.test(safe) && /href="https:\/\/example.com"/.test(safe));
       ok('Markdown: unsafe links never become anchors',
         safe.indexOf('javascript:') < 0 && (safe.match(/<a /g) || []).length === 1, safe);
+      var structured = navMarkdownHTML('---\n\n- parent\n  - child\n  - [ ] nested task\n- sibling');
+      ok('Markdown: a thematic break is not mistaken for a list', /<hr>/.test(structured), structured);
+      ok('Markdown: indented bullets and tasks compile inside their parent item',
+        /<li class="md-line" data-md-line="2">parent<ul><li class="md-line" data-md-line="3">child<\/li><\/ul><ul class="tasks"><li class="md-line md-task"/.test(structured) &&
+        /data-md-task="4"/.test(structured), structured);
+      var broken = navMarkdownHTML('first line\nsecond line');
+      ok('Markdown: a physical line break remains visible in the compiled document',
+        /first line<\/span><br><span[^>]*>second line/.test(broken), broken);
 
       var md = { id:stamp + '-md', kind:'markdown', name:'Audit.md', parentId:null, theme:'dark',
         content:'# Audit\n\n- [ ] verify theme\n\n$$x^2$$\n\n```js\nconst n = 1;\n```',
@@ -179,6 +187,9 @@
         document.body.dataset.theme === 'dark' && Q('#mdTheme').value === 'dark',
         document.body.dataset.theme + ' / ' + Q('#mdTheme').value);
       ok('Markdown: opening restores the plain source', Q('#mdSource').value === md.content);
+      ok('Markdown: live view is one compiled document with only its active line in source',
+        !Q('#mdHost').classList.contains('previewing') && getComputedStyle(Q('#mdSource')).display === 'none' &&
+        !!Q('#mdPreview .md-line-editor'));
       navSetMarkdownMode('preview'); await sleep(80);
       ok('Markdown: preview shares marks, maths and the registered code pen',
         !!Q('#mdPreview h1') && !!Q('#mdPreview .tasks input') && !!Q('#mdPreview math') && !!Q('#mdPreview .cbx.cfence'));
@@ -203,6 +214,511 @@
       await flush();
       ok('Markdown: returning to canvas restores its theme and closes the document',
         !navMdId && !document.body.classList.contains('md-open') && document.body.dataset.theme === index.theme);
+    });
+
+    /* ---- writing in a Markdown document ----
+       The document is compiled and the line under the caret is a box in the
+       middle of it, so every one of these is about the seam between the two:
+       what a click means, what a formula is allowed to reach across, and what
+       taking it back takes back. */
+    await stage('markdown editing', async function () {
+      var canvasId = curNoteId, stamp = 'verify-mde-' + Date.now();
+      var src = '# Doc\n\nSee $\\frac{\\alpha}{\\beta}$ tail\n\n$$\n\\int_0^1 x\\,dx\n$$\n\nend\n';
+      var f = { id:stamp, kind:'markdown', name:'Editing.md', parentId:null, theme:'canvas',
+        content:src, created:Date.now(), updated:Date.now() };
+      lib.files.push(f);
+      await navOpenMarkdown(f.id, false);
+      navMdOpenLine(0, 0);
+
+      /* ---- a display equation is one thing ---- */
+      var block = Q('#mdPreview .md-math');
+      ok('markdown: $$ on its own line opens ONE block, not three lines',
+        !!block && +block.dataset.mdFrom === 4 && +block.dataset.mdTo === 6,
+        block && block.dataset.mdFrom + '-' + block.dataset.mdTo);
+      ok('markdown: and it is typeset', !!block && !!block.querySelector('math'));
+      ok('markdown: the lines on either side of it are still their own',
+        !!Q('#mdPreview [data-md-line="2"]') && !!Q('#mdPreview [data-md-line="8"]'));
+      ok('markdown: an equation compiles inside its line and never across it',
+        Q('#mdPreview [data-md-line="2"]').querySelectorAll('math').length === 1 &&
+        !!Q('#mdPreview [data-md-line="2"]').lastChild.nodeValue);
+      ok('markdown: a $$ that never closes is not a block at all',
+        !/md-math/.test(navMarkdownHTML('$$\n\\int x\n\nmore writing')),
+        navMarkdownHTML('$$\n\\int x'));
+      navMdOpenLine(5, navMdLineStart(5));
+      var run = Q('#mdPreview .md-math .md-line-editor');
+      ok('markdown: the caret in it opens the whole equation as one run',
+        !!run && run.value === '$$\n\\int_0^1 x\\,dx\n$$', run && JSON.stringify(run.value));
+      navMdOpenLine(0, 0);
+
+      /* ---- where a click lands ----
+         The compiled line is nothing like the length of the line that was
+         written: this formula is 22 characters of source drawn as two glyphs.
+         Counting what is on the screen put every caret after it short by the
+         difference; counting the source behind it does not. */
+      var row = Q('#mdPreview [data-md-line="2"]');
+      var tail = row.lastChild;
+      var whole = navMdLines()[2].length;
+      ok('markdown: a compiled formula counts as the source it was written from',
+        navMdSourceBefore(row, tail, tail.nodeValue.length) === whole,
+        navMdSourceBefore(row, tail, tail.nodeValue.length) + ' of ' + whole);
+      ok('markdown: standing on the formula itself stands in front of it',
+        navMdSourceBefore(row, row.querySelector('math'), 0) === 4,
+        navMdSourceBefore(row, row.querySelector('math'), 0));
+      var box = row.getBoundingClientRect();
+      var landed = navMdClickCaret(row, 2, { clientX:box.right - 3, clientY:box.top + box.height / 2 });
+      var end = navMdLineStart(2) + whole;
+      ok('markdown: so a click at the end of a line with a formula on it lands at the end',
+        end - landed <= 3, 'short by ' + (end - landed));
+
+      /* ---- the paper is clickable all over ---- */
+      var below = Q('#mdPreview').getBoundingClientRect();
+      var near = navMdNearestLine({ clientX:below.left + 40, clientY:below.bottom - 2 });
+      ok('markdown: a click under the last line belongs to the last line',
+        !!near && (near.dataset.mdLine === '8' || near.dataset.mdLine === '9'),
+        near && near.dataset.mdLine);
+      ok('markdown: and one out in the margin belongs to the line beside it',
+        (function () {
+          var r = Q('#mdPreview [data-md-line="8"]').getBoundingClientRect();
+          var got = navMdNearestLine({ clientX:below.left + 4, clientY:r.top + r.height / 2 });
+          return got && got.dataset.mdLine === '8';
+        })());
+
+      /* ---- writing a formula where the words are ----
+         The equation helper belongs to the box under the caret, and in a
+         document that box is one line of it that is made and thrown away as
+         the caret moves. This is that seam, driven the way a hand drives it. */
+      navMdOpenLine(8, navMdLineStart(8) + navMdLines()[8].length);
+      var pen = Q('#mdPreview .md-line-editor');
+      pen.focus();
+      pen.dispatchEvent(new InputEvent('beforeinput',
+        { inputType:'insertText', data:'$', bubbles:true, cancelable:true }));
+      await sleep(90);
+      ok('markdown: a $ typed into the live line pairs itself around the caret',
+        pen.value === 'end$$' && pen.selectionStart === 4, JSON.stringify(pen.value) + ' @' + pen.selectionStart);
+      ok('markdown: and the equation helper comes up on that line',
+        !!Q('#mathpad.open') && MPAD.box === pen);
+      ok('markdown: which has not thrown the line being written away',
+        document.contains(pen) && Q('#mdPreview .md-line-editor') === pen);
+      pen.setRangeText('x^2', pen.selectionStart, pen.selectionStart, 'end');
+      pen.dispatchEvent(new Event('input', { bubbles:true }));
+      await sleep(60);
+      ok('markdown: what is typed inside it reaches the file as source',
+        f.content.indexOf('end$x^2$') > 0, JSON.stringify(f.content.slice(-14)));
+      navMdOpenLine(0, 0);
+      await sleep(60);
+      ok('markdown: and leaving the line typesets it in the document',
+        !!Q('#mdPreview [data-md-line="8"] math') &&
+        Q('#mdPreview [data-md-line="8"]').firstChild.nodeValue === 'end',
+        Q('#mdPreview [data-md-line="8"]').innerHTML);
+      navMdUndoStep(true);
+      navMdUndoMark(true);
+
+      /* ---- taking it back ----
+         The box the words are typed into is thrown away every time the caret
+         changes line, and the browser's undo went with it. This is the
+         document's own. */
+      navMdOpenLine(8, navMdLineStart(8) + 3);
+      var live = Q('#mdPreview .md-line-editor');
+      live.value = 'end of it'; live.dispatchEvent(new Event('input', { bubbles:true }));
+      navMdUndoMark(true);
+      ok('markdown: a run of typing is one step on the document stack',
+        MDU.stack.length === 2 && f.content.indexOf('end of it') > 0, MDU.stack.length);
+      navMdUndoStep(true);
+      ok('markdown: undo puts the whole document back',
+        f.content === src && $('#mdSource').value === src, JSON.stringify(f.content.slice(-12)));
+      ok('markdown: and the document on screen is the one that came back',
+        (Q('#mdPreview [data-md-line="8"]').textContent || '').indexOf('end') === 0,
+        Q('#mdPreview [data-md-line="8"]').textContent);
+      navMdUndoStep(false);
+      ok('markdown: redo takes it forward again', f.content.indexOf('end of it') > 0);
+      ok('markdown: and there is nothing beyond the last step',
+        navMdUndoStep(false) === false);
+      navMdUndoStep(true);
+      ok('markdown: nor before the first', navMdUndoStep(true) === false && f.content === src);
+
+      navLeaveMarkdown();
+      lib.files = lib.files.filter(function (e) { return e.id !== f.id; });
+      await openNote(canvasId);
+      await flush();
+    });
+
+    /* ---- [[links]] between files, and the graph they make ----
+       The link is never stored as a pointer, only as the name you wrote, so
+       what is checked here is that a name finds the right thing, that the two
+       ends stay tied through a rename, and that the picture the dashboard draws
+       is the same set of facts. */
+    await stage('links', async function () {
+      var canvasId = curNoteId, stamp = 'verify-wiki-' + Date.now(), i;
+      var canvasName = navBookById(canvasId).name;
+      var made = [];
+      var file = function (name, content) {
+        var f = { id:stamp + '-' + name, kind:'markdown', name:name, parentId:null,
+          theme:'canvas', content:content, created:Date.now(), updated:Date.now() };
+        lib.files.push(f); made.push(f.id); return f;
+      };
+      var alpha = file('Alpha.md', '# Alpha\n\nSee [[Beta]], [[Gamma|the third one]] and [[Nowhere]].\n' +
+        'Also [[' + canvasName + ']].\n');
+      var beta = file('Beta.md', '# Beta\n\nBack to [[Alpha]].\n');
+      var gamma = file('Gamma.md', '# Gamma\n\nNothing here points anywhere.\n');
+
+      /* ---- what a name means ---- */
+      ok('links: a name finds the file it belongs to', wkTarget('Beta').id === beta.id);
+      ok('links: the .md and the case of it make no difference',
+        wkTarget('beta.MD').id === beta.id && wkTarget('  Beta  ').id === beta.id);
+      ok('links: a canvas can be linked to as readily as a file',
+        wkTarget(canvasName).kind === 'canvas' && wkTarget(canvasName).id === canvasId);
+      ok('links: a name nothing answers to resolves to nothing', wkTarget('Nowhere') === null);
+      ok('links: code is written about links, not with them',
+        wkScan('`[[Beta]]` and\n```\n[[Beta]]\n```\nand [[Beta]]').length === 1,
+        wkScan('`[[Beta]]` and\n```\n[[Beta]]\n```\nand [[Beta]]').length);
+      ok('links: an offset in a scan still points at the character it came from',
+        (function () {
+          var src = 'aaa [[Beta]] bbb', h = wkScan(src)[0];
+          return src.slice(h.at, h.at + h.len) === '[[Beta]]';
+        })());
+
+      /* ---- how one is drawn ---- */
+      var html = navMdInline('See [[Beta]], [[Gamma|the third one]] and [[Nowhere]].');
+      ok('links: a resolved one is a link, and its name travels on the element',
+        /<a class="md-wiki" data-wiki="Beta"[^>]*>Beta<\/a>/.test(html), html);
+      ok('links: a label is what is shown, and the name is still what is followed',
+        /data-wiki="Gamma"[^>]*>the third one<\/a>/.test(html), html);
+      ok('links: one with nothing at the far end of it yet is drawn hollow',
+        /class="md-wiki new" data-wiki="Nowhere"/.test(html), html);
+      ok('links: the caret map counts the label, not the brackets',
+        (function () {
+          var src = navMdLines(), map;
+          $('#mdSource').value = 'see [[Beta|call it that]] now';
+          map = navMdSourceMap(0);
+          $('#mdSource').value = src.join('\n');
+          return map.map[4] === 11 && map.map[3] === 3;
+        })());
+
+      /* ---- a rename carries every mention of it ---- */
+      var moved = wkRewrite('Beta.md', 'Beta note.md');
+      ok('links: renaming rewrites every link to it and nothing else',
+        moved === 1 && alpha.content.indexOf('[[Beta note]]') > 0 &&
+        alpha.content.indexOf('[[Gamma|the third one]]') > 0, alpha.content);
+      beta.name = 'Beta note.md';
+      ok('links: and the link still lands', wkTarget('Beta note').id === beta.id);
+      ok('links: a rename to the same name rewrites nothing', wkRewrite('Beta note.md', 'Beta note') === 0);
+
+      /* ---- both ends of it ---- */
+      ok('links: what a file points at, and what points back at it',
+        wkCounts(alpha).links === 4 && wkCounts(beta).backlinks === 1 &&
+        wkCounts(gamma).links === 0 && wkCounts(gamma).backlinks === 1,
+        wkCounts(alpha).links + ' out / ' + wkCounts(beta).backlinks + ' back');
+
+      /* ---- the index the graph is drawn from ---- */
+      var ix = wkIndex();
+      var key = function (k) { return ix.nodes[ix.at.get(k)]; };
+      ok('links: every file and every canvas is a node whether linked or not',
+        !!key('markdown:' + gamma.id) && !!key('canvas:' + canvasId), ix.nodes.length);
+      ok('links: a name promised but not written is a node too',
+        !!key('ghost:nowhere') && key('ghost:nowhere').kind === 'ghost');
+      ok('links: a node is labelled the way a link would have to write it',
+        key('markdown:' + gamma.id).label === 'Gamma');
+      ok('links: the links themselves are the ones in the text, once each',
+        ix.links.filter(function (l) { return l.from === 'markdown:' + alpha.id; }).length === 4,
+        JSON.stringify(ix.links.length));
+      ok('links: a link is counted at both of its ends',
+        key('markdown:' + beta.id).backlinks === 1 && key('markdown:' + beta.id).links === 1);
+
+      /* ---- the list that offers a name ---- */
+      var sug = wkSuggest('bet');
+      ok('links: the list offers what matches, closest first', sug[0].name === 'Beta note', JSON.stringify(sug));
+      ok('links: and offers what you typed when nothing matches it',
+        wkSuggest('Brand new thing')[0].kind === 'new');
+      ok('links: an empty [[ offers the whole library', wkSuggest('').length > 1);
+
+      /* ---- through a real box, with real keys ---- */
+      await navOpenMarkdown(alpha.id, false);
+      navMdOpenLine(4, navMdLineStart(4) + navMdLines()[4].length);
+      var box = Q('#mdPreview .md-line-editor');
+      ok('links: the line under the caret is an editor', !!box);
+      var at = box.value.length;
+      box.focus(); box.setRangeText('[', at, at, 'end');
+      box.dispatchEvent(new KeyboardEvent('keydown', { key:'[', bubbles:true }));
+      ok('links: a second [ closes its own brackets and stands between them',
+        box.value.slice(at) === '[[]]' && box.selectionStart === at + 2,
+        box.value.slice(at) + ' @' + box.selectionStart);
+      ok('links: and the list opens inside them',
+        WK.on && !!Q('#wikipad.open') && QA('#wikipad .wklist li').length > 1,
+        QA('#wikipad .wklist li').length + ' rows');
+      box.setRangeText('Gam', box.selectionStart, box.selectionStart, 'end');
+      box.dispatchEvent(new Event('input', { bubbles:true }));
+      ok('links: typing narrows it to what is left', WK.list[0].name === 'Gamma', JSON.stringify(WK.list[0]));
+      box.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', bubbles:true }));
+      ok('links: enter takes the name and steps out past the brackets',
+        box.value.slice(at) === '[[Gamma]]' && box.selectionStart === at + 9 && !WK.on,
+        box.value.slice(at) + ' @' + box.selectionStart);
+      ok('links: and what was taken is in the file', alpha.content.indexOf('[[Gamma]]') > 0);
+      navMdOpenLine(0, 0);
+
+      /* ---- following one, with the pointer ---- */
+      await navOpenMarkdown(alpha.id, false);
+      navMdOpenLine(0, 0);
+      var links = QA('#mdPreview .md-wiki');
+      /* four written when the file was made, and the fifth taken from the list */
+      ok('links: the document draws every one of them',
+        links.length === 5 && links.filter(function (a) { return a.classList.contains('new'); }).length === 1,
+        links.length + ' drawn');
+      links.filter(function (a) { return a.dataset.wiki === 'Gamma'; })[0].click();
+      await sleep(150);
+      ok('links: clicking one opens the file at the other end of it', navMdId === gamma.id, navMdId);
+      await navOpenMarkdown(alpha.id, false);
+      navMdOpenLine(0, 0);
+      QA('#mdPreview .md-wiki').filter(function (a) { return a.dataset.wiki === canvasName; })[0].click();
+      await sleep(200);
+      ok('links: and one pointing at a canvas opens the sheet',
+        curNoteId === canvasId && !navMdId && !document.body.classList.contains('md-open'));
+      await navOpenMarkdown(alpha.id, false);
+      navMdOpenLine(0, 0);
+
+      /* ---- where the dots go ---- */
+      var g = gphMake(ix.nodes, ix.links);
+      ok('graph: one point per node, one edge per link that has both ends',
+        g.pts.length === ix.nodes.length && g.edges.length === ix.links.length,
+        g.pts.length + ' / ' + g.edges.length);
+      ok('graph: nothing starts on top of anything else',
+        (function () {
+          for (var a = 0; a < g.pts.length; a++) for (var b = a + 1; b < g.pts.length; b++)
+            if (Math.abs(g.pts[a].x - g.pts[b].x) < 1e-9 && Math.abs(g.pts[a].y - g.pts[b].y) < 1e-9) return false;
+          return true;
+        })());
+      var before = JSON.stringify(g.pts.map(function (p) { return [p.x, p.y]; }));
+      var g2 = gphMake(ix.nodes, ix.links);
+      ok('graph: the same library lays out the same way twice',
+        JSON.stringify(g2.pts.map(function (p) { return [p.x, p.y]; })) === before);
+      var steps = gphSettle(g, 400);
+      ok('graph: it settles rather than running to the end of its patience',
+        steps < 400 && g.calm, steps + ' steps');
+      var b0 = gphBounds(g, 10);
+      ok('graph: and everything is inside the box it reports',
+        g.pts.every(function (p) {
+          return p.x >= b0.x && p.x <= b0.x + b0.w && p.y >= b0.y && p.y <= b0.y + b0.h;
+        }));
+      var linked = g.edges[0];
+      ok('graph: a link holds its two ends near each other',
+        (function () {
+          var a = g.pts[linked.a], b = g.pts[linked.b];
+          return Math.hypot(a.x - b.x, a.y - b.y) < GPH_LINK * 3.2;
+        })(), 'spread out too far');
+      var pinned = g.pts[0];
+      pinned.pin = true; pinned.x = 1234; pinned.y = -987;
+      gphTick(g, 1);
+      ok('graph: a pinned point is where it was put and nowhere else',
+        pinned.x === 1234 && pinned.y === -987);
+      pinned.pin = false;
+
+      /* ---- and how it is drawn ---- */
+      dashSetOpen(true);
+      ok('graph: the dashboard draws a dot for every node and a line for every link',
+        QA('#dashGraph .gphN').length === ix.nodes.length &&
+        QA('#dashGraph .gphE').length === ix.links.length,
+        QA('#dashGraph .gphN').length + ' dots');
+      ok('graph: a canvas, a file and a name not written yet are told apart',
+        !!Q('#dashGraph .gphN.canvas') && !!Q('#dashGraph .gphN.markdown') && !!Q('#dashGraph .gphN.ghost'));
+      ok('graph: every dot stands somewhere, and the frame is around all of them',
+        QA('#dashGraph .gphN').every(function (n) { return /translate\(/.test(n.getAttribute('transform')); }) &&
+        /^-?[\d.]+ -?[\d.]+ [\d.]+ [\d.]+$/.test(Q('#dashGraph svg').getAttribute('viewBox')),
+        Q('#dashGraph svg').getAttribute('viewBox'));
+      var hot = ix.at.get('markdown:' + alpha.id);
+      dashGraphHot(hot);
+      /* Alpha points at four things and Beta points back at it, so five lines
+         touch it and four other dots are lit — a link home is a link too */
+      ok('graph: hovering one lights what it is joined to and dims the rest',
+        QA('#dashGraph .gphN.lit').length === 4 &&
+        QA('#dashGraph .gphN.off').length === ix.nodes.length - 5 &&
+        QA('#dashGraph .gphE.on').length === 5,
+        QA('#dashGraph .gphN.lit').length + ' lit, ' + QA('#dashGraph .gphE.on').length + ' lines');
+      dashGraphHot(-1);
+      ok('graph: and letting go puts everything back',
+        !Q('#dashGraph .gphN.off') && !Q('#dashGraph .gphE.on'));
+      var wide = DASHG.view.w;
+      Q('#dashGraph').dispatchEvent(new WheelEvent('wheel', { deltaY:-240, clientX:400, clientY:400, bubbles:true }));
+      ok('graph: the wheel zooms the frame in', DASHG.view.w < wide, DASHG.view.w + ' from ' + wide);
+      Q('#dashGraphFit').click();
+      ok('graph: and Fit puts the whole of it back in the frame',
+        Math.abs(DASHG.view.w - wide) < 1, DASHG.view.w + ' vs ' + wide);
+      dashSetOpen(false);
+
+      /* ---- put the library back ---- */
+      navLeaveMarkdown();
+      lib.files = lib.files.filter(function (f) { return made.indexOf(f.id) < 0; });
+      await openNote(canvasId);
+      await flush();
+    });
+
+    /* ---- the dashboard ----
+       The record of days is the only thing in the app that remembers more than
+       "last touched", so what is checked here is that it counts the right days,
+       counts only writing, and survives being read a year at a time. */
+    await stage('dashboard', async function () {
+      var canvasId = curNoteId, stamp = 'verify-dash-' + Date.now();
+      var keptLog = lib.activity, keptSeen = lib.actSeen, keptSeeded = lib.activitySeeded;
+      var today = dashToday(), key = dashKey(today), i;
+
+      /* ---- days are local days ---- */
+      var late = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 30).getTime();
+      ok('dashboard: a day key is the local day, not the UTC one', dashKeyOf(late) === key,
+        dashKeyOf(late) + ' vs ' + key);
+      ok('dashboard: a day key reads back as that midnight',
+        dashDate(key).getTime() === today.getTime() && dashDate('nonsense') === null);
+      ok('dashboard: a week starts on Monday', dashMonday(dashDate('2026-08-27')).getDate() === 24,
+        dashMonday(dashDate('2026-08-27')).toDateString());
+      ok('dashboard: whole days are counted between midnights',
+        dashSpan(dashDate('2026-03-28'), dashDate('2026-04-01')) === 4 &&
+        dashSpan(today, dashPlus(today, -3)) === -3);
+
+      /* ---- what marks a day, and what does not ---- */
+      lib.activity = {}; lib.activitySeeded = true; lib.actSeen = dashHigh();
+      lib.lastOpen = canvasId; dashMark();
+      ok('dashboard: opening a note is not activity', dashCount(key) === 0, dashCount(key));
+      var book = navBookById(canvasId);
+      book.updated = dashHigh() + 1000; dashMark();
+      var marked = dashKeyOf(lib.actSeen);
+      ok('dashboard: a saved change marks the day it was saved on', dashCount(marked) === 1, dashCount(marked));
+      dashMark(); dashMark();
+      ok('dashboard: the same change is never counted twice', dashCount(marked) === 1, dashCount(marked));
+      book.updated = lib.actSeen + 1000; dashMark();
+      ok('dashboard: the next change is', dashCount(dashKeyOf(lib.actSeen)) === 2, dashCount(marked));
+
+      /* ---- a library older than the record still has one ---- */
+      var old = Date.now() - 40 * 864e5;
+      var seed = { id:stamp + '-seed', kind:'markdown', name:'Seeded.md', parentId:null,
+        theme:'canvas', content:'', created:old, updated:old };
+      lib.files.push(seed);
+      lib.activity = {}; lib.activitySeeded = false;
+      ok('dashboard: an old library seeds the record from what it already knows',
+        dashSeed() === true && dashCount(dashKeyOf(old)) === 1 && dashCount(key) >= 1,
+        dashCount(dashKeyOf(old)) + ' / ' + dashCount(key));
+      ok('dashboard: seeding happens once and never again', dashSeed() === false && lib.activitySeeded === true);
+
+      /* ---- five steps, scaled to the busiest day there has been ---- */
+      ok('dashboard: nothing is level nought', dashLevel(0, 10) === 0);
+      ok('dashboard: one save is never invisible', dashLevel(1, 10) === 1 && dashLevel(1, 1) === 1);
+      ok('dashboard: the busiest day is the top step', dashLevel(10, 10) === 4 && dashLevel(9, 10) === 4);
+      ok('dashboard: the steps in between are the quarters',
+        dashLevel(3, 10) === 2 && dashLevel(5, 10) === 2 && dashLevel(6, 10) === 3, dashLevel(5, 10));
+
+      /* ---- runs of days ---- */
+      lib.activity = {};
+      for (i = 0; i < 5; i++) lib.activity[dashKey(dashPlus(today, -i))] = 1;
+      for (i = 20; i < 27; i++) lib.activity[dashKey(dashPlus(today, -i))] = 2;
+      var st = dashStats();
+      ok('dashboard: the run you are on is counted back from today', st.cur === 5, st.cur);
+      ok('dashboard: the longest run is the longest there has ever been', st.best === 7, st.best);
+      ok('dashboard: a year counts its days and its saves', st.days === 12 && st.edits === 19,
+        st.days + ' days / ' + st.edits + ' saves');
+      delete lib.activity[key];
+      ok('dashboard: a day with nothing on it yet does not end the run', dashStats().cur === 4, dashStats().cur);
+      delete lib.activity[dashKey(dashPlus(today, -1))];
+      ok('dashboard: a whole day missed does', dashStats().cur === 0, dashStats().cur);
+      lib.activity[dashKey(dashPlus(today, -900))] = 3;
+      lib.activity[dashKey(dashPlus(today, -700))] = 3;
+      dashPrune();
+      ok('dashboard: the record is pruned to the years it draws',
+        !dashCount(dashKey(dashPlus(today, -900))) && dashCount(dashKey(dashPlus(today, -700))) === 3);
+      /* three of the recent run are left, the whole older one is, and the day
+         beyond the year is not — it is kept in the record but never counted */
+      ok('dashboard: days beyond the last year are not in the year figures',
+        dashStats().days === 10 && dashStats().edits === 17, dashStats().days + ' / ' + dashStats().edits);
+
+      /* ---- the panel ---- */
+      lib.activity = {}; lib.activity[key] = 4;
+      lib.activity[dashKey(dashPlus(today, -3))] = 1;
+      seed.updated = dashPlus(today, -3).getTime() + 36e5;
+      dashSetOpen(true);
+      ok('dashboard: it opens over the desk and says so in the bar',
+        dashIsOpen() && Q('#dashBtn').classList.contains('on') &&
+        Q('#dash').getAttribute('aria-hidden') === 'false');
+      ok('dashboard: four figures at the top', QA('#dashStats .dashTile').length === 4,
+        QA('#dashStats .dashTile').length);
+
+      var cells = QA('#dashHeat .heatCell'), ahead = 6 - ((today.getDay() + 6) % 7);
+      ok('dashboard: the heat map is fifty-three weeks of seven days',
+        cells.length === DASH_WEEKS * 7, cells.length);
+      ok('dashboard: the days still to come are blank and unclickable',
+        QA('#dashHeat .heatCell.ahead').length === ahead &&
+        QA('#dashHeat button.heatCell').length === DASH_WEEKS * 7 - ahead, ahead);
+      var last = QA('#dashHeat button.heatCell').slice(-1)[0];
+      ok('dashboard: the last square you can click is today',
+        last.dataset.dashDay === key && last.title.indexOf(dashShortDate(today)) >= 0, last.title);
+      ok('dashboard: today is drawn at the busiest step it has earned',
+        last.getAttribute('data-lv') === '4', last.getAttribute('data-lv'));
+      ok('dashboard: every month of the year is labelled once',
+        QA('#dashHeat .heatMonths span').length >= 12 &&
+        QA('#dashHeat .heatMonths span').length <= 13, QA('#dashHeat .heatMonths span').length);
+      ok('dashboard: a square says what it was without a pointer',
+        last.querySelector('.vh').textContent === dashShortDate(today) &&
+        QA('#dashHeat .heatKey i').length === 5);
+
+      var len = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      ok('dashboard: the calendar is this month, to the day',
+        QA('#dashCal .calDay').length === len &&
+        Q('#dashMonth').textContent.indexOf(String(today.getFullYear())) > 0,
+        QA('#dashCal .calDay').length + ' of ' + len);
+      ok('dashboard: it is laid out Monday first, from the right weekday',
+        QA('#dashCal .calPad').length === (new Date(today.getFullYear(), today.getMonth(), 1).getDay() + 6) % 7 &&
+        Q('#dashCal .calHead span').textContent.trim() === 'Mon');
+      ok('dashboard: today is ringed and picked to start with',
+        Q('#dashCal .calDay.today').dataset.dashDay === key &&
+        Q('#dashCal .calDay.picked').dataset.dashDay === key);
+
+      var back = dashKey(dashPlus(today, -3));
+      Q('#dashHeat button.heatCell[data-dash-day="' + back + '"]').click();
+      ok('dashboard: clicking a square picks that day', dashDay === back);
+      ok('dashboard: the day panel says which day, and what was saved then',
+        Q('#dashDayHead h3').textContent.indexOf(dashLongDate(dashDate(back))) >= 0 &&
+        Q('#dashDayHead .dashMeta').textContent.indexOf('1 save') >= 0,
+        Q('#dashDayHead h3').textContent + ' | ' + Q('#dashDayHead .dashMeta').textContent);
+      ok('dashboard: it lists what was touched that day, and nothing else',
+        QA('#dashDayList .dashRow').length === 1 &&
+        Q('#dashDayList .dashRow').dataset.dashOpen === 'markdown:' + seed.id,
+        QA('#dashDayList .dashRow').length + ' rows');
+      Q('#dashToday').click();
+      ok('dashboard: Today comes back to today', dashDay === key && !!Q('#dashCal .calDay.picked.today'));
+      var month = Q('#dashMonth').textContent;
+      Q('#dashPrev').click();
+      ok('dashboard: ‹ steps a month back', Q('#dashMonth').textContent !== month &&
+        !Q('#dashCal .calDay.today'), Q('#dashMonth').textContent);
+      Q('#dashNext').click();
+      ok('dashboard: › steps it forward again', Q('#dashMonth').textContent === month);
+
+      var rows = QA('#dashRecent .dashRow');
+      ok('dashboard: recently open is the library, newest first',
+        rows.length === 2 && rows[0].dataset.dashOpen === 'canvas:' + canvasId &&
+        rows[1].dataset.dashOpen === 'markdown:' + seed.id,
+        rows.map(function (r) { return r.dataset.dashOpen; }).join(' '));
+      ok('dashboard: a row says where the thing lives and what it is',
+        rows[0].querySelector('.dashRowPath').textContent === 'Library root' &&
+        rows[1].querySelector('.dashRowWhen').textContent.indexOf('Markdown file') >= 0,
+        rows[1].querySelector('.dashRowWhen').textContent);
+      ok('dashboard: a canvas keeps the explorer glyph it has everywhere else',
+        !!rows[0].querySelector('.nav-glyph.canvas') && !!rows[1].querySelector('.nav-glyph.md'));
+
+      rows[0].click(); await sleep(120);
+      ok('dashboard: clicking a row closes the dashboard and opens that file',
+        !dashIsOpen() && curNoteId === canvasId && Q('#dashBtn').getAttribute('aria-pressed') === 'false');
+      window.dispatchEvent(new KeyboardEvent('keydown',
+        { key:'D', ctrlKey:true, shiftKey:true, bubbles:true }));
+      ok('dashboard: Ctrl+Shift+D opens it from anywhere', dashIsOpen());
+      window.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }));
+      ok('dashboard: Escape closes it before the sheet underneath hears the key', !dashIsOpen());
+
+      dashSetOpen(true);
+      ok('dashboard: the body says it is the screen, so the map stands down',
+        document.body.classList.contains('dash-open') &&
+        getComputedStyle(Q('.cmap')).display === 'none');
+      var navRow = QA('#navTree .nav-row').filter(function (r) { return r.dataset.kind === 'canvas'; })[0];
+      navRow.querySelector('.nav-row-main').click(); await sleep(140);
+      ok('dashboard: opening something in the explorer puts the dashboard away',
+        !dashIsOpen() && !document.body.classList.contains('dash-open'));
+
+      lib.files = lib.files.filter(function (e) { return e.id !== seed.id; });
+      lib.activity = keptLog; lib.actSeen = keptSeen; lib.activitySeeded = keptSeeded;
+      await flush();
     });
 
     /* ---- every add-menu kind actually adds what it says ---- */

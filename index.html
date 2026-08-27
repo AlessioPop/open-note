@@ -182,6 +182,7 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
     <span class="brand" title="Your notes">Open Note</span>
     <span class="save" id="saveTag">saved</span>
     <span class="sp"></span>
+    <button class="btn" id="dashBtn" title="Dashboard — the month, what you were last in, and the year in days (Ctrl+Shift+D)" aria-pressed="false">◧ Dashboard</button>
     <button class="btn" id="navBtn" title="Toggle file explorer (Ctrl+Shift+E)" aria-pressed="false">▤ Files</button>
     <button class="btn" id="shelfBtn" title="Canvas note gallery">▦ Gallery</button>
     <button class="btn" id="layBtn" title="Layers — pick one to work on, the rest go faint (L)">▤ Layers</button>
@@ -210,8 +211,8 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
         </select>
       </label>
       <div class="md-modes" role="group" aria-label="Markdown view">
-        <button id="mdWriteBtn" class="on" aria-pressed="true">Write</button>
-        <button id="mdPreviewBtn" aria-pressed="false">Preview</button>
+        <button id="mdWriteBtn" class="on" aria-pressed="true" title="Edit one source line inside the rendered document">Live</button>
+        <button id="mdPreviewBtn" aria-pressed="false" title="Read the rendered document">Read</button>
       </div>
       <button class="md-download" id="mdDownload" title="Save a copy of this Markdown file">⇩ .md</button>
     </header>
@@ -229,13 +230,13 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
       <span class="md-format-rule"></span>
       <button data-md-act="math" title="Inline equation ($…$)" aria-label="Inline equation">x²</button>
       <button data-md-act="mathblock" title="Display equation ($$…$$)" aria-label="Display equation">∑</button>
-      <span class="md-format-hint">$ opens the equation helper</span>
+      <span class="md-format-hint">Live preview · $ opens the equation helper</span>
     </div>
     <div class="md-paper">
       <textarea id="mdSource" data-mathpad aria-label="Markdown source" placeholder="# Start writing…" spellcheck="true"></textarea>
       <article class="md-preview" id="mdPreview"></article>
     </div>
-    <footer class="md-status"><span id="mdWords">0 words</span><span>Markdown · saved locally</span></footer>
+    <footer class="md-status"><span id="mdWords">0 words</span><span id="mdLinks">0 links out · 0 in</span></footer>
   </section>
 
   <div class="tools-bar">
@@ -264,6 +265,51 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
     <button class="btn" id="shelfClose" title="Back to the open file">✕ Back to the file</button>
   </div>
   <div class="bkgrid" id="bkGrid"></div>
+</div>
+
+<!-- the dashboard — a month, what was last open and a year of days. Only the
+     shell is here; every square, row and label is drawn by js/chrome/dashboard.js -->
+<div class="dash" id="dash" role="dialog" aria-label="Dashboard" aria-hidden="true">
+  <div class="dashHead">
+    <h2>Dashboard</h2>
+    <div class="sub" id="dashSub">your library at a glance</div>
+    <button class="btn" id="dashClose" title="Back to the open file">✕ Back to the file</button>
+  </div>
+  <div class="dashWrap">
+    <div class="dashStats" id="dashStats"></div>
+    <section class="dashCard heat" aria-label="Activity">
+      <header><h3>Activity</h3><span class="dashMeta" id="dashHeatMeta"></span></header>
+      <div id="dashHeat"></div>
+    </section>
+    <section class="dashCard graph" aria-label="Links between files">
+      <header><h3>Links</h3>
+        <span class="dashMeta" id="dashGraphMeta"></span>
+        <span class="dashNav">
+          <button id="dashGraphFit" title="Fit the whole graph in the frame">Fit</button>
+          <button id="dashGraphRelax" title="Lay it out again from the beginning">Relax</button>
+        </span>
+      </header>
+      <div id="dashGraph"></div>
+    </section>
+    <section class="dashCard cal" aria-label="Calendar">
+      <header><h3 id="dashMonth">Month</h3>
+        <span class="dashNav">
+          <button id="dashPrev" title="The month before" aria-label="The month before">‹</button>
+          <button id="dashToday" title="Back to today">Today</button>
+          <button id="dashNext" title="The month after" aria-label="The month after">›</button>
+        </span>
+      </header>
+      <div id="dashCal"></div>
+    </section>
+    <section class="dashCard day" aria-label="The day picked">
+      <header id="dashDayHead"></header>
+      <div id="dashDayList"></div>
+    </section>
+    <section class="dashCard recent" aria-label="Recently open">
+      <header><h3>Recently open</h3><span class="dashMeta">click to carry on</span></header>
+      <div id="dashRecent"></div>
+    </section>
+  </div>
 </div>
 
 <!-- the palette — its shelves and tiles are drawn from the registry by
@@ -399,6 +445,7 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
      and only to hand addCSS() the stylesheet its markup needs -->
 <script src="js/lib/sound.js"></script>
 <script src="js/lib/spring.js"></script>
+<script src="js/lib/graph.js"></script>
 <script src="js/lib/latex.js"></script>
 <script src="js/lib/mathexpr.js"></script>
 <script src="js/lib/contour.js"></script>
@@ -481,6 +528,8 @@ figure figcaption:empty::before{content:"caption";opacity:.35}
 <script src="js/chrome/shelf.js"></script>
 <script src="js/chrome/navigator.js"></script>
 <script src="js/chrome/markdown.js"></script>
+<script src="js/chrome/wiki.js"></script>
+<script src="js/chrome/dashboard.js"></script>
 <script src="js/chrome/print.js"></script>
 <script src="js/chrome/backup.js"></script>
 <script src="js/chrome/export.js"></script>

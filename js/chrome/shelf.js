@@ -43,7 +43,9 @@ async function buildShelf(){
     nameEl.addEventListener('click', e => e.stopPropagation());
     nameEl.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); nameEl.blur(); } });
     nameEl.addEventListener('blur', () => {
+      const was = b.name;
       b.name = nameEl.textContent.trim() || 'Untitled'; nameEl.textContent = b.name; queueLib();
+      if(typeof wkRewrite === 'function') wkRewrite(was, b.name);
       if(typeof navRender === 'function') navRender();
     });
     const del = card.querySelector('.del');

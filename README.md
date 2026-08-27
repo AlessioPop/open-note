@@ -58,7 +58,7 @@ Nothing is a picture of a gate: a component is stored as `{gate:"nand"}` and dra
 
 ### And the rest
 
-**Library** — an Obsidian-style file explorer with nested folders, contextual right-click actions, canvas notes, editable Markdown files, search, drag-in/out organisation and imports for PDFs, spreadsheets, FITS and ordinary files. Markdown keeps its plain source while gaining a formatting bar, smart lists and tasks, keyboard shortcuts, live equation help and the canvas's syntax-coloured code cells in Preview. **Write** — text in five styles, sticky notes, checklists, a terminal-style code cell syntax-coloured for twelve languages, flip cards you can study. **Media** — pictures, video, `.obj` models in their own little window, `.pptx` decks that draw themselves as SVG, file attachments and the folders they file into. **Shapes** — five wireframe solids to draw over. **Over the top of all of it** — a stylus, layers, string tied between anything and anything, and a toolbar selection mode that drags a rectangle around several things so they move or delete as one on a mouse or touchscreen.
+**Library** — an Obsidian-style file explorer with nested folders, contextual right-click actions, canvas notes, editable Markdown files, search, drag-in/out organisation and imports for PDFs, spreadsheets, FITS and ordinary files. Markdown keeps its plain source while gaining a formatting bar, nested smart lists and tasks, keyboard shortcuts, a document that recompiles as you type, live equation help and the canvas's syntax-coloured code cells. **Dashboard** — one screen for the library: a month you can walk back through, the files you were last in, a year of your working days as a GitHub-style heat map drawn from a record the app keeps itself, and a force-directed graph of every `[[link]]` between your files that you can drag, zoom and click through. **Linked notes** — `[[double brackets]]` join Markdown files and canvases to each other, with a completion list as you type, a link to a note you have not written yet that offers to start it, and a rename that carries every mention of it along. **Write** — text in five styles, sticky notes, checklists, a terminal-style code cell syntax-coloured for twelve languages, flip cards you can study. **Media** — pictures, video, `.obj` models in their own little window, `.pptx` decks that draw themselves as SVG, file attachments and the folders they file into. **Shapes** — five wireframe solids to draw over. **Over the top of all of it** — a stylus, layers, string tied between anything and anything, and a toolbar selection mode that drags a rectangle around several things so they move or delete as one on a mouse or touchscreen.
 
 Then take it out again: one self-contained `.html` anyone can open, a PDF, or a `.json` backup that restores anywhere.
 
@@ -112,7 +112,7 @@ js/lib/           algorithms that owe nothing to this app — latex, pptx, workb
 js/data/          tables the lib files read — the nuclides, the elements. Data, never code
 fonts/            the four families, carried locally so nothing needs the network
 desktop/          the Electron shell — main process and icon; wraps the app, never part of it
-tools/verify/     headless-Firefox verification harness — 1876 assertions
+tools/verify/     headless-Firefox verification harness — 1993 assertions
 tools/shots/      rebuilds the pictures above from the real app
 docs/             manual, architecture, and those pictures
 ```
@@ -126,7 +126,7 @@ Only `index.html`, `js/`, `fonts/` and `desktop/` are packaged into a build — 
 There is no test runner — the app *is* the test.
 
 ```
-tools/verify/run.sh        # 1876 assertions, in headless Firefox
+tools/verify/run.sh        # 1993 assertions, in headless Firefox
 tools/verify/desktop.sh    # 47 more, driving the real Electron shell
 tools/shots/run.sh         # rebuild the pictures in this README
 ```

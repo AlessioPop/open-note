@@ -7,7 +7,7 @@ Everything you can put on the sheet. For running the app see the [README](../REA
 The app opens on the file you had open last. **▤ Files** in the top bar (or `Ctrl`/`Cmd`+`Shift`+`E`) opens the Obsidian-style file explorer down the left. It shows nested folders and everything filed inside them. The explorer remembers whether it was open and which folders were expanded.
 
 - **Right-click** the empty explorer background to make a root-level Markdown file, canvas or folder, or to import there. Right-click a folder to do the same inside it. Use its `>` disclosure to open or close it, or drag any tree entry onto it to move that entry inside. Drop an entry on the explorer background to move it back to the root.
-- Markdown files autosave as you type. **Write / Preview** switches between source and the rendered document, **Theme** can follow the current canvas or save an independent Paper, Darkroom, Blueprint or Kraft palette with the file, and **⇩ .md** saves a copy to disk.
+- Markdown files autosave and recompile as you type. `Ctrl`/`Cmd`+`Z` and `Ctrl`/`Cmd`+`Shift`+`Z` step the **whole document** back and forward — a run of typing is one step, and anything structural (a joined line, a ticked task, a formatting button) is a step of its own. **Live** is an Obsidian-style document: the line under the caret shows its Markdown source and compiles as soon as you move to another line; **Read** compiles every line. **Theme** can follow the current canvas or save an independent Paper, Darkroom, Blueprint or Kraft palette with the file, and **⇩ .md** saves a copy to disk.
 - Imported files stay in the local library. Imported `.md` files become editable; `.xlsx`, `.ods`, `.csv` and `.tsv` open in the table reader; FITS files open in the FITS reader; PDFs open in the document viewer; images and video use their viewers; other files remain openable shortcuts. Files can also be dropped onto the explorer or directly onto a folder.
 - Right-click an entry to open, rename, move it to the root or delete it. The hover pencil and **✕** remain as quick versions of the last two actions.
 - The search box filters names and paths. Removing a folder moves its contents up one level rather than deleting them with it.
@@ -16,6 +16,10 @@ Markdown is always stored as the plain text you wrote. The strip above the paper
 
 Inside a fenced code block, the code cell's own keyboard takes over: Tab indents, Enter keeps the indent, and brackets and quotes pair themselves. In Preview the fence becomes the same syntax-coloured terminal used on the canvas, including its language label and copy button. A `$` pairs itself in Write and opens the same equation preview and LaTeX helper used by canvas writing; `\fra`, for example, offers `\frac{}{}`, and equations compile into the document in Preview.
 
+**Nested lists and tasks carry a line down from what they belong to**, the same hairline the canvas writer draws under a nested bullet, so a deep list can be read a branch at a time; the line lights up under the pointer.
+
+**A `$$` on its own line opens a display equation**, and everything down to the closing `$$` is one block: one thing in the document, one run in the editor, and it typesets as a whole. `$…$` inside a sentence compiles inside the line it was written on and can never reach across the lines around it. Clicking a line that carries a formula puts the caret where you aimed it — what is counted is the source behind the compiled run, not the two or three glyphs it was drawn as.
+
 Imported library files use the same local IndexedDB media store as attachments. A canvas backup still backs up that canvas, not the whole explorer: use **⇩ .md** or a file reader's save action for a separate copy of a library file.
 
 **▦ Gallery** in the top bar (or the wordmark) takes you to the canvas **gallery**, where every canvas note is shown as a small picture of its own sheet in its own colours; `Esc` goes back to the open file.
@@ -23,6 +27,35 @@ Imported library files use the same local IndexedDB media store as attachments. 
 - Click a note to open it; hover to lift it off the shelf.
 - The dashed **∞** card starts a new one.
 - Click a note's name to rename it; the **✕** in its corner deletes the whole note after a confirmation.
+
+## The dashboard
+
+**◧ Dashboard** in the top bar (or `Ctrl`/`Cmd`+`Shift`+`D`) is the one screen about the *library* rather than about what is on the paper. `Esc`, or **✕ Back to the file**, goes back to whatever you were in.
+
+- **Activity** is a square for every day of the last year, the way a contribution graph is: a column to the week, Monday at the top, and the darkest squares are the busiest days you have had — the shading is scaled to your own busiest day, not to a fixed number, so a quiet library still shows its shape. The days still to come are left blank. Click any square to read that day.
+- **The month** shades its days the same way. A dot under a date means something in the library was last saved then; today is ringed. `‹` and `›` — or the left and right arrow keys — walk through the months, **Today** comes back, and clicking a day picks it.
+- **The day** panel underneath names the day you picked, says how many saves it holds, and lists everything whose last save falls on it. Something worked on that day and again since shows under the later day only — the library remembers each thing's *last* save, not all of them.
+- **Recently open** is the eight files you were in most recently, newest first, with the folder each one lives in. Click one to carry straight on with it; the dashboard closes behind you. Opening anything from the explorer closes it too.
+- **Links** is the graph of everything joined by `[[links]]`: a dot for every Markdown file and every canvas, a line for every link, and a hollow dot for a name you have linked to but not written yet. Hover a dot to light up what it is joined to and dim everything else; **drag** one to pull it about and the rest settles around it; **click** one to open that file — or, on a hollow one, to start it. The wheel zooms, dragging the background moves it, **Fit** puts the whole of it back in frame and **Relax** lays it out again from the beginning. It is laid out fresh each time the links themselves change and left exactly where it stands otherwise.
+
+**What counts as a day worked** is writing, not reading. Opening a note to look at it colours nothing in. Saving anything at all does — a pen stroke, a renamed file, a Markdown keystroke, a new folder — and each burst of saving counts once, so the numbers are days and sessions rather than keypresses. Days are *your* days: a stroke drawn at half past eleven at night belongs to that evening, wherever you are.
+
+The record starts the first time you open the app after this: it is seeded from the dates your library already carries, so an old library shows the days its files were made and last touched rather than nothing at all, and fills in properly from there. About two years of it are kept and the last one is drawn.
+
+## Linking files to each other
+
+Write **`[[the name of another file]]`** in a Markdown file and the two of them are joined. It works the way it does in Obsidian:
+
+- Typing the second `[` closes the brackets for you and opens a list of every Markdown file and canvas in the library. Keep typing to narrow it, `↑`/`↓` to pick, `⏎` or `⇥` to take it, `Esc` to dismiss the list.
+- A name is a file's name with or without its `.md`, and case makes no difference. When two files share a name, give as much of the path as you need — `[[Thesis/Chapter 3]]` — or rely on the one in the same folder winning.
+- `[[Name|call it something else here]]` shows the second half and follows the first.
+- **Canvases can be linked to as well as Markdown files.** A `[[link]]` to a canvas opens the sheet.
+- A link to something that does not exist yet is drawn hollow. Clicking it offers to start that file, in the folder you are writing in, and opens it. Writing the link first is the normal way round.
+- **Renaming carries the links with it.** Rename a file — in the explorer, on its own title bar, or on its card in the gallery — and every `[[mention]]` of it in every other file is rewritten. The label side of `[[name|label]]` is left exactly as you wrote it.
+- Clicking a link follows it. **Alt**-click one instead to put the caret in it and edit the text.
+- The foot of the document says how many links this file points out and how many point back at it. The whole picture is the **Links** graph on the dashboard.
+
+Links inside code — a `` `[[tick]]` `` or a fenced block — are text about links, not links.
 
 ## The sheet
 
