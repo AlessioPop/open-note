@@ -7200,7 +7200,7 @@
       /* the keys find the molecule under the pointer, so the whole sheet must be on screen */
       fitToDesk(true); await sleep(150);
       ok('chem: Science holds molecules, Feynman diagrams and logic circuits', !!TOOL_CATS.science &&
-        palTools('science').length === 6 && ['molecule','feynman','circuit'].every(function (kind) {
+        palTools('science').length === 8 && ['molecule','feynman','circuit','atlas','country'].every(function (kind) {
           return palTools('science').some(function (t) { return t.kind === kind; });
         }),
         palTools('science').map(function (t) { return t.kind; }).join(','));
@@ -8322,6 +8322,658 @@
         pSquares === 4314 && nps.querySelector('.nufacts').textContent.indexOf('Uranium-238') >= 0 &&
         nps.querySelectorAll('.nukey span').length === NU_CLS.length && !nps.querySelector('button'),
         pSquares + ' squares');
+      page.items = []; await render();
+    });
+
+    /* ---- the world ---- */
+    await stage('atlas', async function () {
+      var page = sheet();
+      page.items = []; await render();
+
+      /* the table and the geometry over it — none of this needs a map */
+      ok('atlas: 1959 arcs, 27056 points', geoArcs().length === 1959 &&
+        geoArcs().reduce(function (n, a) { return n + a.length; }, 0) === 27056,
+        geoArcs().length + ' arcs');
+      /* the coarser copies the map draws when it cannot show that much detail */
+      var lodN = function (l) { return geoArcsAt(l).reduce(function (n, a) { return n + a.length; }, 0); };
+      ok('atlas: the world has coarser copies of itself, and they really are coarser',
+        lodN(0) < lodN(1) && lodN(1) < lodN(GEO_LOD_MAX) && lodN(0) < 12000 &&
+        geoArcsAt(GEO_LOD_MAX) === geoArcs(),
+        [lodN(0), lodN(1), lodN(GEO_LOD_MAX)].join(' -> '));
+      ok('atlas: …with every arc still starting and ending where it did, which is\n' +
+         '         the whole reason a coarse world is still in register with itself',
+        geoArcsAt(0).every(function (a, i) {
+          var f = geoArcs()[i];
+          return a.length >= 2 && a[0] === f[0] && a[a.length - 1] === f[f.length - 1];
+        }));
+      ok('atlas: a coarse copy is built once and kept', geoArcsAt(0) === geoArcsAt(0));
+      ok('atlas: 241 countries — every one there is — and 199 capitals',
+        geoCountries().length === 241 && geoCapitals().length === 199,
+        geoCountries().length + ' / ' + geoCapitals().length);
+      ok('atlas: the capitals come biggest first', geoCapitals()[0].name === 'Tokyo' &&
+        geoCapitals().every(function (c, i, a) { return !i || a[i - 1].pop >= c.pop; }),
+        geoCapitals()[0].name);
+      ok('atlas: a name with an apostrophe survived the packing',
+        geoCountries().some(function (c) { return c.name === "Côte d'Ivoire"; }));
+      var E = GEO_PROJ.equirect, M = GEO_PROJ.mercator;
+      var f = E.fwd(-0.1276, 51.5072), rt = E.inv(f[0], f[1]);
+      ok('atlas: London lands where London is', Math.round(f[0]) === 2047 && Math.round(f[1]) === 438,
+        f.map(Math.round).join(','));
+      ok('atlas: a projection and its inverse are each other',
+        Math.abs(rt[0] + 0.1276) < 1e-9 && Math.abs(rt[1] - 51.5072) < 1e-9);
+      var mf = M.fwd(-0.1276, 51.5072), mrt = M.inv(mf[0], mf[1]);
+      ok('atlas: …and so are Mercator and its own',
+        Math.abs(mrt[0] + 0.1276) < 1e-9 && Math.abs(mrt[1] - 51.5072) < 1e-9);
+      ok('atlas: flat is twice as wide as it is tall, Mercator is square',
+        E.h === GEO_W / 2 && M.h === GEO_W, E.h + ' / ' + M.h);
+      ok('atlas: Mercator is cut where everyone cuts it',
+        Math.abs(M.fwd(0, 85.0511287798066)[1]) < 1e-6 &&
+        Math.abs(M.fwd(0, -85.0511287798066)[1] - GEO_W) < 1e-6);
+      /* the same world twice is the same string: a second map on a page, and
+         every repaint of the first, must cost nothing at all */
+      ok('atlas: the world is built once and kept',
+        geoPaths('equirect', 'smooth') === geoPaths('equirect', 'smooth'));
+      ok('atlas: a different look is a different picture',
+        geoPaths('equirect', 'smooth').land !== geoPaths('equirect', 'crisp').land);
+      ok('atlas: round outlines are curves, straight ones are not',
+        geoPaths('equirect', 'smooth').land.indexOf('Q') > 0 &&
+        geoPaths('equirect', 'crisp').land.indexOf('Q') < 0);
+      /* the seam down the back of the world: a ring that sits on both sides of
+         the 180th meridian used to come out as a line right across an ocean,
+         and Antarctica's fill closed across the bottom of it */
+      var longest = function (d) {
+        var m = d.match(/-?[\d.]+ -?[\d.]+/g) || [], worst = 0;
+        for(var i = 1; i < m.length; i++){
+          if(d.indexOf('M' + m[i]) >= 0) continue;
+          var a = m[i - 1].split(' '), b = m[i].split(' ');
+          if(Math.abs(+b[1] - +a[1]) < 40) worst = Math.max(worst, Math.abs(+b[0] - +a[0]));
+        }
+        return worst;
+      };
+      ok('atlas: no line runs across the world where the map is cut',
+        longest(geoPaths('equirect', 'crisp').coast) < GEO_W / 3 &&
+        longest(geoPaths('equirect', 'crisp').bord) < GEO_W / 3,
+        longest(geoPaths('equirect', 'crisp').coast).toFixed(0) + ' / ' +
+        longest(geoPaths('equirect', 'crisp').bord).toFixed(0));
+      ok('atlas: a country on both sides of it is drawn on both sides',
+        geoRuns(geoRingPts(geoRings(GEO_WORLD.land)[0], GEO_PROJ.equirect), GEO_W).length === 2,
+        geoRuns(geoRingPts(geoRings(GEO_WORLD.land)[0], GEO_PROJ.equirect), GEO_W).length + ' runs');
+      ok('atlas: one that is not, is not', geoRuns(geoArcPts(0, GEO_PROJ.equirect), GEO_W).length === 1);
+      ok('atlas: nothing in the world is NaN',
+        !/NaN|undefined/.test(geoPaths('equirect', 'smooth').land + geoPaths('equirect', 'smooth').coast +
+          geoPaths('mercator', 'smooth').bord + geoPaths('mercator', 'smooth').grat));
+      /* laying names out: a box that is taken stays taken */
+      var lay = geoLayout([
+        { x: 100, y: 100, box: { x: 100, y: 90, w: 80, h: 20 } },
+        { x: 120, y: 100, box: { x: 120, y: 90, w: 80, h: 20 } },
+        { x: 400, y: 100, box: { x: 400, y: 90, w: 80, h: 20 } }
+      ], 1000, 500, 0);
+      ok('atlas: of two names that overlap only the first is set',
+        lay.length === 2 && lay[0].x === 100 && lay[1].x === 400, lay.length + ' set');
+      ok('atlas: a name off the picture is not set',
+        geoLayout([{ x: -400, y: 100, box: { x: -400, y: 90, w: 80, h: 20 } }], 1000, 500, 8).length === 0);
+
+      /* ---- a map on the page ---- */
+      var mk = function (x, extra) {
+        var it = { id: uid(), x: x, y: 4, w: 44, rot: 0, z: 2, lay: curLayerId(), cap: '',
+                   type: 'atlas', proj: 'equirect', look: 'smooth', ar: .5, lon: 8, lat: 16, zm: 0, on: {} };
+        for(var k in (extra || {})) it[k] = extra[k];
+        return it;
+      };
+      var a = mk(3), b = mk(52, { proj: 'mercator' });
+      page.items = [a, b]; await render();
+      var els = QA('#pageHost .item[data-type="atlas"]');
+      ok('atlas: two maps on the page', els.length === 2, els.length);
+      var svgA = els[0].querySelector('svg.atmap');
+      ok('atlas: the picture is 1000 across and half that tall',
+        svgA.getAttribute('viewBox') === '0 0 1000 500', svgA.getAttribute('viewBox'));
+      var cid = function (el) { var c = el.querySelector('clipPath'); return c && c.id; };
+      ok('atlas: the clip id carries the item id', cid(els[0]) === 'atl-' + a.id, cid(els[0]));
+      ok('atlas: two maps, two clip ids', cid(els[0]) !== cid(els[1]));
+      ok('atlas: …and two sea gradients', els[0].querySelector('linearGradient').id !== els[1].querySelector('linearGradient').id);
+      ok('atlas: the picture is clipped to the box',
+        svgA.querySelector('g[clip-path]').getAttribute('clip-path') === 'url(#atl-' + a.id + ')');
+      /* the layers that a new map has, and the one it does not */
+      ok('atlas: land, coast and borders are drawn, the graticule is not',
+        !!svgA.querySelector('.atworld .atlay[data-l="land"]') &&
+        !!svgA.querySelector('.atworld .atlay[data-l="coast"]') &&
+        !!svgA.querySelector('.atworld .atlay[data-l="bord"]') &&
+        !svgA.querySelector('.atworld .atlay[data-l="grat"]'));
+      ok('atlas: the land is one path, filled even-odd so its lakes are holes',
+        svgA.querySelectorAll('path.atland').length === 1 &&
+        getComputedStyle(svgA.querySelector('path.atland')).fillRule === 'evenodd');
+      ok('atlas: the land is a wash and does not ink itself',
+        getComputedStyle(svgA.querySelector('path.atland')).stroke === 'none',
+        getComputedStyle(svgA.querySelector('path.atland')).stroke);
+      ok('atlas: the coast takes its colour from the ink, so it is white in the dark',
+        getComputedStyle(svgA.querySelector('path.atcoast')).stroke.indexOf('rgb') === 0,
+        getComputedStyle(svgA.querySelector('path.atcoast')).stroke);
+      /* the transform is the whole of how a map moves */
+      var tf = svgA.querySelector('.atworld').getAttribute('transform');
+      ok('atlas: the world is placed by one transform', /^translate\([-\d. ]+\) scale\([\d.]+\)$/.test(tf), tf);
+      var k0 = +tf.match(/scale\(([\d.]+)\)/)[1];
+      ok('atlas: at the whole world, one world is one picture wide',
+        Math.abs(k0 - 1000 / GEO_W) < 1e-9, k0);
+      /* a hairline stays a hairline: the stroke is divided by the zoom */
+      var sw0 = +svgA.querySelector('.atlay[data-l="coast"]').getAttribute('stroke-width');
+      ok('atlas: the stroke is the layer width over the zoom', Math.abs(sw0 - 2.4 / k0) < .02, sw0);
+      ok('atlas: no stylesheet rule pins the stroke width',
+        getComputedStyle(svgA.querySelector('path.atcoast')).strokeWidth === sw0 + 'px',
+        getComputedStyle(svgA.querySelector('path.atcoast')).strokeWidth + ' vs ' + sw0);
+      /* the capitals */
+      var caps = svgA.querySelectorAll('.atpins .atlay[data-l="caps"] .atcap');
+      ok('atlas: every capital is a node from the start', caps.length === 199, caps.length);
+      var lit = function (el) { return el.querySelectorAll('.atcap.on').length; };
+      var n0 = lit(svgA);
+      ok('atlas: a few of them are set at the whole world', n0 > 3 && n0 < 40, n0);
+      /* Tokyo is the biggest, so it is always set; at the whole world it stands
+         east of the middle and north of it, which is where Tokyo is */
+      var tok = (caps[0].getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/) || []).slice(1).map(Number);
+      ok('atlas: a name stands where its city is — Tokyo at 888, 151',
+        caps[0].classList.contains('on') && Math.abs(tok[0] - 888) < 3 && Math.abs(tok[1] - 151) < 3,
+        caps[0].getAttribute('transform'));
+
+      /* ---- the view moves, and only the transform moves with it ---- */
+      var L = ATL_LIVE.get(a.id);
+      ok('atlas: a live map has its springs', !!L && !!L.sx && !!L.sy && !!L.sz);
+      /* THE PROMISE, restated. The world is built once and then moved — once
+         per detail step and window, not once ever. So: a pan inside the window
+         it was built for rebuilds nothing, and a jump that crosses a step
+         rebuilds deliberately and once. */
+      var landD = svgA.querySelector('path.atland').getAttribute('d');
+      var nudge = 4 / atlView(a, L).k;                 /* four pixels of pan */
+      L.sx.jump(L.cx + nudge);
+      atlPaint(els[0], a, atlView(a, L));
+      ok('atlas: a pan inside the window rebuilds no geometry at all',
+        svgA.querySelector('path.atland').getAttribute('d') === landD);
+      ok('atlas: …and the whole world is one window, so it never rebuilds there',
+        atlWin(a, atlView(a, L)) === null);
+      L.sx.jump(2600); L.sy.jump(700); L.sz.jump(3);
+      atlPaint(els[0], a, atlView(a, L));
+      ok('atlas: three steps in, the world is rebuilt at a finer step and a window',
+        svgA.querySelector('path.atland').getAttribute('d') !== landD &&
+        atlLod(3) === GEO_LOD_MAX && !!atlWin(a, atlView(a, L)));
+      ok('atlas: …and what it draws is a fraction of what it drew',
+        svgA.querySelector('path.atland').getAttribute('d').length < landD.length,
+        svgA.querySelector('path.atland').getAttribute('d').length + ' vs ' + landD.length);
+      var tf2 = svgA.querySelector('.atworld').getAttribute('transform');
+      ok('atlas: …it is the transform that moved', tf2 !== tf, tf2);
+      var k2 = +tf2.match(/scale\(([\d.]+)\)/)[1];
+      ok('atlas: three steps of zoom is eight times as big', Math.abs(k2 / k0 - 8) < 1e-6, k2 / k0);
+      var sw2 = +svgA.querySelector('.atlay[data-l="coast"]').getAttribute('stroke-width');
+      ok('atlas: the line did not get eight times fatter with it', Math.abs(sw2 * k2 - sw0 * k0) < .05,
+        sw2 + ' * ' + k2);
+      ok('atlas: the zoom decides how many are offered',
+        atlCapCount(0) === 10 && atlCapCount(1) === 30 && atlCapCount(3) === 199 &&
+        atlCapCount(ATL_ZMAX) === geoCapitals().length,
+        [atlCapCount(0), atlCapCount(1), atlCapCount(3)].join(','));
+      /* over Europe, close in: room and candidates both go up, and the map fills
+         with names that were not there at arm's length */
+      L.sx.jump(2185); L.sy.jump(455); L.sz.jump(4);
+      atlPaint(els[0], a, atlView(a, L));
+      ok('atlas: zoomed in, more capitals have room', lit(svgA) > n0, lit(svgA) + ' vs ' + n0);
+      /* the edges of the world */
+      var lim = atlLimits(a, k2);
+      ok('atlas: the centre may not walk off the world',
+        lim.x0 > 0 && lim.x1 < GEO_W && lim.y0 > 0 && lim.y1 < GEO_W / 2,
+        [lim.x0, lim.x1, lim.y0, lim.y1].join(','));
+      var lim0 = atlLimits(a, k0);
+      ok('atlas: at the whole world it is pinned to the middle',
+        lim0.x0 === lim0.x1 && lim0.x0 === GEO_W / 2 && lim0.y0 === lim0.y1, lim0.x0 + ',' + lim0.y0);
+      ok('atlas: a map may not be zoomed out into a letterbox', atlZMin(a) === 0 && atlZMin(mk(0, { ar: 1 })) > 0,
+        atlZMin(mk(0, { ar: 1 })));
+      /* the record is a place, not world units */
+      atlSettle(a, L);
+      ok('atlas: what is written down is a longitude, a latitude and a zoom',
+        Math.abs(a.lon - 12) < 1 && Math.abs(a.lat - 50) < 1 && a.zm === 4,
+        a.lon + ' ' + a.lat + ' ' + a.zm);
+      ok('atlas: the zoom is not the item’s stacking order', a.z === 2);
+      L.sx.jump(2048); L.sy.jump(1024); L.sz.jump(0); atlSettle(a, L);
+      atlPaint(els[0], a, atlView(a, L));
+
+      /* ---- the layers are a registry, and the panel is a view of it ---- */
+      ok('atlas: the layers are ordered', ATL_LAYERS.map(function (x) { return x.id; }).join(',') ===
+        'grat,land,relief,lakes,rivers,bord,coast,caps,cities,tiny,pick', ATL_LAYERS.map(function (x) { return x.id; }).join(','));
+      var pan = els[0].querySelector('.atpanel');
+      ok('atlas: the panel lists every layer there is', !!pan && pan.querySelectorAll('button').length === ATL_LAYERS.length);
+      ok('atlas: it is shut until it is asked for', !pan.classList.contains('open'));
+      var btn = function (t) {
+        return QA('#pageHost .item[data-id="' + a.id + '"] .tools button').filter(function (x) { return x.textContent === t; })[0];
+      };
+      select(a.id); await sleep(30);
+      btn('◍').click();
+      ok('atlas: ◍ opens it', els[0].querySelector('.atpanel').classList.contains('open'));
+      ok('atlas: the panel says which layers are on',
+        els[0].querySelector('.atpanel button[data-l="land"]').classList.contains('on') &&
+        !els[0].querySelector('.atpanel button[data-l="grat"]').classList.contains('on'));
+      els[0].querySelector('.atpanel button[data-l="grat"]').click();
+      await sleep(30);
+      ok('atlas: turning one on writes it down and draws it',
+        a.on.grat === 1 && !!els[0].querySelector('.atworld .atlay[data-l="grat"]'));
+      ok('atlas: the panel survived the rebuild and is still open',
+        !!els[0].querySelector('.atpanel.open') &&
+        els[0].querySelector('.atpanel button[data-l="grat"]').classList.contains('on'));
+      els[0].querySelector('.atpanel button[data-l="grat"]').click(); await sleep(30);
+      ok('atlas: and off again', a.on.grat === 0 && !els[0].querySelector('.atworld .atlay[data-l="grat"]'));
+      /* absent means the layer's own answer, so an old note gains a new layer */
+      ok('atlas: a record that says nothing gets the defaults',
+        atlOn({}, ATL_LAYERS[1]) === true && atlOn({}, ATL_LAYERS[0]) === false);
+
+      /* the look and the projection are rebuilds, and rebuild nothing else */
+      btn('◈').click(); await sleep(30);
+      ok('atlas: ◈ draws the outlines straight',
+        a.look === 'crisp' && els[0].querySelector('path.atland').getAttribute('d').indexOf('Q') < 0);
+      btn('◈').click(); await sleep(30);
+      ok('atlas: …and round again', a.look === 'smooth');
+      var lon0 = a.lon, lat0 = a.lat;
+      btn('◎').click(); await sleep(40);
+      ok('atlas: ◎ changes the projection and keeps the place',
+        a.proj === 'mercator' && Math.abs(a.lon - lon0) < .5 && Math.abs(a.lat - lat0) < .5,
+        a.proj + ' ' + a.lon + ',' + a.lat);
+      ok('atlas: Mercator is drawn from the Mercator paths',
+        els[0].querySelector('path.atland').getAttribute('d') ===
+          atlPathsFor(a, atlView(a, ATL_LIVE.get(a.id))).land);
+      btn('◎').click(); await sleep(40);
+
+      /* ---- print, and an export ---- */
+      var json = JSON.stringify(page.items);
+      var st = buildPage(page, false);
+      ok('atlas: building the static page changes nothing in the record', JSON.stringify(page.items) === json);
+      var sm = st.querySelector('.item[data-type="atlas"] svg.atmap');
+      ok('atlas: it prints as a picture with no panel and no buttons',
+        !!sm && !st.querySelector('.atpanel') && !st.querySelector('.item[data-type="atlas"] button'));
+      ok('atlas: the printed world is placed too', /scale\(/.test(sm.querySelector('.atworld').getAttribute('transform')));
+      var pc = sm.querySelectorAll('.atcap');
+      ok('atlas: only the names that fitted are carried out, and every one is set',
+        pc.length > 3 && pc.length < 40 && [].slice.call(pc).every(function (n) { return n.classList.contains('on'); }),
+        pc.length + ' names');
+
+
+      /* ================= countries you can point at ================= */
+      var CO = function (n) { return geoCoIndexOf(n); };
+      ok('atlas: a country is found by its own name, by an alias and by a longer one',
+        geoCoName(CO('France')) === 'France' && geoCoName(CO('USA')) === 'United States of America' &&
+        geoCoName(CO('ivory coast')) === "Côte d'Ivoire" &&
+        geoCoName(CO('Bosnia and Herzegovina')) === 'Bosnia and Herz.' &&
+        geoCoName(CO("Cote d'Ivoire")) === "Côte d'Ivoire",
+        [geoCoName(CO('USA')), geoCoName(CO('ivory coast'))].join(' / '));
+      ok('atlas: something that is not a country is not one', CO('Atlantis') === -1 && CO('') === -1);
+      ok('atlas: the ⌕ list puts what starts with the word above what merely holds it',
+        geoFindCo('united', 5).map(geoCoName).join(',') ===
+          'United Arab Emirates,United Kingdom,United States of America',
+        geoFindCo('united', 5).map(geoCoName).join(','));
+      ok('atlas: nothing typed offers countries rather than nothing',
+        geoFindCo('', 6).length === 6);
+      /* the countries the pen is bigger than — ordinary countries now, out of
+         the same shared arcs as everyone else */
+      ok('atlas: Nauru, Monaco and the Vatican are on the map',
+        CO('Nauru') >= 0 && CO('Monaco') >= 0 && CO('Vatican') >= 0 && CO('Singapore') >= 0 &&
+        CO('San Marino') >= 0 && CO('Liechtenstein') >= 0);
+      ok('atlas: …out of the same shared arcs as everyone else, which is what\n' +
+         '         keeps them in register with the country they sit inside',
+        geoCountries()[CO('Nauru')].rings.length > 0 &&
+        geoCountries()[CO('Vatican')].rings.length > 0);
+      /* the point of the whole rebuild: a small country with a real border */
+      ok('atlas: Luxembourg is not a hexagon any more',
+        geoCoGeom('mercator')[CO('Luxembourg')].rings[0].length > 30,
+        geoCoGeom('mercator')[CO('Luxembourg')].rings[0].length + ' points');
+      ok('atlas: …and Russia did not get more expensive for it',
+        geoCoGeom('mercator')[CO('Russia')].rings.reduce(function (n, r) { return n + r.length; }, 0) < 4000,
+        geoCoGeom('mercator')[CO('Russia')].rings.reduce(function (n, r) { return n + r.length; }, 0));
+      ok('atlas: …and they are drawn, both filled and inked',
+        geoPaths('mercator', 'smooth').land.length > geoPaths('mercator', 'smooth').bord.length &&
+        !/NaN/.test(geoPaths('mercator', 'smooth').land + geoPaths('mercator', 'smooth').coast));
+      var mono = geoCoBox('mercator', CO('Monaco'));
+      ok('atlas: a country the size of a full stop lands where it is — Monaco at 7.4°E',
+        Math.abs(GEO_PROJ.mercator.inv(mono.x0, mono.y0)[0] - 7.4) < .3 &&
+        Math.abs(GEO_PROJ.mercator.inv(mono.x0, mono.y0)[1] - 43.75) < .3,
+        GEO_PROJ.mercator.inv(mono.x0, mono.y0).map(function (v) { return v.toFixed(2); }).join(','));
+
+      /* where a point in the world lands */
+      var whose = function (proj, lon, lat, near) {
+        var f = geoProj(proj).fwd(lon, lat);
+        return geoCoName(geoCoAt(proj, f[0], f[1], near));
+      };
+      ok('atlas: Paris is in France and Tokyo is in Japan',
+        whose('mercator', 2.35, 48.86) === 'France' && whose('mercator', 139.75, 35.69) === 'Japan');
+      ok('atlas: and the small ones are their own countries, not the ones round them',
+        whose('mercator', 6.13, 49.61) === 'Luxembourg' &&
+        whose('mercator', 9.52, 47.14) === 'Liechtenstein' &&
+        whose('mercator', 12.45, 43.94) === 'San Marino' &&
+        whose('mercator', 103.83, 1.35) === 'Singapore' &&
+        whose('mercator', 166.93, -0.523) === 'Nauru',
+        [whose('mercator', 6.13, 49.61), whose('mercator', 12.45, 43.94)].join(','));
+      ok('atlas: the middle of the Atlantic is in no country at all',
+        whose('mercator', -30, 20) === '' && whose('equirect', -30, 20) === '');
+      ok('atlas: an enclave beats the country round it — Maseru is in Lesotho',
+        whose('mercator', 27.48, -29.32) === 'Lesotho' &&
+        whose('mercator', 18.42, -33.92) === 'South Africa');
+      /* the seam again: one country walks over the 180th, another sits astride it */
+      /* both sides of the 180th, and BOTH SIDES OF IT TESTED: Fiji straddles
+         the seam as two rings, Russia walks over it as one, and the eastern
+         tips of both are past 180 and come back as negative longitudes */
+      ok('atlas: a country on both sides of the world is still one country',
+        whose('mercator', 177.9, -17.8) === 'Fiji' && whose('mercator', 179.2, -16.6) === 'Fiji' &&
+        whose('mercator', 177.0, 66.5) === 'Russia' && whose('mercator', -175.0, 66.0) === 'Russia' &&
+        whose('equirect', -175.0, 66.0) === 'Russia' && whose('mercator', -176.5, -44.0) === 'New Zealand',
+        [whose('mercator', 179.2, -16.6), whose('mercator', -175.0, 66.0),
+         whose('mercator', -176.5, -44.0)].join(' / '));
+      /* the reach is for open water: on land the polygon under the pointer is
+         the answer, and the ring on top of it is the item's own hit test */
+      ok('atlas: a country smaller than a finger is hit by landing NEAR it',
+        whose('mercator', 7.42, 43.68) === '' && whose('mercator', 7.42, 43.68, 30) === 'Monaco',
+        whose('mercator', 7.42, 43.68, 30));
+      ok('atlas: a reach can never take a click off the country you are inside',
+        whose('mercator', 2.35, 48.86, 30) === 'France');
+
+      /* ---- the name that fits inside the country ---- */
+      var lbl = geoCoLabel('mercator', CO('France'));
+      ok('atlas: a country name is placed and sized', lbl.fs > 0 && lbl.lines.length === 1 &&
+        lbl.lines[0] === 'France', lbl.fs.toFixed(1) + ' ' + JSON.stringify(lbl.lines));
+      var noRoom = geoCountries().map(function (c, i) { return i; })
+        .filter(function (i) { return !(geoCoLabel('mercator', i).fs > 0); });
+      ok('atlas: every one of the 206 has room for its own name, the Vatican included',
+        noRoom.length === 0 && geoCoLabel('mercator', CO('Vatican')).fs > 0,
+        noRoom.map(geoCoName).join(','));
+      /* the source is quantised at 400 m and the Vatican is 700 m across, so
+         it is four points and nearly all of them matter */
+      var vb0 = geoCoBox('mercator', CO('Vatican'));
+      ok('atlas: …down to a country 700 m across, which is still two-dimensional',
+        vb0.x1 - vb0.x0 > 0 && vb0.y1 - vb0.y0 > 0 && vb0.x1 - vb0.x0 < 1,
+        (vb0.x1 - vb0.x0).toExponential(2));
+      ok('atlas: a country that cannot carry its name is not asked to',
+        !atlOnShape(geoCoLabel('mercator', CO('Monaco'))) &&
+        !atlOnShape(geoCoLabel('mercator', CO('Vatican'))) &&
+        atlOnShape(geoCoLabel('mercator', CO('France'))));
+      /* THE RULE: the box the name occupies is wholly inside the country. It is
+         checked here the hard way — against every edge of every ring — because
+         a name that reaches over a border is the one thing this must not do. */
+      var spills = geoCountries().map(function (c, i) { return i; }).filter(function (i) {
+        var l = geoCoLabel('mercator', i), g = geoCoGeom('mercator')[i];
+        return !geoRectClear(g.rings, l.x - l.w / 2, l.y - l.h / 2, l.x + l.w / 2, l.y + l.h / 2);
+      });
+      ok('atlas: and not one of the 206 names crosses its own outline', spills.length === 0,
+        spills.map(geoCoName).join(','));
+      ok('atlas: a name is broken over lines when that makes it bigger — United States of America',
+        geoCoLabel('mercator', CO('USA')).lines.length > 1 &&
+        geoCoLabel('mercator', CO('Brazil')).lines.length === 1,
+        JSON.stringify(geoCoLabel('mercator', CO('USA')).lines));
+      ok('atlas: the middle of a country is inside it', geoCoSpot('mercator', CO('Chile')).r > 0 &&
+        geoInRings(geoCoGeom('mercator')[CO('Chile')].rings,
+                   geoCoSpot('mercator', CO('Chile')).x, geoCoSpot('mercator', CO('Chile')).y));
+      ok('atlas: one country, one outline, kept',
+        geoCoPath('mercator', 'smooth', 5) === geoCoPath('mercator', 'smooth', 5) &&
+        geoCoPath('mercator', 'smooth', 5) !== geoCoPath('mercator', 'crisp', 5));
+      ok('atlas: a capital is found through the same aliases the names use',
+        (geoCoCapitals(CO('Dem. Rep. Congo'))[0] || {}).name === 'Kinshasa' &&
+        (geoCoCapitals(CO('France'))[0] || {}).name === 'Paris' &&
+        (geoCoCapitals(CO('Monaco'))[0] || {}).name === 'Monaco',
+        (geoCoCapitals(CO('Dem. Rep. Congo'))[0] || {}).name);
+
+      /* ---- rivers, lakes and cities ---- */
+      ok('atlas: 254 rivers and 411 lakes came through',
+        geoRivers().length === 254 && geoLakes().length === 411,
+        geoRivers().length + ' / ' + geoLakes().length);
+      ok('atlas: the Nile and Lake Baikal are among them',
+        geoRivers().some(function (r) { return r.name === 'Nile'; }) &&
+        geoLakes().some(function (l) { return l.name === 'Lake Baikal'; }));
+      ok('atlas: 500 cities that are not capitals, biggest first',
+        geoCities().length === 500 && geoCities()[0].name === 'New York' &&
+        geoCities().every(function (c, i, a) { return !i || a[i - 1].pop >= c.pop; }),
+        geoCities()[0].name);
+      ok('atlas: no capital is among them',
+        !geoCities().some(function (c) { return c.name === 'Paris' || c.name === 'Tokyo'; }));
+      var dp = geoDetailPaths('mercator', 'smooth');
+      ok('atlas: the water is built once and kept',
+        geoDetailPaths('mercator', 'smooth') === dp && dp.riv.length > 1000 && dp.lak.length > 1000);
+      ok('atlas: …with nothing NaN in it, and no line across the world',
+        !/NaN|undefined/.test(dp.riv + dp.lak) &&
+        longest(geoDetailPaths('mercator', 'crisp').riv) < GEO_W / 3,
+        longest(geoDetailPaths('mercator', 'crisp').riv).toFixed(0));
+      ok('atlas: how many cities are offered comes from the zoom, and none at arm’s length',
+        atlCityCount(0) === 0 && atlCityCount(1) === 0 && atlCityCount(2.2) > 20 &&
+        atlCityCount(5) === geoCities().length,
+        [atlCityCount(0), atlCityCount(2.2), atlCityCount(5)].join(','));
+
+      /* ---- the height of the land ---- */
+      var R = geoRelief();
+      ok('atlas: the height field unpacks to 1080 × 540 cells',
+        R.w === 1080 && R.h === 540 && R.g.length === 1080 * 540, R.w + 'x' + R.h + ' ' + R.g.length);
+      ok('atlas: two thirds of it is sea, and sea is nought',
+        R.g.filter(function (v) { return !v; }).length / R.g.length > .6, '');
+      ok('atlas: the Himalaya are the highest thing on it, and the sea is not',
+        geoHeightAt(86.9, 28.0) > 4000 && geoHeightAt(-150, 0) === 0 &&
+        geoHeightAt(8.1, 46.5) > 1500 && geoHeightAt(10, 52) < 400,
+        [geoHeightAt(86.9, 28), geoHeightAt(8.1, 46.5), geoHeightAt(10, 52)].map(Math.round).join(','));
+      ok('atlas: nothing on it is higher than the highest cell there is',
+        R.max > 6000 && R.max < 7000 && R.g.reduce(function (a, b) { return a > b ? a : b; }, 0) === R.lv,
+        R.max);
+      /* and the contours it becomes: closed rings, in world units, kept */
+      var bd = geoReliefBands('mercator', 'smooth', 1, null);
+      ok('atlas: the field contours into filled bands, lowest first',
+        bd.length >= 4 && bd.every(function (b) { return b.d.indexOf('M') === 0 && /Z$/.test(b.d); }) &&
+        bd[0].fill !== bd[bd.length - 1].fill, bd.length + ' bands');
+      ok('atlas: …every one of them a closed ring, and none of them NaN',
+        !bd.some(function (b) { return /NaN|undefined/.test(b.d); }) &&
+        bd.reduce(function (n, b) { return n + (b.d.match(/Z/g) || []).length; }, 0) > 100);
+      ok('atlas: …built once for a window and kept',
+        geoReliefBands('mercator', 'smooth', 1, null) === bd);
+      /* the whole point: a window asks for a fraction of the work */
+      var bdw = geoReliefBands('mercator', 'smooth', 1, { x0: 2100, y0: 1400, x1: 2300, y1: 1600 });
+      var len = function (a) { return a.reduce(function (n, b) { return n + b.d.length; }, 0); };
+      ok('atlas: …and a window really is a fraction of the world',
+        len(bdw) > 0 && len(bdw) < len(bd) / 8, (len(bdw) / 1024).toFixed(0) + ' KB of ' +
+        (len(bd) / 1024).toFixed(0) + ' KB');
+      ok('atlas: the coarsest step draws less than the finest',
+        len(geoReliefBands('mercator', 'smooth', 0, null)) < len(bd),
+        (len(geoReliefBands('mercator', 'smooth', 0, null)) / 1024).toFixed(0) + ' KB');
+
+      /* ================= all of it, on a map ================= */
+      var m = mk(3, { proj: 'mercator', ar: .6, zm: 0, w: 60 });
+      page.items = [m]; await render();
+      var mel = QA('#pageHost .item[data-type="atlas"]')[0], msvg = mel.querySelector('svg.atmap');
+      ok('atlas: a new map is Mercator', ITEMS.atlas.add.atlas({}).proj === 'mercator' &&
+        atlProj({}) === 'mercator' && atlProj({ proj: 'equirect' }) === 'equirect',
+        ITEMS.atlas.add.atlas({}).proj);
+      ok('atlas: lakes are drawn on a new map and rivers and height are not',
+        !!msvg.querySelector('.atlay[data-l="lakes"]') &&
+        !msvg.querySelector('.atlay[data-l="rivers"]') &&
+        !msvg.querySelector('.atlay[data-l="relief"]'));
+      ok('atlas: every city is a node from the start, and every small country a ring',
+        msvg.querySelectorAll('.atlay[data-l="cities"] .atcity').length === 500 &&
+        msvg.querySelectorAll('.atlay[data-l="tiny"] .attiny').length ===
+          geoTinyCountries('mercator').length,
+        msvg.querySelectorAll('.atcity').length);
+      var ML = ATL_LIVE.get(m.id);
+      ok('atlas: at the whole world no city is named', msvg.querySelectorAll('.atcity.on').length === 0);
+      ok('atlas: …and the countries the pen is bigger than wear their ring',
+        msvg.querySelectorAll('.attiny.on').length > 10,
+        msvg.querySelectorAll('.attiny.on').length);
+      /* in over Europe: cities appear, and the rings come off the ones that grew */
+      var fr = CO('France'), fb = geoCoMain('mercator', fr);
+      /* France's FULL box runs from French Guiana to Réunion and its middle is
+         the mid-Atlantic; geoCoMain is the part of it anyone asking for France
+         means, and it is what a map flies to and a card is framed on */
+      ok('atlas: what a country means is its main body, not its every island',
+        geoCoBox('mercator', fr).x0 < fb.x0 - 400 && fb.rings.length < 6 &&
+        geoCoName(geoCoAt('mercator', (fb.x0 + fb.x1) / 2, (fb.y0 + fb.y1) / 2)) === 'France',
+        geoCoName(geoCoAt('mercator', (fb.x0 + fb.x1) / 2, (fb.y0 + fb.y1) / 2)));
+      ok('atlas: …and a country that is only islands keeps all of them',
+        geoCoMain('mercator', CO('Japan')).rings.length ===
+          geoCoGeom('mercator')[CO('Japan')].rings.length &&
+        geoCoMain('mercator', CO('Indonesia')).rings.length ===
+          geoCoGeom('mercator')[CO('Indonesia')].rings.length);
+      ML.sx.jump((fb.x0 + fb.x1) / 2); ML.sy.jump((fb.y0 + fb.y1) / 2); ML.sz.jump(4);
+      atlPaint(mel, m, atlView(m, ML), true);
+      ok('atlas: going in fills the map with cities', msvg.querySelectorAll('.atcity.on').length > 4,
+        msvg.querySelectorAll('.atcity.on').length + ' named');
+      /* the one rule the two layers share: a city never takes a capital's box */
+      var boxes = function (sel, fs) {
+        return [].slice.call(msvg.querySelectorAll(sel)).map(function (n) {
+          var t = (n.getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/) || []).slice(1).map(Number);
+          var w = n.lastElementChild.textContent.length * fs * 0.46 + 9;
+          var lead = n.lastElementChild.getAttribute('text-anchor') === 'end';
+          return { x: lead ? t[0] - w : t[0], y: t[1] - fs * .62, w: w, h: fs * 1.2 };
+        });
+      };
+      var caps2 = boxes('.atcap.on', ATL_FS), city2 = boxes('.atcity.on', ATL_CFS);
+      var clash = caps2.some(function (a2) {
+        return city2.some(function (b2) {
+          return a2.x < b2.x + b2.w - 1 && b2.x < a2.x + a2.w - 1 && a2.y < b2.y + b2.h - 1 && b2.y < a2.y + a2.h - 1;
+        });
+      });
+      ok('atlas: and not one of them is written over a capital', !clash);
+
+      /* ---- picking a country ---- */
+      atlPick(mel, m, page, 'France', false);
+      ok('atlas: picking one writes down its NAME, not its number', m.sel === 'France');
+      var pg = msvg.querySelector('.atlay[data-l="pick"]');
+      ok('atlas: …shades it and writes its name across it',
+        !!pg.querySelector('path.atpick') && !!pg.querySelector('text.atconame') &&
+        pg.querySelector('text.atconame').textContent === 'France');
+      ok('atlas: the name is drawn in world units inside the group that moves',
+        +pg.querySelector('text.atconame').getAttribute('font-size') > 20 &&
+        pg.closest('.atworld') === msvg.querySelector('.atworld'),
+        pg.querySelector('text.atconame').getAttribute('font-size'));
+      var landD2 = msvg.querySelector('path.atland').getAttribute('d');
+      atlPick(mel, m, page, 'Spain', false);
+      ok('atlas: picking another rebuilds ONE layer and no geometry at all',
+        pg.querySelector('text.atconame').textContent === 'Spain' &&
+        msvg.querySelector('path.atland').getAttribute('d') === landD2);
+      atlTap(mel, m, page, CO('Spain'));
+      ok('atlas: tapping the one that is picked puts it back',
+        !m.sel && !msvg.querySelector('.atlay[data-l="pick"] path.atpick'));
+      ok('atlas: a map with nothing picked hands the capitals no box to avoid',
+        atlNameBox(m, atlView(m, ML)) === null);
+      /* the country too small to write on: the name keeps its size instead */
+      atlPick(mel, m, page, 'Monaco', false);
+      var mb2 = geoCoMain('mercator', CO('Monaco'));
+      ML.sx.jump((mb2.x0 + mb2.x1) / 2); ML.sy.jump((mb2.y0 + mb2.y1) / 2); ML.sz.jump(ATL_ZMAX);
+      atlPaint(mel, m, atlView(m, ML), true);
+      ok('atlas: a country smaller than its own name is named beside itself',
+        !msvg.querySelector('.atlay[data-l="pick"] text.atconame') &&
+        msvg.querySelector('.atpins .atlay[data-l="pick"] .atpickn.on text').textContent === 'Monaco',
+        (msvg.querySelector('.atpins .atlay[data-l=\"pick\"] .atpickn text') || {}).textContent);
+      atlPick(mel, m, page, 'France', false);
+      ok('atlas: …and one big enough writes it on itself and drops the other',
+        !!msvg.querySelector('.atlay[data-l="pick"] text.atconame'));
+      atlPick(mel, m, page, '', false);
+
+      /* ---- ⌕ walks there ---- */
+      atlPick(mel, m, page, 'Japan', true);
+      atlFlyTo(m, CO('Japan'));
+      ok('atlas: ⌕ lights it up while it goes',
+        msvg.querySelector('.atlay[data-l="pick"]').classList.contains('blink'));
+      var jb = geoCoMain('mercator', CO('Japan'));
+      ok('atlas: …and the springs are aimed at the country’s own box',
+        Math.abs(ML.sx.target - (jb.x0 + jb.x1) / 2) < 40 &&
+        Math.abs(ML.sy.target - (jb.y0 + jb.y1) / 2) < 40 && ML.sz.target > 2,
+        [ML.sx.target, ML.sy.target, ML.sz.target].map(Math.round).join(','));
+      ok('atlas: it fits the country rather than filling the picture with it',
+        (jb.x1 - jb.x0) * (ATL_W / GEO_W * Math.pow(2, ML.sz.target)) < ATL_W,
+        ((jb.x1 - jb.x0) * (ATL_W / GEO_W * Math.pow(2, ML.sz.target))).toFixed(0) + ' of ' + ATL_W);
+
+      /* ---- dragging one off the map ---- */
+      m.sel = 'France'; atlDrawPick(mel, m, false);
+      ML.sx.jump((fb.x0 + fb.x1) / 2); ML.sy.jump((fb.y0 + fb.y1) / 2); ML.sz.jump(3);
+      atlPaint(mel, m, atlView(m, ML), true);
+      select(m.id); await sleep(40);
+      var mb = msvg.getBoundingClientRect();
+      var pev = function (t, x, y) {
+        return new PointerEvent(t, { pointerId: 7, isPrimary: true, button: 0, buttons: 1,
+                                     clientX: x, clientY: y, bubbles: true, cancelable: true });
+      };
+      var before = page.items.length;
+      msvg.dispatchEvent(pev('pointerdown', mb.left + mb.width / 2, mb.top + mb.height / 2));
+      msvg.dispatchEvent(pev('pointermove', mb.right + 90, mb.top + mb.height / 2));
+      ok('atlas: pulling a country out of the map takes it out of the map',
+        !!document.querySelector('.atcarry') &&
+        document.querySelector('.atcarry b').textContent === 'France');
+      msvg.dispatchEvent(pev('pointerup', mb.right + 120, mb.top + mb.height / 2));
+      await sleep(120);
+      ok('atlas: …and letting go puts it on the page', page.items.length === before + 1 &&
+        page.items[page.items.length - 1].type === 'country' &&
+        page.items[page.items.length - 1].co === 'France' &&
+        !document.querySelector('.atcarry'),
+        page.items.map(function (x) { return x.type; }).join(','));
+      /* the pan it was until then is put back where it started */
+      ok('atlas: the map did not go anywhere while that happened',
+        Math.abs(ML.sx.target - (fb.x0 + fb.x1) / 2) < 1, ML.sx.target);
+      /* brought back over the map, nothing happened */
+      var before2 = page.items.length;
+      msvg.dispatchEvent(pev('pointerdown', mb.left + mb.width / 2, mb.top + mb.height / 2));
+      msvg.dispatchEvent(pev('pointermove', mb.right + 90, mb.top + mb.height / 2));
+      msvg.dispatchEvent(pev('pointermove', mb.left + mb.width / 2, mb.top + mb.height / 2));
+      msvg.dispatchEvent(pev('pointerup', mb.left + mb.width / 2, mb.top + mb.height / 2));
+      await sleep(60);
+      ok('atlas: carried back over the map, nothing happened at all',
+        page.items.length === before2 && !document.querySelector('.atcarry'));
+
+      /* ================= one country, on its own ================= */
+      var c0 = page.items[page.items.length - 1];
+      var cel = QA('#pageHost .item[data-type="country"]')[0];
+      var csvg = cel.querySelector('svg.ctrysvg');
+      ok('atlas: the card is the country’s own box and nothing else',
+        !!csvg && csvg.getAttribute('viewBox').split(' ').map(Number).every(function (v) {
+          return isFinite(v);
+        }) && Math.abs(+csvg.getAttribute('viewBox').split(' ')[2] - (fb.x1 - fb.x0) * 1.12) < 2,
+        csvg.getAttribute('viewBox'));
+      ok('atlas: it draws the country, its name and its capital',
+        !!csvg.querySelector('path.ctryland') &&
+        csvg.querySelector('text.atconame').textContent === 'France' &&
+        csvg.querySelector('text.ctrycapn').textContent === 'Paris');
+      ok('atlas: and not the countries round it, until it is asked',
+        !csvg.querySelector('path.ctxland'));
+      c0.ctx = 1; ctryRedraw(cel, c0, page);
+      ok('atlas: …and then it does',
+        !!cel.querySelector('svg.ctrysvg path.ctxland'));
+      c0.lbl = 0; c0.cp = 0; ctryRedraw(cel, c0, page);
+      ok('atlas: the name and the capital are switches',
+        !cel.querySelector('svg.ctrysvg text.atconame') &&
+        !cel.querySelector('svg.ctrysvg text.ctrycapn'));
+      c0.lbl = 1; c0.cp = 1; c0.ctx = 0; ctryRedraw(cel, c0, page);
+      ok('atlas: a country card knows what it is called and what its capital is',
+        ITEMS.country.label(c0) === 'France' && ITEMS.country.meta(c0).indexOf('Paris') === 0,
+        ITEMS.country.meta(c0));
+      ok('atlas: its icon is the country itself', ITEMS.country.icon(c0).indexOf('<path class="fplate"') > 0);
+      var cjson = JSON.stringify(page.items);
+      var cst = buildPage(page, false);
+      ok('atlas: it prints as a picture with no buttons, and changes nothing',
+        JSON.stringify(page.items) === cjson &&
+        !!cst.querySelector('.item[data-type="country"] svg.ctrysvg path.ctryland') &&
+        !cst.querySelector('.item[data-type="country"] button'));
+
+      /* ---- the height map on a real map ---- */
+      m.on = { relief: 1, rivers: 1 };
+      /* render() rebuilt every item when the country landed on the page, so the
+         node captured before it is detached — and a detached node has no
+         computed style at all, which is how this reads as a CSS bug */
+      mel = QA('#pageHost .item[data-type="atlas"]')[0];
+      atlRebuild(mel, m, page);
+      var msvg2 = mel.querySelector('svg.atmap');
+      var rel = msvg2.querySelector('.atlay[data-l="relief"]');
+      var bands = rel ? rel.querySelectorAll('path[fill^="#"]') : [];
+      /* the field is DRAWN, not photographed: nine filled contours, no picture
+         anywhere, and the sea painted back over the coast rather than clipped */
+      ok('atlas: the height of the land is nine filled contours and no picture at all',
+        bands.length >= 4 && bands.length <= 9 && !msvg2.querySelector('image') &&
+        !msvg2.querySelector('clipPath[id^="atrl-"]') && !rel.querySelector('[clip-path]'),
+        bands.length + ' bands');
+      ok('atlas: …lowest first, so each band covers the one under it',
+        bands.length > 1 && bands[0].getAttribute('fill') !== bands[1].getAttribute('fill') &&
+        !/NaN|undefined/.test([].slice.call(bands).map(function (b) { return b.getAttribute('d'); }).join('')),
+        bands[0] && bands[0].getAttribute('fill'));
+      var seaP = rel && rel.querySelector('path.atrelsea');
+      ok('atlas: …and the sea is painted back over the coast, evenodd, with no clip',
+        !!seaP && getComputedStyle(seaP).fillRule === 'evenodd',
+        seaP ? getComputedStyle(seaP).fillRule + ' / ' + getComputedStyle(seaP).fill
+             : 'no atrelsea; relief group holds ' +
+               [].slice.call(rel.children).map(function (n) { return n.tagName + '.' + n.getAttribute('class'); }).join(' '));
+      ok('atlas: …and the rivers came with it',
+        !!msvg2.querySelector('path.atriver') &&
+        msvg2.querySelector('path.atriver').getAttribute('d').length > 1000);
+      m.on = {}; atlRebuild(mel, m, page);
+
       page.items = []; await render();
     });
 

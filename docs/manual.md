@@ -92,6 +92,8 @@ Things scale to the paper they are on: a sticky note is the size it would be on 
 | Molecule | A molecule drawn the way a chemist draws one — skeletal, condensed or Lewis — with its formula, mass and name under it, a periodic table a click away, a name-or-SMILES box, and a 3D view you can turn and measure; see **Chemistry** below |
 | Periodic table | The table on the page as a reference card — tap an element for its number, mass, electronegativity and configuration |
 | Chart of nuclides | The whole nuclear chart — 3558 nuclides and 2088 metastable states on the neutron–proton plane, coloured by how they come apart; zoom in, press one for its half-life, branches and Q values, and follow its decay chain to whatever it ends on |
+| World | A map of the world — pan it, throw it and it glides, zoom about the pointer with the wheel or a pinch, and the capitals and then the cities come up to meet you as you go in. Tap a country to name it, search for one and the map walks there, drag one out onto the page. Land height, rivers and lakes are layers; see **The world** below |
+| Country | One country on its own — its shape, its name and its capital, framed on itself. Drag one out of a world map, or pick it from the shelf and choose which |
 | FITS file | An astronomy `.fits` — or just drop one on the page. Click it and the reader opens on `hdu.info()`; pick an HDU for its header, search the keywords, and see the shape and type of every data unit without a single number of it being loaded. Pick columns of a binary table and **drag them out onto the sheet**, where they land as a table you can plot; see **FITS files** below |
 | Picture | Taped-in photos with captions. Also: drag-and-drop or just **paste** a screenshot (Ctrl+V) |
 | Video | YouTube / Vimeo links, or a video file from disk (stored inside the note) |
@@ -661,7 +663,65 @@ The **Periodic table** follows on the shelf: the table on the page as a referenc
 
 Everything here is arithmetic and SVG — no library, no server, nothing downloaded — so molecules and Feynman diagrams travel in backups, print and exports exactly as drawn.
 
-## FITS files (.fits)
+## The world
+
+**World** on the **Science** shelf puts a map of the world on the sheet. It is drawn, not photographed: an outline of land, hairline borders, lakes, and the capitals — the same ink the rest of the note is written in, so it is dark on paper and white in the dark themes with nothing to set. It opens in **Mercator**, the projection every map on a screen uses.
+
+**Select it and it takes the hand.** Drag to move about the world; let go mid-drag and it carries on and slows down, the way a sheet of paper pushed across a desk does. Push it past the edge of the world and it gives a little, then springs back. The wheel zooms about the pointer — by an amount rather than a step, so a trackpad creeps and a mouse notch is a notch — and two fingers pinch. `Ctrl`+wheel is still the desk's own zoom, so the map never eats it.
+
+**Double-click hands the map back to the notebook** — then it drags, rotates, resizes and files like anything else on the sheet, and double-clicking again steps back into it. `✥` in its toolbar does the same thing from a button.
+
+### Tap a country
+
+**Tap a country and it lights up with its name written across it.** The name is sized to fit *inside* that country's own borders — over two or three lines where that makes it bigger — so it never reaches over a border into the next country, and because it is drawn at the country's own scale it goes on fitting however far in you go. Tap it again, or tap open water, to put it back. What is picked is remembered with the note, so it prints and travels in a backup.
+
+A country smaller than the pen wears **a small ring** instead, which keeps its size while the country grows underneath it and fades away once the country can stand on its own. Tapping the ring picks that country even though a bigger one is under it — the ring you can see is the ring you can hit — and its name then appears *beside* it rather than on it, at reading size. It is the only way Nauru is ever tapped.
+
+**Every country on Earth is here**, all 241 of them, and every one has an outline worth looking at. The outlines are Natural Earth's 50m tier simplified back down *per shared border*, each border kept as finely as the smaller of the two countries it separates needs — so Luxembourg is Luxembourg rather than the six-sided smudge one tolerance for the whole planet gives it, Russia costs no more than it ever did, and nothing is ever out of register with its neighbour.
+
+### Find one
+
+**`⌕` finds a country by name.** Type and a list comes up; pick one and the map **walks** there and fits it, with a shaded pulse for a moment so your eye finds it. It answers to what people actually write as well as to the map's own spelling: `USA`, `UK`, `Ivory Coast`, `Holland`, `Burma`, `East Timor`, `Bosnia`, `Cote d'Ivoire` without the circumflex.
+
+### Take one off the map
+
+**Drag a country out of the picture and it comes off it.** Press on a country and pull past the edge of the map: the map lets go, springs back to where the pan started, and the country follows the hand as a shape. Let go on the paper and it lands there as a **Country** card — the country on its own, framed on itself, with its name across it and its capital marked. Bring it back over the map before you let go and nothing happened. `⇱` in the toolbar does the same for the country already picked, and **Country** on the Science shelf makes one from scratch.
+
+A country card's own toolbar: `⌕` which country, `A` its name, `★` its capital, `◌` the countries around it drawn faintly for context, `◈` round or straight outlines, `◎` the projection. A card is framed on the *main body* of a country rather than on every island it owns — asking to be shown France means France, not the mid-Atlantic between Guiana and Réunion.
+
+### What is drawn on it
+
+**The capitals come up to meet you, and then the cities.** At arm's length only the largest capitals are named; going in offers more, and past a step and a bit the five hundred largest cities that are not capitals begin to appear behind them. A name is only set if its whole box is clear of every name already down — the picked country's first, then the capitals biggest-city-first, then the cities — so the map fills up as there is room for it rather than all at once, a city never takes a capital's place, and nothing is ever half-cut by the edge.
+
+**◍ Layers** opens a small glass panel on the map. What is on is remembered with the note:
+
+| | |
+|---|---|
+| **Graticule** | meridians and parallels every 30° |
+| **Land** | the wash the outlines are filled with |
+| **Height** | the land shaded by how high it is — see below |
+| **Lakes** | filled in the sea's own colour |
+| **Rivers** | 254 major rivers |
+| **Borders** | the lines two countries share |
+| **Coastline** | the ink round the land |
+| **Capitals** | 199 of them |
+| **Cities** | 500 more, from two steps in |
+| **Small countries** | the ring round anything smaller than the pen |
+| **Picked country** | the shade and the name a tap puts on |
+
+**Height** shades the land by how high it is: green lowland through yellow and brown to grey rock and snow, the hypsometric tints an atlas has used for a century. It is a real field of numbers — 1080 × 540 cells of ETOPO20 — but it is **drawn rather than photographed**. The contours where the land crosses each of nine heights are traced and filled, so what you get is paths like everything else on the map: crisp at any magnification instead of a picture going soft as you go in, and a few tens of kilobytes in an export instead of four hundred. The sea is painted back over the lowest band, so the tints stop exactly where the coastline does. It is off until you ask for it.
+
+The rest of the toolbar:
+
+- **◎ Projection** switches between **Mercator**, which is what a new map is, and **Flat** — the whole world, twice as wide as it is tall. The place you were looking at stays where it was.
+- **◈ Outlines** draws them round or straight off the data. Round is the default: the outline is run through the middle of every point rather than between them, which is what lets one coarse world stand up to being magnified thirty times without turning into a polygon.
+- **▭** sets how tall the map is, and **⌂** walks back out to the whole world.
+
+**It draws only what you are looking at.** The map keeps four copies of the world at four levels of detail and uses the one that matches the zoom, and it builds only the window you are over rather than the whole planet — both stepped, so a pan crosses a boundary a few times in a gesture rather than sixty times a second, and between crossings a frame is still one transform and nothing else. At thirty-two times in, that is about a fortieth of the ink it would otherwise be laying down, which is the difference between a map you can throw and one that stutters.
+
+The outlines are **Natural Earth** — the public-domain dataset the small maps in atlases are drawn from — with the rivers, lakes and cities simplified from its finer tiers down to the same detail, and the heights are **ETOPO20** from NOAA. All of it is packed into 380 KB and read once. There is no tile server, nothing is downloaded and nothing is looked up, so a map works with the machine unplugged and travels in a backup, a print and an export exactly as it stands.
+
+## FITS files (.fits)## FITS files (.fits)
 
 Pick **FITS file** in the add menu, or just **drop a `.fits` on the page**. It sits there as a shortcut, like any attachment. **Click it and the reader opens.**
 

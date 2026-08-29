@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 1993 assertions, driven in headless Firefox
+tools/verify/       the harness: 2141 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -213,6 +213,7 @@ shelf** — a new file under `items/science/` had better call
 | `science/fits.js` | 617 | `fits` — an astronomy file as a shortcut, and the reader behind it: `hdu.info()`, the header in three aligned columns with a search over all of them, COMMENT and HISTORY runs folded in place, every data unit given as a shape and a type rather than as numbers, and columns you pick and drag off the window onto the sheet, where they land as an ordinary table |
 | `science/molecule.js` | 2606 | `molecule` — the 2D editor with its glass rail and ChemDraw gestures: the ghost the pointer casts ahead of every click and the valence check that refuses the ones that could not exist, the chain and the row of fused rings dragged out under a running count, the ⟮CH₂⟯ₙ repeat bracket that folds a long chain short without touching the molecule, the lasso and its turn/chirality/move/copy menu, the hydrogen bond kept in a list of its own so chem.js never sees it but respected by tidy, the hotkeys, the three drawing styles, the ⌕ name-or-SMILES box, flat transparent 2D/3D SVG and PNG exports plus clipboard-only ChemFig LaTeX with shifted skeletal double bonds, direct whole-widget corner resizing, and the quiet >/< disclosure for a simultaneous live 3D companion, additive correspondence highlighting with a neutral ghost-free pointer and a screen-space aura above the three 3D looks, momentum orbit, and separately coloured measurement picks |
 | `science/feynman.js` | 734 | `feynman` — lattice-aligned particle diagrams, Standard Model vertex validation and transparent SVG, PNG and TikZ-Feynman exports |
+| `science/atlas.js` | 1370 | `atlas` and `country` — a map of the world and one country off it: the layer registry every extra thing drawn on a map goes through (`defineMapLayer`), the view as a longitude, a latitude and a zoom, spring-driven pan with momentum and rubber-banded edges, wheel and pinch zoom about the pointer, eleven layers including the hypsometric height field and the water, the capitals and then the cities that come up to meet you as you go in, a tap that picks the country under it and writes its name across it at whatever size fits inside its own borders, a ring on every country the pen is bigger than, the ⌕ box that walks the map to a country and lights it, a country dragged out of the picture that comes off it as a card of its own, the detail step and the window a frame is built for, and the glass panel of layers built out of the registry |
 | `media/image.js` | 78 | `image` |
 | `media/video.js` | 87 | `video` |
 | `media/model.js` | 614 | `model` — the `.obj` parser and the shared WebGL canvas |
@@ -249,6 +250,7 @@ on a task.
 | `pptx.js` | 1907 | `.pptx` → slides that draw themselves as SVG. The same zip, then DrawingML: the colour engine, the preset and freehand geometry, fills and lines, the inheritance chain a slide hangs off, and the text laid out by hand |
 | `chem.js` | 1015 | the chemistry: the molecular graph, implicit hydrogens and lone pairs, Hill formulas and masses, rings and aromaticity, a graph hash that names what you draw, SMILES in and out, the 2D layout with exact regular-polygon arcs for constrained rings, the 3D embedding and VSEPR |
 | `nuclide.js` | 264 | the physics of the nuclide chart: reading NUBASE in, every decay mode as a step in (protons, neutrons), Q values and separation energies subtracted from the masses, binding energy per nucleon, and the chain down to whatever a nuclide ends on |
+| `atlas.js` | 1110 | the world as numbers: the packed arcs unpacked, the projections (flat and Mercator, each declaring its period), the seam down the back of the world unrolled so a country on both sides of the 180th meridian is drawn on both sides, rings and arcs to path strings — smoothed through their midpoints so a 110m outline stands up to being magnified — memoised per projection and look, and the greedy box layout that decides which city names fit. Then the countries as shapes: every one pulled into a single coordinate frame so an even-odd insideness test means something, which country a point is in (with a reach, for the ones smaller than a finger), the pole of inaccessibility, the largest name that fits wholly inside a country's own outline, the part of a country anyone means by its name, name search over aliases, rivers and lakes, and the height field unpacked and contoured into filled bands by marching squares. Everything it builds is memoised per projection, look, **detail step and window** — the last two being what stops a map drawing the whole planet at full detail to show one country |
 
 ### `js/data/` — tables, not code
 
@@ -261,6 +263,9 @@ Each loads immediately before the `lib/` file that reads it.
 |---|---:|---|
 | `nuclides.js` | 5809 | NUBASE2020 packed to a line each — 3558 ground states and 2088 metastable states with their mass excesses, half-lives, spins, branches and abundances. Read by `lib/nuclide.js` |
 | `elements.js` | 340 | the 118 elements with their configurations, radii and colours, and a library of ~200 molecules as SMILES. Read by `lib/chem.js` |
+| `atlasworld.js` | 26 | Natural Earth 50m **simplified per arc** (public domain): 1959 arcs of coastline and border packed as base-64 varints, the rings that make the land, which arcs are coast and which are border, **241 countries — every one there is**, and 199 capitals biggest first. Each arc carries the tolerance of the smallest country that uses it, so Luxembourg has a real border and Russia costs what it always did. 145 KB. Rebuilt by `tools/atlas/pack.py`. Read by `lib/atlas.js` |
+| `atlasdetail.js` | 20 | Natural Earth 50m simplified to the map's own detail: 254 rivers, 411 lakes and the 500 largest cities that are not capitals. 75 KB. Rebuilt by `tools/atlas/detail.py`. Read by `lib/atlas.js`, which works without it |
+| `atlasrelief.js` | 16 | a normalised global height field at 20 arc-minutes — 1080 × 540 cells on a square-root scale, run-length coded, sea collapsing to almost nothing. ETOPO20 (NOAA, public domain). 163 KB. Rebuilt by `tools/atlas/relief.py`. Read by `lib/atlas.js`, which works without it |
 
 ## The registry — what a feature can say about itself
 
@@ -368,7 +373,154 @@ Core only asks `when(items, page)` whether to show a button and calls
 laid out. Logic uses that seam for **Tidy logic**, while another feature can add
 an operation without a type branch in selection or the toolbar.
 
-## Circuits, and the graph seam under them
+## Maps, and the layer seam on them
+
+`items/science/atlas.js` is built to be added to rather than edited. The map
+itself owns three things and no more: where in the world it is looking, how the
+hand moves it, and the order things are painted in. **Everything drawn on it is
+a layer**, and a layer is one `defineMapLayer()` in a file of its own:
+
+```js
+defineMapLayer('rivers', {
+  label: 'Rivers', order: 35, on: 0, sw: 1.2,
+  world: ctx => '<path class="atriver" d="' + riverPath(ctx.it.proj) + '"/>'
+});
+```
+
+It then appears in the map's layer panel, in the record as `it.on.rivers`, in
+print, in an export and in a backup, with nothing in `atlas.js` touched. Two
+hooks, and a layer may use either or both:
+
+- `world(ctx) → svg` is drawn **inside the group that moves**, in world units.
+  Its `sw` is a stroke width in picture units and is divided by the zoom on
+  every frame, so a hairline stays a hairline however far in the map goes.
+- `build(ctx) → svg` is drawn in the group that does **not** move, and
+  `frame(g, ctx)` is called once a frame to put its children where the view now
+  is. That is how the capitals keep their size and their typeface while the
+  world slides under them.
+
+The picked country uses both, and is why the seam is shaped that way: its shade
+belongs in the world, where it is the country's own shape, and its name belongs
+in the world too — until the country is smaller than the letters, and then the
+name is the one thing that has to keep its size. One layer, one line in the
+panel, one entry in the record, two spaces to draw in.
+
+**`ctx` is one object per frame, and every screen-space layer is handed the
+same one, in layer order.** That is the only thing the layers share, and it is
+how type is laid out across a map rather than per layer: the capitals write the
+boxes they took onto `ctx.taken`, and the cities lay out against them. A city
+name therefore never lands on a capital's, and neither lands on the picked
+country's name, without any layer knowing what the others are.
+
+The rule that makes a map smooth is that **the world is built once and then
+moved**. `lib/atlas.js` memoises the path strings; a pan or a zoom writes one
+`transform` and a few stroke widths, and touches no geometry at all. A `frame`
+hook that rebuilds markup, measures text or queries the document has broken
+that, and it will not be obvious from a screenshot — only from the frame rate.
+Everything the paint touches is looked up once and kept on the `<svg>` for that
+reason.
+
+**"Once" means once per projection, look, DETAIL STEP and WINDOW**, and the
+last two are what make the difference between a map and a slideshow. A frame
+costs what is in it. Without them the map handed the browser the whole planet
+at its finest detail whatever it was showing: twenty-seven thousand points into
+a thousand pixels at arm's length, and ninety-nine hundredths of the world
+tessellated off the picture at an inch above Switzerland.
+
+- `atlLod(z)` picks one of four simplification steps, each the size of a pixel
+  in degrees at that zoom, so a step never throws away anything the screen could
+  have shown. The coarse copies are made in the browser with Douglas-Peucker,
+  which keeps the ends of every arc — and an arc's ends are the junctions
+  countries meet at, so a coarse world is still in register with itself.
+- `atlWin(it, v)` is the rectangle worth building, **snapped** to half a view,
+  so a pan crosses a boundary about four times in the time it takes to drag the
+  picture past itself rather than sixty times a second. Crossing one costs
+  about a millisecond; between crossings nothing is rebuilt at all.
+
+Culling by box is enough for a coast or a border, which are one arc each and
+there are two thousand of them. It is worth **nothing** for the land, which is
+one ring for the whole of Eurasia — its box meets every window there is. So a
+filled ring that straddles the window is cut to it with Sutherland-Hodgman
+first. Clipping every ring against the same rectangle leaves the even-odd count
+inside that rectangle exactly as it was, so the lakes and the holes still come
+out as holes, and the window has a whole view of slack so the straight runs
+along its own edges are never on screen.
+
+Measured, with every layer on: 45,000 characters of path drawn at 32×, against
+750,000 before — and no clip mask at all, where there used to be one built from
+a thirty-thousand-point path on every frame.
+
+**The countries are the second half of `lib/atlas.js`, and the whole of it
+rests on one decision: every ring of a country is pulled into a single
+coordinate frame.** It is the seam down the back of the world in a different
+disguise. Fiji comes out of the data as two islands one on each side of the
+180th meridian and Russia as one ring that walks straight over it; unrolling
+makes a ring continuous again, but a ring is only continuous with *itself*, so
+two rings of one country can end up a whole world apart and an even-odd
+crossing count over rings in two frames is nonsense. `geoCoGeom` unrolls every
+ring, pulls each to within half a world of the first, and slides the country
+back over the map if that left its middle off the edge. Everything after it —
+which country a click is in, the pole of inaccessibility, the largest name that
+fits inside the outline, the box a map flies to — lives in that frame.
+
+Three of those are worth knowing about before changing anything near them:
+
+- **A name that fits.** `geoCoLabel` grows the box the name would occupy until
+  an edge of the country cuts it, over one, two or three lines, and takes
+  whichever carries the bigger letter. The answer is a size in *world* units,
+  because the name is drawn inside the group that moves — so a name sized to
+  fit its country goes on fitting it at every zoom, with nothing per frame.
+- **The part of a country anyone means by its name.** France's box runs from
+  French Guiana to Réunion and its middle is the mid-Atlantic. `geoCoMain` is
+  the largest ring plus everything near it, measured in that ring's own spans,
+  so Japan keeps its islands and Indonesia keeps Papua while Guiana and Réunion
+  are left where they are. The full box is still what a click is tested
+  against; `geoCoMain` is what a map flies to and a card is framed on.
+- **The countries the pen is bigger than.** They are all in the table now —
+  the base map is the 50m tier simplified per arc, so Nauru, Monaco and the
+  Vatican are ordinary countries sharing ordinary arcs. What they still need is
+  a way to be *seen* and *hit*: the map rings them while they are smaller than
+  a full stop, `atlRingAt` hit-tests that ring in picture units before any
+  polygon is consulted — the ring you can see is the ring you can hit — and
+  `geoCoAt` takes a reach for the same countries in open water.
+
+**Why the table is 50m simplified per arc, and not 110m.** One tolerance for
+the whole planet is one tolerance too few. The 110m tier gave Russia about the
+right number of points and gave Luxembourg *six* — a hexagon thirty kilometres
+from the real border, a quarter of the width of the country — and it contained
+no Nauru, Monaco or Vatican at all. Simplifying one *country* finer is the
+thing that cannot be done: its neighbour would keep the old line and the two
+would disagree by tens of kilometres along a shared border. Simplifying one
+*arc* can, because Douglas-Peucker keeps the ends of a run and an arc's ends
+are the junctions — so both countries either side of it move identically, and
+the coastline, the borders and the dissolved land stay in register by
+construction. Each arc takes the tolerance of the smallest country that uses
+it. 145 KB against 53 KB, for 3.3× the points and every country on Earth.
+
+**The height of the land is drawn, not photographed**, and that is the same
+argument again. A picture of the field is the obvious thing: stretch 1080 cells
+across a world, go in thirty times, and every cell is thirty pixels of soft
+blur beside a coastline that is still perfectly sharp — and four hundred
+kilobytes of PNG travels inside every export of every map that has it on. So
+`geoReliefBands` runs marching squares over the cells instead, giving the
+closed line where the land crosses each of nine heights, fills them lowest
+first so each band covers the one below it, and hands back paths in world
+units: smoothed like every other outline here, crisp at any magnification, cut
+to the same window, and a few tens of kilobytes. It does not invent detail —
+the cells are still a third of a degree — but the edge between two tints is now
+a line rather than a gradient across thirty pixels of nothing.
+
+The coast is not the field's to draw: a cell is 37 km and a coastline is finer,
+so the lowest band spills into the sea. The sea is painted back over it — one
+rectangle with the land path as a hole, under `fill-rule: evenodd` — which
+costs one more fill of a path the map is drawing anyway, and is why nothing
+there needs a clip either.
+
+Projections are the same kind of list: an entry in `GEO_PROJ` with `fwd`, `inv`,
+its height and the period it wraps at. A projection that does not wrap says
+nothing, and the antimeridian handling stands down for it.
+
+## Circuits, and the graph seam under them## Circuits, and the graph seam under them
 
 `js/items/logic/gate.js` and `logic/circuit.js` need a **directed, port-level,
 functional** connection between components, and it is worth writing down why
@@ -732,8 +884,8 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**1993 assertions**, and they are the real specification of this app. Among them:
-that all 84 script files load without throwing; that library normalization
+**2141 assertions**, and they are the real specification of this app. Among them:
+that all 89 script files load without throwing; that library normalization
 recovers orphaned entries and breaks folder cycles; that a `[[link]]` finds its
 file whatever its case or extension, ignores one written inside code, survives
 a rename of either end, and appears in the graph's index at both of its ends;

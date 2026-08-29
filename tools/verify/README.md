@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 1993 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 2141 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,12 +22,12 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 1993 assertions, and they should
+It prints a pass/fail count and every failure. 2141 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 84 script files load, in order;
+- nothing throws while the 89 script files load, in order;
 - the app boots, opens a note and draws its sheet — one sheet, 1980 × 1320,
   four rails, and no page furniture of any kind;
 - every entry in the add menu adds the type it claims to;
@@ -348,6 +348,40 @@ all pass — if one doesn't, that is a real regression.
   number and half-life and the side counts name the elements, that ⇢ follows
   uranium-238 fourteen arrows down to lead, that the ⌕ box reads `Tc-99m` as it
   is typed and Enter goes there, and that it prints whole with no buttons;
+- **the world**: the tables first — 1959 arcs and 27,056 points, all 241
+  countries there are, 199 capitals biggest first, 254 rivers, 411 lakes and the
+  500 largest cities that are not capitals; that the coarse copies of the world
+  really are coarser and that **every arc still starts and ends where it did**,
+  which is the whole reason a coarse world is still in register with itself;
+  that Luxembourg is not a hexagon any more and Russia did not get more
+  expensive for it; that a projection and its inverse are each other, that
+  Mercator is cut where everyone cuts it, that the world is built once and kept
+  and that no line runs across it where the map is seamed. Then the countries as
+  shapes: that Paris is in France and the mid-Atlantic is in nothing, that an
+  enclave beats the country round it, that a country on both sides of the 180th
+  is still one country, that a country smaller than a finger is hit by landing
+  *near* it and that the reach can never steal a click from a country you are
+  inside; that all 206 names are placed and sized and **not one of the 206
+  crosses its own outline** — checked the hard way, against every edge of every
+  ring — that a name is broken over lines when that makes it bigger, and that
+  what a country *means* is its main body rather than its every island, so
+  France is France and not the mid-Atlantic. Then the height field: that it
+  unpacks to 1080 × 540, that two thirds of it is sea, that the Himalaya are the
+  highest thing on it, and that it is drawn once per projection and kept. Then a
+  map: that a new one is Mercator, that every city is a node from the start and
+  none is named at arm's length, that going in fills the map and **not one city
+  name is written over a capital's**, that picking a country writes down its
+  name rather than its number and rebuilds one layer and no geometry, that a
+  country too small to write on is named beside itself instead, that ⌕ lights
+  one up and aims the springs at its own box, that dragging one out of the map
+  puts it on the page while the map stays where it was and carrying it back does
+  nothing at all; and the country card — its viewBox, its name, its capital, its
+  three switches, and that it prints with no buttons; that a pan inside the
+  window the world was built for **rebuilds no geometry at all** while a jump
+  that crosses a detail step rebuilds deliberately and draws a fraction of what
+  it drew; and that the height of the land is nine filled contours with no
+  picture and no clip anywhere, a window really is a fraction of the world, and
+  the coarsest step draws less than the finest;
 - **Export for real** — a known handful of items is put on the sheet, the blob
   is intercepted, and it is checked for every feature's styles and for the
   absence of any flipbook chrome.
