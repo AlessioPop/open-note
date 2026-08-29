@@ -449,6 +449,8 @@ function chemLayout(m){
   const n = m.atoms.length; if(!n) return m;
   const nb = chemNbrs(m), placed = new Array(n).fill(false);
   const rings = chemRings(m), ringOf = m.atoms.map(() => []);
+  const ringBonds = new Set();
+  rings.forEach(r => r.bonds.forEach(k => ringBonds.add(k)));
   rings.forEach((r, ri) => r.atoms.forEach(i => ringOf[i].push(ri)));
   const sysOf = new Array(rings.length).fill(-1), systems = [];
   rings.forEach((r, ri) => {
@@ -651,6 +653,90 @@ function chemLayout(m){
       if(!moved && it > 0) break;
       m.bonds.forEach(b => { if(cset.has(b.a)) nudge(b.a, b.b, 1, .5, false); });
       d13.forEach(p => nudge(p[0], p[1], p[2], .25, false));
+    }
+    /* The local grow above is intentionally predictable, but a large branched
+       molecule can make several locally sensible turns and still fold a whole
+       arm back through a ring.  The old relaxation could not recover because
+       ring atoms were fixed one by one.  Rotate complete rigid subtrees about
+       acyclic single bonds instead: rings keep their exact polygons and bond
+       lengths stay put, while a global score removes atom piles and crossing
+       bonds.  Thirty-degree trials retain the visual grammar of a structure
+       diagram, and small molecules keep the simpler deterministic layout. */
+    const complex = rings.some(r => r.atoms.some(i => cset.has(i))) || comp.some(i => nb[i].filter(x => cset.has(x.j)).length > 2);
+    if(comp.length >= 12 && complex){
+      const cbonds = m.bonds.map((b, k) => ({ b, k })).filter(x => cset.has(x.b.a) && cset.has(x.b.b));
+      const orient = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+      const bonded = new Set(cbonds.map(x => Math.min(x.b.a, x.b.b) + ':' + Math.max(x.b.a, x.b.b)));
+      const atomPairs = [], bondPairs = [];
+      for(let u = 0; u < comp.length; u++) for(let v = u + 1; v < comp.length; v++){
+        const i = comp[u], j = comp[v];
+        if(!bonded.has(Math.min(i, j) + ':' + Math.max(i, j))) atomPairs.push([i, j]);
+      }
+      for(let u = 0; u < cbonds.length; u++) for(let v = u + 1; v < cbonds.length; v++){
+        const A = cbonds[u].b, B = cbonds[v].b;
+        if(A.a !== B.a && A.a !== B.b && A.b !== B.a && A.b !== B.b) bondPairs.push([A, B]);
+      }
+      const score = () => {
+        let s = 0;
+        atomPairs.forEach(pair => {
+          const i = pair[0], j = pair[1];
+          const d = Math.hypot(m.atoms[i].x - m.atoms[j].x, m.atoms[i].y - m.atoms[j].y);
+          if(d < 1.2) s += (1.2 - d) * (1.2 - d) * 140;
+          if(d < .45) s += 80;
+          s -= .02 * Math.min(d, 5);       /* prefer open arms once clashes are gone */
+        });
+        bondPairs.forEach(pair => {
+          const A = pair[0], B = pair[1];
+          const a = m.atoms[A.a], b = m.atoms[A.b], c = m.atoms[B.a], d = m.atoms[B.b];
+          if(orient(a, b, c) * orient(a, b, d) < -1e-8 && orient(c, d, a) * orient(c, d, b) < -1e-8) s += 120;
+        });
+        return s;
+      };
+      const sideOf = (a, b) => {
+        const seen = new Set(), st = [b];
+        while(st.length){
+          const i = st.pop();
+          if(seen.has(i)) continue;
+          seen.add(i);
+          nb[i].forEach(x => {
+            if((i === a && x.j === b) || (i === b && x.j === a)) return;
+            if(cset.has(x.j)) st.push(x.j);
+          });
+        }
+        return seen.has(a) ? null : Array.from(seen);
+      };
+      const turns = [];
+      cbonds.forEach(({ b, k }) => {
+        if(ringBonds.has(k) || (b.o || 1) !== 1) return;
+        let anchor = b.a, side = sideOf(b.a, b.b);
+        if(!side) return;
+        if(side.length > comp.length / 2){ anchor = b.b; side = sideOf(b.b, b.a); }
+        if(side && side.length > 1 && side.length < comp.length - 1) turns.push({ anchor, side });
+      });
+      for(let pass = 0; pass < 3; pass++){
+        let changed = false;
+        turns.forEach(turn => {
+          const ox = m.atoms[turn.anchor].x, oy = m.atoms[turn.anchor].y;
+          const was = turn.side.map(i => [m.atoms[i].x, m.atoms[i].y]);
+          let best = score(), bestAng = 0;
+          for(let step = 1; step < 12; step++){
+            const ang = step * Math.PI / 6, ca = Math.cos(ang), sa = Math.sin(ang);
+            turn.side.forEach((i, q) => {
+              const x = was[q][0] - ox, y = was[q][1] - oy;
+              m.atoms[i].x = ox + x * ca - y * sa; m.atoms[i].y = oy + x * sa + y * ca;
+            });
+            const z = score();
+            if(z < best - 1e-6){ best = z; bestAng = ang; }
+          }
+          const ca = Math.cos(bestAng), sa = Math.sin(bestAng);
+          turn.side.forEach((i, q) => {
+            const x = was[q][0] - ox, y = was[q][1] - oy;
+            m.atoms[i].x = ox + x * ca - y * sa; m.atoms[i].y = oy + x * sa + y * ca;
+          });
+          if(bestAng) changed = true;
+        });
+        if(!changed) break;
+      }
     }
     /* stand the pieces side by side */
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -971,16 +1057,54 @@ function chemVSEPR(m, i, nb){
     ax: 'AX' + (x > 1 ? chemSub(x) : x === 1 ? '' : '') + (e ? 'E' + (e > 1 ? chemSub(e) : '') : '') };
 }
 
-const CHEM_LIB = CHEM_LIB_SRC.trim().split('\n').map(l => { const f = l.split('|'); return { name: f[0], smiles: f[1], tag: f[2] }; });
-let CHEM_LIB_HASH = null;
-function chemLibHashes(){
-  if(!CHEM_LIB_HASH){
-    CHEM_LIB_HASH = new Map();
-    for(const e of CHEM_LIB){
-      try { const m = chemParse(e.smiles); if(!m.err.length) CHEM_LIB_HASH.set(chemHash(m), e.name); } catch(err){}
+/* The hand-picked teaching set keeps its short shelf tags in elements.js.  A
+   generated PubChem set extends it to 10,000 structures in molecules.js.
+   Every generated row carries the graph hash made by this file, so recognising
+   a drawing never has to parse ten thousand SMILES at runtime.  Repeated
+   structures become aliases and the hand-picked name remains canonical. */
+const CHEM_LIB = (() => {
+  const byHash = new Map(), out = [];
+  const add = (hash, name, smiles, aliases, tag, cid) => {
+    let e = byHash.get(hash);
+    if(e){
+      [name].concat(aliases || []).forEach(a => {
+        if(a && a.toLowerCase() !== e.name.toLowerCase() && !e.aliases.some(x => x.toLowerCase() === a.toLowerCase())) e.aliases.push(a);
+      });
+      return;
     }
-  }
-  return CHEM_LIB_HASH;
+    e = { hash, name, smiles, aliases: (aliases || []).filter(Boolean), tag: tag || '', cid: cid || 0 };
+    byHash.set(hash, e); out.push(e);
+  };
+  CHEM_LIB_SRC.trim().split('\n').forEach(l => {
+    const f = l.split('|'), m = chemParse(f[1]);
+    if(!m.err.length) add(chemHash(m), f[0], f[1], [], f[2], 0);
+  });
+  if(typeof CHEM_CATALOG_SRC !== 'undefined') CHEM_CATALOG_SRC.trim().split('\n').forEach(l => {
+    const f = l.split('\t');
+    if(f.length >= 3) add(f[0], f[1], f[2], f[3] ? [f[3]] : [], '', +(f[4] || 0));
+  });
+  return out;
+})();
+const CHEM_LIB_HASH = new Map(CHEM_LIB.map(e => [e.hash, e.name]));
+const chemLibHashes = () => CHEM_LIB_HASH;
+
+/* Exact names live in a map; prefix suggestions live in a sorted array and
+   begin with a binary search.  The small fallback scan retains useful
+   contains-matches ("acid" finds "citric acid") without slowing exact entry. */
+const chemNameKey = q => String(q || '').normalize('NFKC').toLowerCase()
+  .replace(/[‐‑‒–—−]/g, '-').replace(/\s+/g, ' ').trim();
+const CHEM_NAME_EXACT = new Map(), CHEM_NAME_INDEX = [];
+CHEM_LIB.forEach(e => [e.name].concat(e.aliases).forEach(name => {
+  const key = chemNameKey(name);
+  if(!key) return;
+  if(!CHEM_NAME_EXACT.has(key)) CHEM_NAME_EXACT.set(key, e);
+  CHEM_NAME_INDEX.push({ key, e });
+}));
+CHEM_NAME_INDEX.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+function chemNameLowerBound(q){
+  let lo = 0, hi = CHEM_NAME_INDEX.length;
+  while(lo < hi){ const mid = (lo + hi) >>> 1; if(CHEM_NAME_INDEX[mid].key < q) lo = mid + 1; else hi = mid; }
+  return lo;
 }
 /* what a drawing is called, if the library knows it — the whole thing first,
    else each piece of it */
@@ -996,18 +1120,26 @@ function chemName(m){
 }
 /* the library entries a typed word could mean, best first */
 function chemFind(q, max){
-  q = String(q || '').trim().toLowerCase();
+  q = chemNameKey(q); max = max || 8;
   if(!q) return [];
-  const s = CHEM_LIB.filter(e => e.name.toLowerCase().startsWith(q));
-  const c = CHEM_LIB.filter(e => !e.name.toLowerCase().startsWith(q) && e.name.toLowerCase().includes(q));
-  return s.concat(c).slice(0, max || 8);
+  const out = [], seen = new Set();
+  const take = e => { if(!seen.has(e.hash) && out.length < max){ seen.add(e.hash); out.push(e); } };
+  const exact = CHEM_NAME_EXACT.get(q);
+  if(exact) take(exact);
+  for(let i = chemNameLowerBound(q); i < CHEM_NAME_INDEX.length && CHEM_NAME_INDEX[i].key.startsWith(q) && out.length < max; i++) take(CHEM_NAME_INDEX[i].e);
+  if(out.length < max) for(const row of CHEM_NAME_INDEX){
+    if(row.key.includes(q) && !row.key.startsWith(q)) take(row.e);
+    if(out.length >= max) break;
+  }
+  return out;
 }
 /* a name or a SMILES → a laid-out molecule, or null */
 function chemFrom(q){
   q = String(q || '').trim();
   if(!q) return null;
+  const exact = CHEM_NAME_EXACT.get(chemNameKey(q));
+  if(exact) return chemLayout(chemParse(exact.smiles));
   const hit = chemFind(q, 1)[0];
-  if(hit && hit.name.toLowerCase() === q.toLowerCase()) return chemLayout(chemParse(hit.smiles));
   const m = chemParse(q);
   if(m.atoms.length && !m.err.length) return chemLayout(m);
   if(hit) return chemLayout(chemParse(hit.smiles));

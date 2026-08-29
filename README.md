@@ -16,7 +16,7 @@ Draw a molecule the way a chemist does — skeletal, carbons implied at the corn
 
 ![Caffeine, drawn and then embedded in space](docs/img/molecules.png)
 
-There is no library behind any of this and nothing is downloaded: `js/lib/chem.js` is the molecular graph, implicit hydrogens and lone pairs, rings and aromaticity, SMILES in and out, the 2D layout, the 3D embedding and VSEPR — about a thousand lines, and it touches no DOM at all. Bond lengths in the 3D view land within 12 % of the real ones, which the test harness checks on every run.
+There is no runtime dependency behind any of this and nothing is downloaded: `js/lib/chem.js` is the molecular graph, implicit hydrogens and lone pairs, rings and aromaticity, SMILES in and out, the 2D layout, the 3D embedding and VSEPR — about a thousand lines, and it touches no DOM at all. A generated, offline PubChem catalog adds 10,000 unique structures and more than 17,000 searchable canonical and systematic names; exact lookups use a map, prefix suggestions use a sorted index, and precomputed graph hashes recognise a drawing without parsing the catalog. Bond lengths in the 3D view land within 12 % of the real ones, which the test harness checks on every run.
 
 ### Numbers that stay wired up
 
@@ -112,7 +112,7 @@ js/lib/           algorithms that owe nothing to this app — latex, pptx, workb
 js/data/          tables the lib files read — the nuclides, the elements. Data, never code
 fonts/            the four families, carried locally so nothing needs the network
 desktop/          the Electron shell — main process and icon; wraps the app, never part of it
-tools/verify/     headless-Firefox verification harness — 2141 assertions
+tools/verify/     headless-Firefox verification harness — 2146 assertions
 tools/shots/      rebuilds the pictures above from the real app
 docs/             manual, architecture, and those pictures
 ```
@@ -126,7 +126,7 @@ Only `index.html`, `js/`, `fonts/` and `desktop/` are packaged into a build — 
 There is no test runner — the app *is* the test.
 
 ```
-tools/verify/run.sh        # 2141 assertions, in headless Firefox
+tools/verify/run.sh        # 2146 assertions, in headless Firefox
 tools/verify/desktop.sh    # 47 more, driving the real Electron shell
 tools/shots/run.sh         # rebuild the pictures in this README
 ```

@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 2141 assertions, driven in headless Firefox
+tools/verify/       the harness: 2146 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -248,7 +248,7 @@ on a task.
 | `fits.js` | 477 | a `.fits` → its HDUs, their headers, and the shape of every data unit; the walk steps over the data without touching it, so a four-gigabyte cube opens as fast as a small one. Then one column of a binary table, on request — planned before it is read, so what comes back is bounded whatever the file weighs |
 | `workbook.js` | 518 | `.xlsx`, `.ods` and `.csv` → plain rows of plain strings. No library: a workbook is a zip of XML, and the browser has an unzipper |
 | `pptx.js` | 1907 | `.pptx` → slides that draw themselves as SVG. The same zip, then DrawingML: the colour engine, the preset and freehand geometry, fills and lines, the inheritance chain a slide hangs off, and the text laid out by hand |
-| `chem.js` | 1015 | the chemistry: the molecular graph, implicit hydrogens and lone pairs, Hill formulas and masses, rings and aromaticity, a graph hash that names what you draw, SMILES in and out, the 2D layout with exact regular-polygon arcs for constrained rings, the 3D embedding and VSEPR |
+| `chem.js` | 1147 | the chemistry: the molecular graph, implicit hydrogens and lone pairs, Hill formulas and masses, rings and aromaticity, the indexed offline name catalog, a graph hash that names what you draw, SMILES in and out, the 2D layout with exact regular-polygon arcs for constrained rings and rigid-branch untangling for large structures, the 3D embedding and VSEPR |
 | `nuclide.js` | 264 | the physics of the nuclide chart: reading NUBASE in, every decay mode as a step in (protons, neutrons), Q values and separation energies subtracted from the masses, binding energy per nucleon, and the chain down to whatever a nuclide ends on |
 | `atlas.js` | 1110 | the world as numbers: the packed arcs unpacked, the projections (flat and Mercator, each declaring its period), the seam down the back of the world unrolled so a country on both sides of the 180th meridian is drawn on both sides, rings and arcs to path strings — smoothed through their midpoints so a 110m outline stands up to being magnified — memoised per projection and look, and the greedy box layout that decides which city names fit. Then the countries as shapes: every one pulled into a single coordinate frame so an even-odd insideness test means something, which country a point is in (with a reach, for the ones smaller than a finger), the pole of inaccessibility, the largest name that fits wholly inside a country's own outline, the part of a country anyone means by its name, name search over aliases, rivers and lakes, and the height field unpacked and contoured into filled bands by marching squares. Everything it builds is memoised per projection, look, **detail step and window** — the last two being what stops a map drawing the whole planet at full detail to show one country |
 
@@ -262,7 +262,8 @@ Each loads immediately before the `lib/` file that reads it.
 | File | Lines | What it is |
 |---|---:|---|
 | `nuclides.js` | 5809 | NUBASE2020 packed to a line each — 3558 ground states and 2088 metastable states with their mass excesses, half-lives, spins, branches and abundances. Read by `lib/nuclide.js` |
-| `elements.js` | 340 | the 118 elements with their configurations, radii and colours, and a library of ~200 molecules as SMILES. Read by `lib/chem.js` |
+| `elements.js` | 340 | the 118 elements with their configurations, radii and colours, plus the hand-picked teaching names that take precedence in the molecule catalog. Read by `lib/chem.js` |
+| `molecules.js` | 9804 | 9796 generated PubChem records which, with the hand-picked set, make 10,000 unique offline structures and more than 17,000 searchable canonical/IUPAC names. Each carries a precomputed graph hash, so recognition does not parse the catalog. Rebuilt by `tools/chem/build-catalog.mjs`; read by `lib/chem.js` |
 | `atlasworld.js` | 26 | Natural Earth 50m **simplified per arc** (public domain): 1959 arcs of coastline and border packed as base-64 varints, the rings that make the land, which arcs are coast and which are border, **241 countries — every one there is**, and 199 capitals biggest first. Each arc carries the tolerance of the smallest country that uses it, so Luxembourg has a real border and Russia costs what it always did. 145 KB. Rebuilt by `tools/atlas/pack.py`. Read by `lib/atlas.js` |
 | `atlasdetail.js` | 20 | Natural Earth 50m simplified to the map's own detail: 254 rivers, 411 lakes and the 500 largest cities that are not capitals. 75 KB. Rebuilt by `tools/atlas/detail.py`. Read by `lib/atlas.js`, which works without it |
 | `atlasrelief.js` | 16 | a normalised global height field at 20 arc-minutes — 1080 × 540 cells on a square-root scale, run-length coded, sea collapsing to almost nothing. ETOPO20 (NOAA, public domain). 163 KB. Rebuilt by `tools/atlas/relief.py`. Read by `lib/atlas.js`, which works without it |
@@ -884,8 +885,8 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**2141 assertions**, and they are the real specification of this app. Among them:
-that all 89 script files load without throwing; that library normalization
+**2146 assertions**, and they are the real specification of this app. Among them:
+that all 90 script files load without throwing; that library normalization
 recovers orphaned entries and breaks folder cycles; that a `[[link]]` finds its
 file whatever its case or extension, ignores one written inside code, survives
 a rename of either end, and appears in the graph's index at both of its ends;

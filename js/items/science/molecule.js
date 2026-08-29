@@ -2049,7 +2049,7 @@ function molAskEl(){
   const inp = d.querySelector('input'), sug = d.querySelector('.molsug');
   const list = () => {
     const hits = chemFind(inp.value, 8);
-    sug.innerHTML = hits.map(h => '<button data-n="' + esc(h.name) + '">' + esc(h.name) + '<small>' + esc(h.smiles) + '</small></button>').join('');
+    sug.innerHTML = hits.map(h => '<button data-n="' + esc(h.name) + '">' + esc(h.name) + '</button>').join('');
     d.querySelector('.mnope').textContent = '';
   };
   inp.addEventListener('input', list);
@@ -2595,7 +2595,6 @@ svg.molsvg{display:block;height:auto;overflow:visible;touch-action:none;font-fam
 .molsug:empty{margin:0}
 .molsug button{text-align:left;padding:5px 8px;border-radius:7px;font-size:10.5px;letter-spacing:.04em;color:rgba(233,234,239,.85);background:rgba(255,255,255,.035)}
 .molsug button:hover,.molsug button:focus{background:var(--accent);color:#fff;outline:none}
-.molsug button small{opacity:.55;margin-left:7px;font-size:9px}
 .molask .mnope{font-size:10px;color:#f08a7a;letter-spacing:.04em}
 .molask .mnope:not(:empty){padding:6px 2px 0}
 @media (prefers-reduced-motion: reduce){.molrail button,.molviewrail,.molviewrail .mvtoggle,.molviewrail .mvhi,.molexport button{transition:none}.molmenu button{transition:none}.mol.nono{animation:none}}

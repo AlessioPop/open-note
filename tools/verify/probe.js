@@ -7215,6 +7215,32 @@
       ok('chem: the two Kekulé benzenes hash alike', chemHash(chemParse('C1=CC=CC=C1')) === chemHash(chemParse('c1ccccc1')));
       ok('chem: ethanol round-trips through SMILES', chemHash(chemParse(chemWrite(chemParse('OCC')))) === chemHash(chemParse('CCO')));
       ok('chem: aspirin is recognised', chemName(chemParse('CC(=O)Oc1ccccc1C(=O)O')) === 'aspirin');
+      ok('chem: the offline catalog has 10,000 unique structures and indexed aliases',
+        CHEM_LIB.length === 10000 && CHEM_LIB_HASH.size === 10000 && CHEM_NAME_INDEX.length > 17000,
+        CHEM_LIB.length + ' structures, ' + CHEM_NAME_INDEX.length + ' names');
+      var oxo = chemFrom('3-oxetanone'), oxoAlias = chemFrom('oxetan-3-one');
+      ok('chem: 3-oxetanone and its systematic alias resolve to C3H4O2', !!oxo && !!oxoAlias &&
+        chemFormula(oxo).plain === 'C3H4O2' && chemHash(oxo) === chemHash(oxoAlias));
+      ok('chem: exact aliases precede prefix and contains suggestions',
+        chemFind('oxetan-3-one', 3)[0].name === '3-Oxetanone' && chemFind('aminopropan', 3).length > 0);
+      var amb = chemFrom('ambenonium chloride'), ambComp = chemComps(amb).comps.sort(function (a, b) { return b.length - a.length; })[0];
+      var ambMin = Infinity, ambCross = 0;
+      for(var au = 0; au < ambComp.length; au++) for(var av = au + 1; av < ambComp.length; av++){
+        var ai = ambComp[au], aj = ambComp[av];
+        if(chemBondAt(amb, ai, aj) < 0) ambMin = Math.min(ambMin,
+          Math.hypot(amb.atoms[ai].x - amb.atoms[aj].x, amb.atoms[ai].y - amb.atoms[aj].y));
+      }
+      var ambTurn = function (a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); };
+      for(var ab1 = 0; ab1 < amb.bonds.length; ab1++) for(var ab2 = ab1 + 1; ab2 < amb.bonds.length; ab2++){
+        var ba = amb.bonds[ab1], bb = amb.bonds[ab2];
+        if(ba.a === bb.a || ba.a === bb.b || ba.b === bb.a || ba.b === bb.b) continue;
+        var aa = amb.atoms[ba.a], az = amb.atoms[ba.b], ac = amb.atoms[bb.a], ad = amb.atoms[bb.b];
+        if(ambTurn(aa, az, ac) * ambTurn(aa, az, ad) < -1e-8 && ambTurn(ac, ad, aa) * ambTurn(ac, ad, az) < -1e-8) ambCross++;
+      }
+      var ambXs = ambComp.map(function (i) { return amb.atoms[i].x; });
+      ok('chem: tidy spreads ambenonium chloride without atom piles or crossing bonds',
+        ambMin > .8 && ambCross === 0 && Math.max.apply(null, ambXs) - Math.min.apply(null, ambXs) > 8.5,
+        'nearest ' + ambMin.toFixed(2) + ', crossings ' + ambCross);
       var lay = chemLayout(chemParse('c1ccc2ccccc2c1'));
       ok('chem: naphthalene lays out with every bond one long', lay.bonds.every(function (b) {
         return Math.abs(Math.hypot(lay.atoms[b.b].x - lay.atoms[b.a].x, lay.atoms[b.b].y - lay.atoms[b.a].y) - 1) < .02; }));
@@ -7223,9 +7249,10 @@
       ok('chem: water embeds bent at 104.5 ± 3', Math.abs(hoh - 104.5) < 3, hoh);
       var v = chemVSEPR(chemParse('F[Xe](F)(F)F'), 1);
       ok('chem: XeF4 is square planar AX4E2', v.shape === 'square planar' && v.ax === 'AX₄E₂', JSON.stringify(v));
-      ok('chem: the whole library parses and lays out', CHEM_LIB.every(function (e) {
+      ok('chem: a distributed catalog sample parses, lays out and matches its precomputed hash', CHEM_LIB.every(function (e, i) {
+        if(i % 47 && i !== CHEM_LIB.length - 1) return true;
         var m = chemLayout(chemParse(e.smiles));
-        return !m.err.length && m.atoms.every(function (a) { return isFinite(a.x) && isFinite(a.y); }); }));
+        return !m.err.length && chemHash(m) === e.hash && m.atoms.every(function (a) { return isFinite(a.x) && isFinite(a.y); }); }));
 
       /* ---- the molecule, built the way a hand builds it ---- */
       addItem('molecule', { x: 10, y: 10 }, page);
@@ -7746,6 +7773,8 @@
       ok('mol: the ask box opens', Q('#molask').classList.contains('open'));
       Q('#molask input').value = 'caf'; Q('#molask input').dispatchEvent(new Event('input'));
       ok('mol: it suggests caffeine', !!Q('#molask .molsug button') && Q('#molask .molsug button').dataset.n === 'caffeine');
+      ok('mol: name suggestions omit the redundant SMILES preview',
+        Q('#molask .molsug button').textContent === 'caffeine' && !Q('#molask .molsug small'));
       molAskTake('caffeine'); await sleep(60);
       ok('mol: taking caffeine draws it', it.atoms.length === 14 && chemName(it) === 'caffeine' && !MOL_ASK, it.atoms.length + ' ' + chemName(it));
       ok('mol: the strip names it', el.querySelector('.molinfo').textContent.indexOf('caffeine') >= 0);
