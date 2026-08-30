@@ -577,19 +577,64 @@ function geoCoMain(proj, i){
   return hit;
 }
 
-/* ---- who is where ----
+/* ---- who is where, and how far from the edge ----
    Even-odd, so a country with a hole in it (South Africa, with Lesotho cut out
-   of it) answers no for a point in the hole with nothing here to say so. */
-function geoInRings(rings, x, y){
+   of it) answers no for a point in the hole with nothing here to say so.
+
+   EVERY RUN CARRIES ITS OWN BOX, and that is what makes these worth asking of a
+   continent. The questions below are put a few hundred times to a set of runs
+   that is mostly nowhere near the point — the middle of Asia is four hundred
+   islands away from most of Asia's outline — and a run whose box is already
+   further off than the best answer so far cannot better it, so it is skipped
+   whole. Same arithmetic, an order of magnitude less of it, and not one answer
+   moves: the pruning is exact.
+
+   `open` is whether the runs close. A country's outline is rings and the segment
+   from the last point back to the first is real coast; a continent's coast comes
+   out as open runs with its inland borders cut out of them, and closing one of
+   those would draw a line straight across the continent. */
+function geoBoxed(runs){
+  return runs.map(r => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for(const p of r){
+      if(p[0] < x0) x0 = p[0]; if(p[0] > x1) x1 = p[0];
+      if(p[1] < y0) y0 = p[1]; if(p[1] > y1) y1 = p[1];
+    }
+    return { r, x0, y0, x1, y1 };
+  });
+}
+const geoBoxNear = (q, x, y) => Math.hypot(x < q.x0 ? q.x0 - x : x > q.x1 ? x - q.x1 : 0,
+                                           y < q.y0 ? q.y0 - y : y > q.y1 ? y - q.y1 : 0);
+function geoRunsIn(B, x, y){
   let inside = false;
-  for(const r of rings)
+  for(const q of B){
+    /* the ray is cast to the right, so a run wholly to the left of the point,
+       or wholly above or below it, crosses nothing */
+    if(x > q.x1 || y < q.y0 || y > q.y1) continue;
+    const r = q.r;
     for(let i = 0, j = r.length - 1; i < r.length; j = i++){
       const a = r[i], b = r[j];
       if((a[1] > y) !== (b[1] > y) &&
          x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
     }
+  }
   return inside;
 }
+/* how far the point is from the nearest edge of any of them, unsigned */
+function geoRunsDist(B, x, y, open){
+  let d = Infinity;
+  for(const q of B){
+    if(geoBoxNear(q, x, y) >= d) continue;
+    const r = q.r;
+    for(let i = open ? 1 : 0, j = open ? 0 : r.length - 1; i < r.length; j = i++){
+      const t = geoSegDist(x, y, r[j][0], r[j][1], r[i][0], r[i][1]);
+      if(t < d) d = t;
+    }
+  }
+  return d;
+}
+/* …and the plain form, for a caller holding rings and no boxes */
+const geoInRings = (rings, x, y) => geoRunsIn(geoBoxed(rings), x, y);
 let GEO_CO_ORDER = null;
 /* smallest first, so a click inside an enclave is the enclave and not the
    country wrapped round it */
@@ -681,27 +726,20 @@ function geoSegDist(px, py, ax, ay, bx, by){
   t = t < 0 ? 0 : t > 1 ? 1 : t;
   return Math.hypot(ax + t * dx - px, ay + t * dy - py);
 }
-/* how far the point is from the outline — positive inside it, negative out */
-function geoRingsDist(rings, x, y){
-  let d = Infinity;
-  for(const r of rings)
-    for(let i = 0, j = r.length - 1; i < r.length; j = i++){
-      const t = geoSegDist(x, y, r[j][0], r[j][1], r[i][0], r[i][1]);
-      if(t < d) d = t;
-    }
-  return geoInRings(rings, x, y) ? d : -d;
-}
-const GEO_CO_SPOT = new Map();
-function geoCoSpot(proj, i){
-  const key = proj + '|' + i;
-  let hit = GEO_CO_SPOT.get(key);
+const GEO_REG_SPOT = new Map();
+function geoRegSpot(proj, key){
+  const kk = proj + '|' + key;
+  let hit = GEO_REG_SPOT.get(kk);
   if(hit) return hit;
-  const g = geoCoGeom(proj)[i], b = g.box, R = g.simp;
+  const g = geoReg(proj, key), b = g.box;
   const w = b.x1 - b.x0, h = b.y1 - b.y0, N = 18;
+  /* the coarse copies, and only here: the hunt walks every point four hundred
+     times and a copy no coarser than the search step cannot move the answer */
+  const at = (x, y) => (geoRunsIn(g.simpB, x, y) ? 1 : -1) * geoRunsDist(g.edgeSB, x, y, g.open);
   let best = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, r: -Infinity };
   for(let a = 0; a < N; a++) for(let c = 0; c < N; c++){
     const x = b.x0 + w * (a + .5) / N, y = b.y0 + h * (c + .5) / N;
-    const d = geoRingsDist(R, x, y);
+    const d = at(x, y);
     if(d > best.r) best = { x, y, r: d };
   }
   let step = Math.max(w, h) / N;
@@ -710,22 +748,34 @@ function geoCoSpot(proj, i){
     for(let a = -1; a <= 1; a++) for(let c = -1; c <= 1; c++){
       if(!a && !c) continue;
       const x = best.x + a * step, y = best.y + c * step;
-      const d = geoRingsDist(R, x, y);
+      const d = at(x, y);
       if(d > best.r) best = { x, y, r: d };
     }
   }
-  GEO_CO_SPOT.set(key, best);
+  GEO_REG_SPOT.set(kk, best);
   return best;
 }
+const geoCoSpot = (proj, i) => geoRegSpot(proj, 'co:' + i);
 
 /* ---- a name that fits inside the country ----
    The rule is the one an atlas keeps: a name belongs to the shape it is written
    on, and a name that reaches over a border is worse than no name. So the box
    the name would occupy is grown until an edge of the country cuts it, and the
    answer is a size in WORLD units — the label is drawn inside the group that
-   moves, so it grows with the country and the rule holds at every zoom. */
-const GEO_LBL_W = 0.47;                            // a condensed face, near enough
+   moves, so it grows with the country and the rule holds at every zoom.
+
+   THE BIGGEST THAT FITS IS NOT THE SIZE TO SET IT AT, and that is the second
+   rule an atlas keeps. A name grown until the border stops it fills the country
+   like a sticker; a name in an atlas is small, tracked out, and set in capitals
+   so that the reader takes it for a label and not for a headline. So the fit
+   answers how much room there is and GEO_LBL_AIR decides how much of it to use
+   — and the metrics below are the ones the label is actually SET in, capitals
+   and tracking included, so that what fits is what is drawn. */
+const GEO_LBL_TRK = 0.18;                          // tracked out, the way an atlas sets a name
+const GEO_LBL_W = 0.66;                            // one tracked capital of a condensed face
 const GEO_LBL_H = 1.06;                            // one line to the next
+const GEO_LBL_MID = 0.36;                          // half a cap height: where capitals centre
+const GEO_LBL_AIR = 0.72;                          // …of the room there is, and air for the rest
 
 function geoSegCross(ax, ay, bx, by, cx, cy, dx, dy){
   const s = (px, py, qx, qy, rx, ry) => Math.sign((qx - px) * (ry - py) - (qy - py) * (rx - px));
@@ -734,9 +784,11 @@ function geoSegCross(ax, ay, bx, by, cx, cy, dx, dy){
 }
 /* is the rectangle clear of every edge? the caller has already put its middle
    inside, so an outline that never cuts it means the whole box is in */
-function geoRectClear(rings, x0, y0, x1, y1){
-  for(const r of rings)
-    for(let i = 0, j = r.length - 1; i < r.length; j = i++){
+function geoRunsClear(B, x0, y0, x1, y1, open){
+  for(const q of B){
+    if(q.x1 < x0 || q.x0 > x1 || q.y1 < y0 || q.y0 > y1) continue;
+    const r = q.r;
+    for(let i = open ? 1 : 0, j = open ? 0 : r.length - 1; i < r.length; j = i++){
       const ax = r[j][0], ay = r[j][1], bx = r[i][0], by = r[i][1];
       if(Math.max(ax, bx) < x0 || Math.min(ax, bx) > x1 ||
          Math.max(ay, by) < y0 || Math.min(ay, by) > y1) continue;
@@ -747,17 +799,20 @@ function geoRectClear(rings, x0, y0, x1, y1){
          geoSegCross(ax, ay, bx, by, x1, y1, x0, y1) ||
          geoSegCross(ax, ay, bx, by, x0, y1, x0, y0)) return false;
     }
+  }
   return true;
 }
+const geoRectClear = (rings, x0, y0, x1, y1) => geoRunsClear(geoBoxed(rings), x0, y0, x1, y1, 0);
 /* the biggest font size whose box, centred on the spot, is still inside */
-function geoFitFs(rings, x, y, hi, wPer, hPer){
+function geoFitRun(B, open, x, y, hi, wPer, hPer){
   let lo = 0;
   for(let k = 0; k < 16; k++){
     const fs = (lo + hi) / 2, w = fs * wPer / 2, h = fs * hPer / 2;
-    if(geoRectClear(rings, x - w, y - h, x + w, y + h)) lo = fs; else hi = fs;
+    if(geoRunsClear(B, x - w, y - h, x + w, y + h, open)) lo = fs; else hi = fs;
   }
   return lo;
 }
+const geoFitFs = (rings, x, y, hi, wPer, hPer) => geoFitRun(geoBoxed(rings), 0, x, y, hi, wPer, hPer);
 /* the name over one, two or three lines — a wide country wants one, a round
    one wants three, and whichever carries the bigger letter wins */
 function geoSplitName(words, n){
@@ -770,12 +825,12 @@ function geoSplitName(words, n){
   lines.push(cur);
   return lines;
 }
-const GEO_CO_LBL = new Map();
-function geoCoLabel(proj, i){
-  const key = proj + '|' + i;
-  let hit = GEO_CO_LBL.get(key);
+const GEO_REG_LBL = new Map();
+function geoRegLabel(proj, key){
+  const kk = proj + '|' + key;
+  let hit = GEO_REG_LBL.get(kk);
   if(hit) return hit;
-  const g = geoCoGeom(proj)[i], sp = geoCoSpot(proj, i);
+  const g = geoReg(proj, key), sp = geoRegSpot(proj, key);
   const words = g.name.split(' ');
   const tries = [[g.name]];
   for(let n = 2; n <= Math.min(3, words.length); n++) tries.push(geoSplitName(words, n));
@@ -783,15 +838,211 @@ function geoCoLabel(proj, i){
   let best = { fs: 0, lines: [g.name] };
   if(sp.r > 0) for(const lines of tries){
     const wPer = Math.max(...lines.map(t => t.length)) * GEO_LBL_W, hPer = lines.length * GEO_LBL_H;
-    const fs = geoFitFs(g.rings, sp.x, sp.y, ceil / hPer, wPer, hPer);
+    const fs = geoFitRun(g.edgeB, g.open, sp.x, sp.y, ceil / hPer, wPer, hPer);
     if(fs > best.fs) best = { fs, lines };
   }
-  hit = { x: sp.x, y: sp.y, r: sp.r, fs: best.fs, lines: best.lines,
-          w: Math.max(...best.lines.map(t => t.length)) * GEO_LBL_W * best.fs,
-          h: best.lines.length * GEO_LBL_H * best.fs };
-  GEO_CO_LBL.set(key, hit);
+  /* the air comes off AFTER the lines are chosen, so which break carries the
+     bigger letter is still decided on the room itself — and `w` and `h` are
+     the box the name really occupies, which is what the capitals step round */
+  const fs = best.fs * GEO_LBL_AIR;
+  hit = { x: sp.x, y: sp.y, r: sp.r, fs, lines: best.lines,
+          w: Math.max(...best.lines.map(t => t.length)) * GEO_LBL_W * fs,
+          h: best.lines.length * GEO_LBL_H * fs };
+  GEO_REG_LBL.set(kk, hit);
   return hit;
 }
+const geoCoLabel = (proj, i) => geoRegLabel(proj, 'co:' + i);
+
+/* ================= the continents =================
+   Which continent a country is in is not in the outlines and cannot be worked
+   out from them: it is a fact about the world rather than a shape. Natural
+   Earth carries it in a field tools/atlas/pack.py has never kept, because until
+   there was something to draw with it nothing asked. So it is written out here,
+   in the table's own names, and it is the only thing in this file that is a
+   list of countries rather than a piece of geometry.
+
+   TWO OF THESE ARE A JUDGEMENT AND NOT A FACT, and both are about a picture.
+   Natural Earth files Russia under Europe; a Europe drawn that way reaches
+   Kamchatka, and Europe proper ends up a fringe down one side of a card that is
+   nine tenths Siberia. So Russia is drawn with Asia, where three quarters of its
+   land is, and Europe stops where the reader expects a plate of Europe to stop.
+   Turkey, Cyprus and the Caucasus go with Asia the way Natural Earth has them.
+   Nobody is wrong about either; a picture has to pick one. */
+const GEO_CONT = [
+  ['Africa', "Algeria|Angola|Benin|Botswana|Burkina Faso|Burundi|Cabo Verde|Cameroon|Central African Rep.|Chad|Comoros|Congo|Côte d'Ivoire|Dem. Rep. Congo|Djibouti|Egypt|Eq. Guinea|Eritrea|eSwatini|Ethiopia|Gabon|Gambia|Ghana|Guinea|Guinea-Bissau|Kenya|Lesotho|Liberia|Libya|Madagascar|Malawi|Mali|Mauritania|Mauritius|Morocco|Mozambique|Namibia|Niger|Nigeria|Rwanda|São Tomé and Principe|Saint Helena|Senegal|Seychelles|Sierra Leone|Somalia|Somaliland|South Africa|S. Sudan|Sudan|Tanzania|Togo|Tunisia|Uganda|W. Sahara|Zambia|Zimbabwe"],
+  ['Asia', 'Afghanistan|Armenia|Azerbaijan|Bahrain|Bangladesh|Bhutan|Br. Indian Ocean Ter.|Brunei|Cambodia|China|Cyprus|Georgia|Hong Kong|India|Indonesia|Iran|Iraq|Israel|Japan|Jordan|Kazakhstan|Kuwait|Kyrgyzstan|Laos|Lebanon|Macao|Malaysia|Maldives|Mongolia|Myanmar|N. Cyprus|Nepal|North Korea|Oman|Pakistan|Palestine|Philippines|Qatar|Russia|Saudi Arabia|Siachen Glacier|Singapore|South Korea|Sri Lanka|Syria|Taiwan|Tajikistan|Thailand|Timor-Leste|Turkey|Turkmenistan|United Arab Emirates|Uzbekistan|Vietnam|Yemen'],
+  ['Europe', 'Albania|Andorra|Austria|Åland|Belarus|Belgium|Bosnia and Herz.|Bulgaria|Croatia|Czechia|Denmark|Estonia|Faeroe Is.|Finland|France|Germany|Greece|Guernsey|Hungary|Iceland|Ireland|Isle of Man|Italy|Jersey|Kosovo|Latvia|Liechtenstein|Lithuania|Luxembourg|Macedonia|Malta|Moldova|Monaco|Montenegro|Netherlands|Norway|Poland|Portugal|Romania|San Marino|Serbia|Slovakia|Slovenia|Spain|Sweden|Switzerland|Ukraine|United Kingdom|Vatican'],
+  ['North America', 'Anguilla|Antigua and Barb.|Aruba|Bahamas|Barbados|Belize|Bermuda|British Virgin Is.|Canada|Cayman Is.|Costa Rica|Cuba|Curaçao|Dominica|Dominican Rep.|El Salvador|Greenland|Grenada|Guatemala|Haiti|Honduras|Jamaica|Mexico|Montserrat|Nicaragua|Panama|Puerto Rico|Saint Lucia|Sint Maarten|St-Barthélemy|St-Martin|St. Kitts and Nevis|St. Pierre and Miquelon|St. Vin. and Gren.|Trinidad and Tobago|Turks and Caicos Is.|United States of America|U.S. Virgin Is.'],
+  ['South America', 'Argentina|Bolivia|Brazil|Chile|Colombia|Ecuador|Falkland Is.|Guyana|Paraguay|Peru|Suriname|Uruguay|Venezuela'],
+  ['Oceania', 'American Samoa|Ashmore and Cartier Is.|Australia|Cook Is.|Fiji|Fr. Polynesia|Guam|Indian Ocean Ter.|Kiribati|Marshall Is.|Micronesia|Nauru|New Caledonia|New Zealand|Niue|Norfolk Island|N. Mariana Is.|Palau|Papua New Guinea|Pitcairn Is.|Samoa|Solomon Is.|Tonga|Vanuatu|Wallis and Futuna Is.'],
+  ['Antarctica', 'Antarctica|Fr. S. Antarctic Lands|Heard I. and McDonald Is.|S. Geo. and the Is.']
+];
+let GEO_CONT_CO = null;                            // country number → its continent, or -1
+function geoContinents(){
+  if(GEO_CONT_CO) return GEO_CONT_CO.list;
+  const of = geoCountries().map(() => -1);
+  const list = GEO_CONT.map(([name, co], c) => {
+    const cos = [];
+    for(const n of co.split('|')){
+      const i = geoCoIndexOf(n);
+      if(i < 0) continue;                          /* the table moved on: it is simply not in one */
+      cos.push(i); of[i] = c;
+    }
+    return { name, cos };
+  });
+  GEO_CONT_CO = { list, of };
+  return list;
+}
+const geoContOf = i => { geoContinents(); return i >= 0 ? GEO_CONT_CO.of[i] : -1; };
+const geoContName = c => { const t = geoContinents()[c]; return t ? t.name : ''; };
+
+/* ================= a region: one country, or a whole continent =================
+   Everything above draws one country — its own frame, its shape, the spot
+   furthest inside it, the name that fits there. A continent is all of that over
+   a set of countries instead of one, and from here down nothing asks which kind
+   it is: a region is named by a key, `co:12` or `ct:2`, and it answers the same
+   five questions either way.
+
+   THE ONLY REAL WORK IS THE OUTLINE OF THE SET, and it is not a polygon
+   operation and does not need to be. The arcs are shared, so two countries of
+   the set that touch draw the border between them TWICE, from the same points,
+   in opposite directions — and a piece of outline drawn once is on the edge of
+   the union. Count the segments: the ones seen once are the continent's own
+   coast, the ones seen twice are the borders inside it, and both fall out of
+   the same pass. That is the whole of it, and it is exact.
+
+   The name then has to stay inside the COAST rather than inside a country, which
+   is why the coast is kept as runs of its own: a name written across Africa is
+   allowed over the Congo's border and is not allowed over the Atlantic. */
+const geoRegKind = key => String(key).slice(0, 2);
+const geoRegNum = key => +String(key).slice(3);
+const GEO_REG = new Map();
+function geoReg(proj, key){
+  const kk = proj + '|' + key;
+  let hit = GEO_REG.get(kk);
+  if(hit) return hit;
+  hit = geoRegKind(key) === 'ct' ? geoContGeom(proj, geoRegNum(key))
+                                 : geoCoReg(proj, geoRegNum(key));
+  /* the boxes are cut here and nowhere else — one pass over the points, and
+     every question below is asked of a set that already carries them */
+  hit.simpB = geoBoxed(hit.simp);
+  hit.edgeB = geoBoxed(hit.edge);
+  hit.edgeSB = geoBoxed(hit.edgeS);
+  GEO_REG.set(kk, hit);
+  return hit;
+}
+/* a country, as a region: its own rings are its outline, and they close */
+function geoCoReg(proj, i){
+  const g = geoCoGeom(proj)[i];
+  return { key: 'co:' + i, name: g.name, cos: [i], rings: g.rings, simp: g.simp,
+           box: g.box, edge: g.rings, edgeS: g.simp, open: 0, bord: [],
+           at: new Map([[i, (g.box.x0 + g.box.x1) / 2]]) };
+}
+/* …and a continent, which is the same record built out of a list of them */
+function geoContGeom(proj, c){
+  const t = geoContinents()[c] || { name: '', cos: [] };
+  const G = geoCoGeom(proj), W = geoProj(proj).wrap;
+  /* ONE FRAME FOR THE SET, taken from the biggest country in it. Every other
+     country is slid to within half a world of that, which is the same thing
+     geoCoGeom does for the rings of one country and is why Fr. Polynesia comes
+     out to the EAST of Australia rather than a world away to the west. */
+  let ref = t.cos[0] == null ? 0 : t.cos[0];
+  for(const i of t.cos) if(G[i].area > G[ref].area) ref = i;
+  const rb = geoCoMain(proj, ref), rx = (rb.x0 + rb.x1) / 2;
+  /* …and WHERE EACH OF THEM ENDED UP, which is the only way a point that is not
+     a ring — a capital — can be brought into the same frame afterwards */
+  const at = new Map();
+  const rings = [];
+  for(const i of t.cos){
+    /* the country's MAIN body, the same part of it a card of that country is
+       framed on: France's Guiana in a picture of Europe would be Europe drawn
+       across the Atlantic to hold a hundred and fiftieth of its area */
+    const m = geoCoMain(proj, i), sh = W ? Math.round((rx - (m.x0 + m.x1) / 2) / W) * W : 0;
+    at.set(i, (m.x0 + m.x1) / 2 + sh);
+    for(const k of m.rings) rings.push(sh ? G[i].rings[k].map(p => [p[0] + sh, p[1]]) : G[i].rings[k]);
+  }
+  /* how many of the set drew each segment: once is coast, twice is a border */
+  const seg = new Map();
+  const sk = (a, b) => (a[0] < b[0] || (a[0] === b[0] && a[1] <= b[1]))
+    ? a[0] + ',' + a[1] + ' ' + b[0] + ',' + b[1]
+    : b[0] + ',' + b[1] + ' ' + a[0] + ',' + a[1];
+  for(const r of rings) for(let i = 0, j = r.length - 1; i < r.length; j = i++){
+    const k = sk(r[j], r[i]);
+    seg.set(k, (seg.get(k) || 0) + 1);
+  }
+  const edge = [], bord = [];
+  for(const r of rings){
+    let cur = null, was = -1;
+    for(let i = 0, j = r.length - 1; i < r.length; j = i++){
+      const inner = seg.get(sk(r[j], r[i])) > 1 ? 1 : 0;
+      if(inner !== was){ cur = [r[j]]; (inner ? bord : edge).push(cur); was = inner; }
+      cur.push(r[i]);
+    }
+  }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for(const r of rings) for(const p of r){
+    if(p[0] < x0) x0 = p[0]; if(p[0] > x1) x1 = p[0];
+    if(p[1] < y0) y0 = p[1]; if(p[1] > y1) y1 = p[1];
+  }
+  return { key: 'ct:' + c, name: t.name, cos: t.cos, rings, simp: geoThin(rings), at,
+           box: { x0, y0, x1, y1 }, edge, edgeS: geoThin(edge), open: 1, bord };
+}
+/* ---- a region's own outline, its borders, and the box a picture of it wants ---- */
+const GEO_REG_PATH = new Map();
+function geoRegPath(proj, look, key, mainOnly){
+  if(geoRegKind(key) !== 'ct') return geoCoPath(proj, look, geoRegNum(key), mainOnly);
+  return geoRegRuns(proj, look, key, 'f');
+}
+/* the borders inside it, and the coast round the outside of it — a country has
+   no borders inside it and its own outline is already the whole of its ink, so
+   both are nothing there and the card draws it the way it always did */
+function geoRegBord(proj, look, key){
+  return geoRegKind(key) === 'ct' ? geoRegRuns(proj, look, key, 'b') : '';
+}
+function geoRegCoast(proj, look, key){
+  return geoRegKind(key) === 'ct' ? geoRegRuns(proj, look, key, 'e') : '';
+}
+function geoRegRuns(proj, look, key, which){
+  const kk = proj + '|' + look + '|' + key + '|' + which;
+  let hit = GEO_REG_PATH.get(kk);
+  if(hit != null) return hit;
+  const g = geoReg(proj, key), W = geoProj(proj).wrap, sm = look !== 'crisp';
+  const use = which === 'f' ? g.rings : which === 'b' ? g.bord : g.edge, close = which === 'f';
+  const span = Math.max(g.box.x1 - g.box.x0, g.box.y1 - g.box.y0, 1e-9);
+  /* A CONTINENT IS DRAWN COARSER THAN IT IS MEASURED. The rings are every point
+     Natural Earth has, which is right for the arithmetic — where the name goes,
+     what is inside — and is a quarter of a megabyte of path string for Asia, on
+     a card three hundred pixels wide. So the picture is simplified to a
+     thousandth of its own span, which is a tenth of a pixel there, while the
+     geometry above is untouched. The runs were cut at the junctions between
+     coast and border and Douglas-Peucker keeps the ends of a run, so the two
+     still meet exactly where they did. */
+  const tol = span / 1500;
+  const was = GEO_PREC;
+  GEO_PREC = Math.max(10, Math.pow(10, Math.ceil(Math.log10(100 / span))));
+  hit = use.map(r => geoRuns(geoDP(r, tol), W).map(q => geoRun(q, sm, close)).join('')).join('');
+  GEO_PREC = was;
+  GEO_REG_PATH.set(kk, hit);
+  return hit;
+}
+/* the part of it anyone asking for it by name means. A continent is already
+   built out of the main body of each of its countries, so it is all of it. */
+function geoRegMain(proj, key){
+  if(geoRegKind(key) !== 'ct') return geoCoMain(proj, geoRegNum(key));
+  const g = geoReg(proj, key), b = g.box;
+  return { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1, rings: g.rings.map((r, k) => k) };
+}
+const geoRegName = key => geoRegKind(key) === 'ct' ? geoContName(geoRegNum(key))
+                                                   : geoCoName(geoRegNum(key));
+/* every capital in it, biggest first — for a country that is its own, and for
+   a continent it is every one of them, which is what a plate of one shows */
+function geoRegCapitals(key){
+  if(geoRegKind(key) !== 'ct') return geoCoCapitals(geoRegNum(key));
+  const set = new Set(geoContinents()[geoRegNum(key)].cos);
+  return geoCapitals().filter(c => set.has(geoCoIndexOf(c.of)));
+}
+/* the countries in it, so a plate of a continent can name them one by one */
+const geoRegCos = (proj, key) => geoReg(proj, key).cos;
 
 /* ---- looking a country up by name ----
    Natural Earth writes the short form and abbreviates it — "Dem. Rep. Congo",
@@ -877,6 +1128,31 @@ function geoFindCo(q, max){
 function geoCoCapitals(i){
   return geoCapitals().filter(c => geoCoIndexOf(c.of) === i);
 }
+/* a name → a region key. The continents are tried first and none of them is
+   also a country, so a reader who wrote "Africa" cannot have meant a place. */
+function geoRegKeyOf(name){
+  const k = geoCoKey(name);
+  if(!k) return '';
+  const c = geoContinents().findIndex(t => geoCoKey(t.name) === k);
+  if(c >= 0) return 'ct:' + c;
+  const i = geoCoIndexOf(name);
+  return i < 0 ? '' : 'co:' + i;
+}
+/* what a typed word could mean, best first: the continents it begins, and then
+   the countries. Nothing typed at all offers the seven of them — which is how
+   the box says they are there to be asked for. */
+function geoFindReg(q, max){
+  max = max || 9;
+  const k = geoCoKey(q), out = [];
+  geoContinents().forEach((t, c) => {
+    if(!k || geoCoKey(t.name).indexOf(k) === 0) out.push('ct:' + c);
+  });
+  for(const i of geoFindCo(q, max)){
+    if(out.length >= max) break;
+    out.push('co:' + i);
+  }
+  return out;
+}
 
 /* ---- rivers and lakes ----
    Built the same way the world is and kept the same way: one string per
@@ -885,6 +1161,15 @@ function geoCoCapitals(i){
    is filled with the sea's own colour by whoever draws it, which is what makes
    it read as water rather than as a hole. */
 const GEO_DET_MEMO = new Map(), GEO_DET_WIN = new Map();
+/* how big a run is, in the units it is still in — the longer side of its box */
+function geoSpanOf(pts){
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for(const p of pts){
+    if(p[0] < x0) x0 = p[0]; if(p[0] > x1) x1 = p[0];
+    if(p[1] < y0) y0 = p[1]; if(p[1] > y1) y1 = p[1];
+  }
+  return Math.max(x1 - x0, y1 - y0);
+}
 /* the water, run by run with a box each — the same table the world keeps, for
    the same reason: a map an inch above Switzerland should not be drawing the
    Amazon */
@@ -902,6 +1187,13 @@ function geoDetailRuns(proj, look, lod){
          and there are four hundred of them */
       const t = tol ? geoDP(r, tol) : r;
       if(t.length < 2) continue;
+      /* …AND ANYTHING UNDER A PIXEL IS NOT DRAWN AT ALL, which matters far
+         more here than the points do. `tol` is the size of a pixel at this
+         step, and at arm's length 172 of the 464 lake runs are smaller than
+         one: each of them is still a closed subpath to tessellate, fill and
+         stroke on every frame of a pan, for a mark the screen cannot show.
+         Nothing visible changes and the path loses a third of its runs. */
+      if(tol && geoSpanOf(t) < tol) continue;
       for(const q of geoRuns(t.map(p => P.fwd(p[0], p[1])), W)){
         const d = geoRun(q, sm, close);
         if(d) runs.push({ d, k, b: geoRunBox(q) });
@@ -1005,17 +1297,26 @@ function geoTint(t){
    is why nothing here needs a clip. */
 const GEO_BANDS = [0.5, 6, 13, 20, 28, 36, 44, 52, 58];   // raw levels, lowest first
 const GEO_STEP = [10, 5, 3, 1];                           // cells per sample, per lod
-/* …and how many of the nine are worth drawing at that step. Nine tints over a
-   world four hundred pixels wide is nine bands nobody can tell apart, at four
-   times the cost of the five they could. */
-const GEO_BAND_N = [4, 5, 6, 9];
-const geoBandsAt = lod => {
-  const n = GEO_BAND_N[Math.max(0, Math.min(GEO_BAND_N.length - 1, lod == null ? GEO_LOD_MAX : lod))];
-  if(n >= GEO_BANDS.length) return GEO_BANDS;
-  const out = [];
-  for(let i = 0; i < n; i++) out.push(GEO_BANDS[Math.round(i * (GEO_BANDS.length - 1) / (n - 1))]);
-  return out;
-};
+/* …and which of the nine are worth drawing at that step. Nine tints over a
+   world four hundred pixels wide is nine bands nobody can tell apart, at twice
+   the cost of the five they could.
+
+   THE SETS ARE NESTED, and that is the whole of why they are written out
+   rather than spread evenly the way they used to be: every level a coarse set
+   draws is in every finer set. So refining the step ADDS a contour between two
+   that are already there and never moves an existing one to a different tint,
+   and a map crossing a step reads as detail arriving rather than as the ground
+   changing colour under the reader. That flicker was the old spread's, and it
+   was the worst of it. */
+const GEO_BAND_SET = [
+  [0, 2, 4, 6, 8],
+  [0, 1, 2, 3, 4, 6, 8],
+  [0, 1, 2, 3, 4, 5, 6, 7, 8],
+  [0, 1, 2, 3, 4, 5, 6, 7, 8]
+];
+const geoBandsAt = lod =>
+  GEO_BAND_SET[Math.max(0, Math.min(GEO_BAND_SET.length - 1, lod == null ? GEO_LOD_MAX : lod))]
+    .map(i => GEO_BANDS[i]);
 
 /* one closed contour at a time. The grid is padded with sea all round, so
    every line closes and there is no open end to reason about; the winding

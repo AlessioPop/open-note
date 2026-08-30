@@ -32,6 +32,7 @@
        takes:   (files, at, page) => false,   // claim files dropped on the page
        takesRank: 1,             // …how keenly, when two features could both want them
        fileable: true,           // may be dropped into a folder (bring icon/label/open)
+       filedOnly: true,          // …into one already on the page, but never starting a new one
        palette: false,           // keep legacy/programmatic add-kinds out of the main palette
        icon:    it => '…',       // how it looks as an icon — in a folder, or folded down
        label:   it => 'name',    // …what it is called under that icon

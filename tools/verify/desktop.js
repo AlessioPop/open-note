@@ -28,6 +28,12 @@ const out = [], errs = [];
 const ok = (name, cond, detail) =>
   out.push((cond ? 'PASS  ' : 'FAIL  ') + name + (detail === undefined ? '' : '  → ' + detail));
 const note = t => out.push('----  ' + t);
+/* TRACE=1 writes each step to stderr as it happens — for a phase that never
+   gets as far as printing its report */
+const trace = t => { if (process.env.TRACE) process.stderr.write('TRACE ' + t + '\n'); };
+app.on('window-all-closed', () => trace('window-all-closed'));
+app.on('before-quit', () => trace('before-quit'));
+app.on('will-quit', () => trace('will-quit'));
 
 function watch(win) {
   win.webContents.on('console-message', ev => {
@@ -51,6 +57,7 @@ const booted = js => js(`new Promise(r=>{let n=0;(function p(){
 })()})`);
 
 function finish() {
+  trace('finish');
   console.log('@@REPORT@@');
   console.log(out.join('\n'));
   app.exit(out.some(l => l.startsWith('FAIL')) ? 1 : 0);
@@ -209,6 +216,55 @@ const PHASES = {
     ok('nothing reached the network', BLOCKED.length === 0, BLOCKED.join(' | ') || 'zero http(s)');
   },
 
+  /* a deck of flip cards taken to the desk: its own frameless window, above the
+     rest, still there when the app window has gone — and remembered */
+  async desk(win, js) {
+    trace('desk: waiting for boot');
+    await booted(js);
+    trace('desk: booted');
+    await js(`lib.books.length ? openNote(lib.books[0].id) : createNote('verify').then(openNote)`);
+    await wait(1200);
+    const made = await js(`(async () => {
+      const page = sheet();
+      const it = { id: 'deskdeck', type: 'deck', x: 6, y: 6, w: 54, rot: 0, z: 1, lay: curLayerId(),
+        cap: 'Desk deck', i: 0, side: 0, look: 'night', queue: null, hist: [], cards: [newCard(), newCard()] };
+      it.cards[0].qb[0].html = 'first'; it.cards[1].qb[0].html = 'second';
+      page.items.push(it); await render();
+      return deckDesk(it, page);
+    })()`);
+    ok('deckDesk() opened a window', made === true);
+    trace('desk: deckDesk returned ' + made);
+    await wait(1500);
+    const all = BrowserWindow.getAllWindows();
+    const desk = all.find(w => w !== win);
+    ok('a second window exists', !!desk, all.length + ' windows');
+    if (!desk) return;
+    ok('it is desk.html on the app origin', desk.webContents.getURL().startsWith('opennote://app/desk.html?id=deskdeck'),
+       desk.webContents.getURL());
+    ok('frameless, floating above the rest', desk.isAlwaysOnTop() === true && !desk.isMenuBarVisible());
+    const djs = s => desk.webContents.executeJavaScript(s);
+    await wait(800);
+    ok('the loader became the deck', await djs(`!!document.querySelector('.deck.study[data-deck="deskdeck"]')`) === true);
+    ok('wearing its look', await djs(`document.querySelector('.deck').dataset.look`) === 'night');
+    ok('two cards, the first up', await djs(`document.querySelector('.dpos').textContent`) === '1 / 2');
+    ok('the deck bar is what the window is held by',
+       await djs(`getComputedStyle(document.querySelector('.deck.study .dbar')).webkitAppRegion || getComputedStyle(document.querySelector('.deck.study .dbar')).appRegion`) === 'drag');
+    ok('the store holds the document', await js(`kvGet('desk:deskdeck').then(d => typeof d === 'string' && d.length > 5000)`) === true);
+    ok('the card is remembered next to the notes', (() => {
+      try { const l = JSON.parse(fs.readFileSync(path.join(PROFILE, 'desk.json'), 'utf8')); return l.length === 1 && l[0].url.includes('deskdeck'); }
+      catch (e) { return false; }
+    })());
+    /* the app window goes; the card stays and still answers */
+    trace('desk: closing the app window');
+    win.close();
+    await wait(1500);
+    trace('desk: after close, windows=' + BrowserWindow.getAllWindows().length);
+    ok('closing the app window leaves the card', BrowserWindow.getAllWindows().length === 1 && !desk.isDestroyed());
+    await djs(`document.querySelector('[data-a=flip]').click()`);
+    ok('…and it still turns', await djs(`document.querySelector('.dslot.on .dcard').classList.contains('flipped')`) === true);
+    ok('no renderer errors', errs.length === 0, errs.join(' | ') || 'clean');
+  },
+
   /* Load order is the dependency graph (docs/architecture.md, rule 3). A listener
      registered in core/ must not call something that only arrives in ui/: a window
      being created or shown fires resize while the page is still loading scripts.
@@ -249,9 +305,10 @@ if (PHASE === 'race') {
     await run(win);
   });
 } else {
+  let ran = false;                               // the phase runs in the first window only — a desk card is a second
   app.on('browser-window-created', (e, win) => {
     watch(win);
-    win.webContents.once('did-finish-load', () => run(win));
+    win.webContents.once('did-finish-load', () => { if (!ran) { ran = true; run(win); } });
   });
   require(path.join(ROOT, 'desktop', 'main.js'));
 }

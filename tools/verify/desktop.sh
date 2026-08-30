@@ -68,6 +68,7 @@ phase boot    profile-a          # …and again, same profile: did it survive?
 phase note    profile-b
 phase offline profile-c
 phase race    profile-d
+phase desk    profile-e          # a deck on the desk, in a window of its own
 
 # Two boots of one profile must report the same note. Different ids mean the
 # library was rebuilt from scratch, which is silent data loss.

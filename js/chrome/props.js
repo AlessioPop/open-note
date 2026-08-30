@@ -15,7 +15,9 @@
          { t:'btn', label:'', text:'M² on the page'|() => '…',     // one deed
            hint:'…', act(){} },
          { t:'swatch', label:'Colour', colors:['#f5e04b', …],     // a row of chips,
-           wheel:true, none:true, get:() => '#f5e04b', pick(c){} } //  a wheel, and ⌫
+           wheel:true, none:true, get:() => '#f5e04b', pick(c){} }, //  a wheel, and ⌫
+         { t:'pick', label:'Look', opts:[{ v:'index', label:'Index card',   // named choices,
+           hint:'…', bg:'#f4f1ea', fg:'#c0432c' }, …], get:() => 'index', pick(v){} }  // each chip in its own colours
        ],
        onchange(){},   // after every set — repaint the thing being measured
        onsave(){},     // a gesture ended, or the panel closed — persist
@@ -128,6 +130,9 @@ function syncProps(){
         b.classList.toggle('on', (b.dataset.c || '').toLowerCase() === cur));
       const w = r.el.querySelector('.prwheel input');
       if(w && document.activeElement !== w && /^#[0-9a-f]{6}$/.test(cur)) w.value = cur;
+    } else if(r.t === 'pick'){
+      const cur = String(r.get() == null ? '' : r.get());
+      r.el.querySelectorAll('.prpk').forEach(b => b.classList.toggle('on', b.dataset.v === cur));
     }
   }
 }
@@ -206,6 +211,25 @@ function openProps(anchor, spec){
       if(wheel) wheel.addEventListener('change', () => {
         syncProps();
         if(PROPS_SPEC && PROPS_SPEC.onsave) PROPS_SPEC.onsave();
+      });
+    } else if(r.t === 'pick'){
+      /* named choices rather than colours — a look, a mode. A chip may wear the
+         colours of what it stands for, so a row of them reads as a row of samples. */
+      d.className = 'prrow prpick';
+      d.innerHTML = '<label>' + esc(r.label || '') + '</label><span class="prpicks">' +
+        (r.opts || []).map(o => '<button class="prpk" data-v="' + esc(o.v) + '" title="' + esc(o.hint || o.label) + '"' +
+          (o.bg || o.fg ? ' style="' + (o.bg ? 'background:' + esc(o.bg) + ';' : '') +
+            (o.fg ? 'color:' + esc(o.fg) + ';' : '') + '"' : '') + '>' + esc(o.label) + '</button>').join('') +
+        '</span>';
+      d.querySelectorAll('.prpk').forEach(b => {
+        b.addEventListener('pointerdown', e => e.preventDefault());   // keep whatever selection the caller holds
+        b.addEventListener('click', e => {
+          e.preventDefault();
+          r.pick(b.dataset.v);
+          syncProps();
+          if(PROPS_SPEC && PROPS_SPEC.onchange) PROPS_SPEC.onchange();
+          if(PROPS_SPEC && PROPS_SPEC.onsave) PROPS_SPEC.onsave();
+        });
       });
     } else if(r.t === 'btn'){
       d.className = 'prrow prbtn';
@@ -319,6 +343,16 @@ addCSS('props', `
 .prnone{background:rgba(255,255,255,.07);color:rgba(233,234,239,.85);font-family:var(--mono);
   font-size:11px;line-height:1;display:grid;place-items:center}
 .prnone:hover{color:#fff}
+.prpick{grid-template-columns:1fr}
+.prpick label:empty{display:none}
+.prpicks{display:flex;flex-wrap:wrap;gap:5px}
+.prpk{padding:5px 9px;border-radius:8px;font-size:9px;letter-spacing:.09em;text-transform:uppercase;
+  color:rgba(233,234,239,.88);background:rgba(255,255,255,.07);cursor:pointer;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+.prpk:hover{box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),0 0 0 2px rgba(255,255,255,.5)}
+.prpk.on{box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),0 0 0 2px var(--accent)}
+/* a panel opened from inside the scope has to sit above it */
+body:has(.scope.on) .props{z-index:96}
 .prbtn{grid-template-columns:1fr}
 .prbtn label:empty{display:none}
 .prbtn .prgo{justify-self:stretch;padding:6px 10px;border-radius:8px;font-size:10.5px;

@@ -1602,6 +1602,368 @@
         picImg.dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true })) === false);
     });
 
+    /* ---- flip cards: the looks, widgets on a card, the record, the scoreboard,
+       the throw's hints, the sounds, and the deck as a file of its own ---- */
+    await stage('flip cards', async function () {
+      var page = sheet(), keep = page.items.slice();
+      var it = { id: uid(), type: 'deck', x: 6, y: 6, w: 54, rot: 0, z: 1, lay: curLayerId(),
+        cap: 'Harness deck', i: 0, side: 0, look: 'index', queue: null, hist: [],
+        cards: [newCard(), newCard(), newCard()] };
+      it.cards[0].qb[0].html = 'one'; it.cards[1].qb[0].html = 'two'; it.cards[2].qb[0].html = 'three';
+      page.items = [it];
+      await render();
+      var el = byType('deck'), fig = el && el.querySelector('.deck');
+      ok('deck: on the page', !!fig);
+      if (!fig) { page.items = keep; await render(); return; }
+
+      /* the looks */
+      ok('looks: eight of them, index first', DECK_LOOKS.length === 8 && DECK_LOOKS[0].id === 'index',
+        DECK_LOOKS.map(function (l) { return l.id; }).join(','));
+      ok('looks: the figure wears the look', fig.dataset.look === 'index', fig.dataset.look);
+      ok('looks: each has a chip colour and a hint',
+        DECK_LOOKS.every(function (l) { return l.label && l.hint && /^#/.test(l.bg) && /^#/.test(l.fg); }));
+      var css = document.getElementById('appcss').textContent;
+      ok('looks: every look has its paragraph of CSS',
+        DECK_LOOKS.slice(1).every(function (l) { return css.indexOf('.deck[data-look="' + l.id + '"]') > 0; }));
+      it.look = 'chalk'; renderDeck(fig, it, page);
+      ok('looks: chalk goes on', fig.dataset.look === 'chalk');
+      var faceBg = getComputedStyle(fig.querySelector('.dfront')).backgroundColor;
+      ok('looks: chalk is dark card', /rgb\(47, 59, 54\)/.test(faceBg), faceBg);
+      it.look = 'nonsense'; renderDeck(fig, it, page);
+      ok('looks: an unknown look is the index card', fig.dataset.look === 'index');
+      it.look = 'index';
+      ok('looks: the toolbar offers the stock', !!QA('#pageHost .item[data-type=deck] .tools button')
+        .find(function (b) { return b.textContent === '◑'; }));
+
+      /* the props panel's pick row, which the look and widget pickers are built on */
+      var lb = QA('#pageHost .item[data-type=deck] .tools button').find(function (b) { return b.textContent === '◑'; });
+      lb.click(); await sleep(30);
+      var chips = QA('#props .prpk');
+      ok('pick row: one chip per look', chips.length === DECK_LOOKS.length, chips.length + ' chips');
+      ok('pick row: the current one is lit', !!chips.find(function (c) { return c.classList.contains('on') && c.dataset.v === 'index'; }));
+      var night = chips.find(function (c) { return c.dataset.v === 'night'; });
+      if (night) night.click(); await sleep(30);
+      ok('pick row: a chip picks the look', it.look === 'night' && fig.dataset.look === 'night', it.look + ' / ' + fig.dataset.look);
+      closeProps(); await sleep(30);
+      it.look = 'index'; renderDeck(fig, it, page);
+
+      /* widgets on a card: the registry decides, bar what needs the sheet */
+      var kinds = deckWidgetKinds().map(function (k) { return k.kind; });
+      ok('widgets: the palette kinds that may go on a card', kinds.indexOf('table') >= 0 && kinds.indexOf('plot') >= 0 &&
+        kinds.indexOf('pie') >= 0 && kinds.indexOf('molecule') >= 0 && kinds.indexOf('code') >= 0, kinds.join(','));
+      ok('widgets: nothing that needs the sheet around it', kinds.indexOf('circuit') < 0 && kinds.indexOf('node') < 0 &&
+        kinds.indexOf('country') < 0 && kinds.indexOf('folder') < 0 && kinds.indexOf('deck') < 0 && kinds.indexOf('atlas') < 0);
+      ok('widgets: every offered kind is registered and made on the spot',
+        kinds.every(function (k) { return ADD_KINDS[k] && !ADD_KINDS[k].pick; }));
+      ok('widgets: a kind registered tomorrow is on a card tomorrow', (function () {
+        ADD_KINDS.__probe = { type: '__probe', make: function (b) { return b; }, spec: {} };
+        var yes = deckTakes('__probe'); delete ADD_KINDS.__probe; return yes; })());
+      ok('widgets: the palette\'s picture / video / model / file go through the card\'s own dialogs',
+        deckTakes('image') && deckTakes('video') && deckTakes('model') && deckTakes('file') && !deckTakes('slides') && !deckTakes('circuit'));
+      var w = makeWidget('table');
+      ok('widgets: a table is made the way the palette makes one', !!w && w.type === 'table' && Array.isArray(w.rows), JSON.stringify(w).slice(0, 80));
+      ok('widgets: …and taken off the sheet\'s coordinates', w && w.x === undefined && w.y === undefined && w.z === undefined);
+      DECK_EDIT.add(it.id);
+      var blk = addWidget(it, page, 'table');
+      await sleep(30);
+      ok('widgets: the block holds the whole record', !!blk && blk.k === 'item' && blk.it === w || (blk && blk.it && blk.it.type === 'table'));
+      ok('widgets: the text line stepped up to make room', it.cards[0].qb[0].y === 27 && blk.y === 68, it.cards[0].qb[0].y + ' / ' + (blk && blk.y));
+      fig = el.querySelector('.deck') || Q('#pageHost .item[data-type=deck] .deck');
+      var wel = fig.querySelector('.dwidget');
+      ok('widgets: drawn on the card by its own feature', !!wel && wel.dataset.type === 'table' && !!wel.querySelector('.tgrid'),
+        wel ? wel.innerHTML.slice(0, 80) : 'no .dwidget');
+      ok('widgets: wearing .item so its styles apply, sitting still',
+        !!wel && wel.classList.contains('item') && getComputedStyle(wel).position === 'relative');
+      ok('widgets: the card\'s --scale is its width', !!fig.querySelector('.dbody').style.getPropertyValue('--scale'));
+      ok('widgets: the grip is there to drag it by', !!fig.querySelector('.dblk.k-item .dgrip'));
+      ok('widgets: it is the deck\'s to keep', deckParts(it).indexOf(blk.it) >= 0 && mediaRecords(it).indexOf(blk.it) > 0);
+      ok('widgets: the deck can find it by id', deckWidget(it, blk.it.id) === blk.it);
+      selectBlock(it, blk.id); await sleep(20);
+      var tray = fig.querySelector('.drow2');
+      ok('widgets: picked out, its tray names it', !!tray && /table/i.test(tray.querySelector('.dlab2').textContent), tray && tray.textContent.slice(0, 60));
+      /* the canvas toolbar, on the widget itself */
+      wel = fig.querySelector('.dwidget');
+      var wbar = wel.querySelector(':scope > .tools');
+      ok('widgets: its own toolbar hangs over it, as on the canvas', !!wbar && wbar.querySelectorAll('button').length > 2,
+        wbar ? wbar.querySelectorAll('button').length + ' buttons' : 'no bar');
+      ok('widgets: …visible while picked out, gone when not', getComputedStyle(wbar).display === 'flex' &&
+        (fig.querySelector('.dblk.k-item').classList.remove('sel'), getComputedStyle(wbar).display === 'none'));
+      fig.querySelector('.dblk.k-item').classList.add('sel');
+      ok('widgets: the bar ends with ⌖ and ✕', (function (bs) { return bs[bs.length - 2].textContent === '⌖' && bs[bs.length - 1].textContent === '✕'; })(wbar.querySelectorAll('button')));
+      /* direct drag: a pointerdown the feature has not claimed picks the block up */
+      var blkEl = fig.querySelector('.dblk.k-item');
+      var x0 = blk.x, y0 = blk.y, br0 = wel.getBoundingClientRect();
+      wel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 7, clientX: br0.left + 5, clientY: br0.top + 2 }));
+      blkEl.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 7, clientX: br0.left + 45, clientY: br0.top + 2 }));
+      blkEl.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 7, clientX: br0.left + 45, clientY: br0.top + 2 }));
+      await sleep(20);
+      ok('widgets: dragged from its own body, like any item on the canvas', blk.x > x0 && Math.abs(blk.y - y0) < 1,
+        x0 + ' -> ' + blk.x);
+      blk.x = x0; blk.y = y0; deckAll(it, page); await sleep(20);
+      /* the picker is the palette itself: from the tray… */
+      var wb = QA('#pageHost .item[data-type=deck] .drow button').find(function (b) { return b.dataset.a === 'widget'; });
+      ok('widgets: the tray offers them', !!wb);
+      if (wb) { wb.click(); await sleep(60); }
+      ok('widgets: …and it is the palette that opens', qmenu.classList.contains('open') && !!qCtx && qCtx.into === 'the card');
+      ok('widgets: saying so', /onto the card/.test(Q('#palette .pinto').textContent));
+      var offTiles = QA('#palGrid .ptile.off').map(function (t) { return t.dataset.add; });
+      setShelf('science'); await sleep(20);
+      var sciOff = QA('#palGrid .ptile.off').map(function (t) { return t.dataset.add; });
+      ok('widgets: what stays on the sheet is dimmed', sciOff.indexOf('circuit') >= 0 && sciOff.indexOf('atlas') >= 0 && sciOff.indexOf('molecule') < 0, sciOff.join(','));
+      setShelf('math'); await sleep(20);
+      var pieTile = Q('#palGrid .ptile[data-add=pie]');
+      ok('widgets: a pie chart is offered', !!pieTile && !pieTile.classList.contains('off'));
+      var before = page.items.length;
+      if (pieTile) pieTile.click(); await sleep(60);
+      ok('widgets: the tile puts one on the card, not the sheet', it.cards[0].qb.filter(function (b) { return b.k === 'item'; }).length === 2 &&
+        it.cards[0].qb[2].it.type === 'chart' && page.items.length === before, it.cards[0].qb.map(function (b) { return b.k; }).join(','));
+      ok('widgets: the palette closed itself', !qCtx);
+      /* …and by right-clicking the card where you want it */
+      fig = Q('#pageHost .item[data-type=deck] .deck');
+      var body = fig.querySelector('.dback .dbody'), br = body.getBoundingClientRect();
+      var cm = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: br.left + br.width * .25, clientY: br.top + br.height * .75 });
+      body.dispatchEvent(cm); await sleep(60);
+      ok('right-click: the palette opens for the card', cm.defaultPrevented && qmenu.classList.contains('open') && !!qCtx && qCtx.into === 'the card');
+      setShelf('write'); await sleep(20);
+      var codeTile = Q('#palGrid .ptile[data-add=code]');
+      if (codeTile) codeTile.click(); await sleep(60);
+      var ab = it.cards[0].ab, cb = ab[ab.length - 1];
+      ok('right-click: the pick lands on the side clicked, where it was clicked', cb && cb.k === 'item' && cb.it.type === 'code' &&
+        Math.abs(cb.x - 25) < 2 && Math.abs(cb.y - 75) < 2 && it.side === 1, cb && (cb.k + ' ' + cb.x + ',' + cb.y + ' side ' + it.side));
+      var sheetOnly = deckTake(it, page, 'circuit', null, 0);
+      ok('right-click: a circuit is refused for the card and kept off the sheet', sheetOnly === true && page.items.length === before);
+      it.side = 0; it.i = 0; renderDeck(fig, it, page);
+      /* print and export draw the same widget, without wiring it */
+      var st = buildPage(page, false, {});
+      var sw = st.querySelector('.item[data-type=deck] .dwidget[data-type=table]');
+      ok('static: the widget prints', !!sw && !!sw.querySelector('.tgrid'));
+      var cw = it.cards[0].qb[2];
+      DECK_EDIT.delete(it.id);
+      renderDeck(fig, it, page);
+
+      /* the record */
+      ok('record: nothing yet', (it.hist || []).length === 0);
+      markCard(it, page, 'right'); markCard(it, page, 'wrong'); await sleep(20);
+      ok('record: a run half way is not written down', it.hist.length === 0 && !it.logged);
+      markCard(it, page, 'right'); await sleep(20);
+      ok('record: reaching the last card writes the run down', it.hist.length === 1 && it.logged,
+        JSON.stringify(it.hist));
+      var e = it.hist[0];
+      ok('record: when, how many, how it went', !!e && e.n === 3 && e.right === 2 && e.wrong === 1 && !e.missed && Math.abs(Date.now() - e.t) < 5000);
+      it.i = 1; markCard(it, page, 'right', true); await sleep(20);
+      ok('record: a mark changed after the end corrects the entry', it.hist.length === 1 && it.hist[0].right === 3 && it.hist[0].wrong === 0,
+        JSON.stringify(it.hist));
+      ok('record: the per-card tally follows the correction', it.cards[1].right === 1 && it.cards[1].wrong === 0,
+        it.cards[1].right + '/' + it.cards[1].wrong);
+      deckReplay(it, page, false); await sleep(20);
+      ok('record: a replay is a fresh sitting', !it.logged && it.cards.every(function (c) { return !c.res; }));
+      markCard(it, page, 'wrong'); markCard(it, page, 'wrong'); markCard(it, page, 'right'); await sleep(20);
+      ok('record: the second run is a second line', it.hist.length === 2 && it.hist[1].wrong === 2, JSON.stringify(it.hist));
+      deckReplay(it, page, true); await sleep(20);
+      ok('record: replaying the missed ones', it.queue && it.queue.length === 2);
+      markCard(it, page, 'right'); markCard(it, page, 'right'); await sleep(20);
+      ok('record: …is written down as such', it.hist.length === 3 && it.hist[2].missed && it.hist[2].n === 2, JSON.stringify(it.hist[2]));
+
+      /* the scoreboard */
+      var m = deckScore(it);
+      ok('score: the model is plain data', m.name === 'Harness deck' && m.n === 2 && m.right === 2 && m.pct === 100 &&
+        m.list.length === 2 && m.hist.length === 3 && Array.isArray(m.hard), JSON.stringify(m).slice(0, 120));
+      ok('score: the cards that keep getting away, worst first', m.hard.length >= 1 && m.hard[0].wrong >= m.hard[m.hard.length - 1].wrong,
+        JSON.stringify(m.hard));
+      var sh = deckScoreHTML(m);
+      ok('score: a ring, three tiles, a sentence', sh.indexOf('dsring') > 0 && (sh.match(/class="dstile[ "]/g) || []).length === 3 && sh.indexOf('dslab') > 0);
+      ok('score: the record is drawn, one bar a run', (sh.match(/<rect /g) || []).length === 3 && sh.indexOf('class="avg"') > 0);
+      ok('score: a missed-only run is marked as one', sh.indexOf('class="missed last"') > 0 || sh.indexOf('class="missed') > 0);
+      ok('score: best and average', /best <b>100%<\/b>/.test(sh) && /average <b>\d+%<\/b>/.test(sh));
+      ok('score: every card in the run, jumpable', (sh.match(/class="dsc /g) || []).length === 2 && sh.indexOf('data-go="0"') > 0);
+      ok('score: the board leans on nothing but itself', !/[^a-zA-Z_]esc\(/.test(deckScoreHTML.toString()) &&
+        deckScoreHTML.toString().indexOf('deckStats') < 0 && deckScoreHTML.toString().indexOf('cardsOf') < 0);
+      var empty = deckScoreHTML({ name: 'x', n: 0, right: 0, wrong: 0, left: 0, done: 0, pct: 0, list: [], hist: [], hard: [] });
+      ok('score: an empty deck says so gently', empty.indexOf('Nothing marked yet') > 0 && empty.indexOf('No finished runs yet') > 0);
+      var host = document.createElement('div'); host.className = 'deck'; host.innerHTML = sh; document.body.appendChild(host);
+      var lab = host.querySelector('.dslab'), fs = parseFloat(getComputedStyle(lab).fontSize);
+      ok('score: set to be read — the sentence is 14px or more', fs >= 14, fs + 'px');
+      ok('score: …in the card\'s own ink, not a wash of it', getComputedStyle(lab).color === getComputedStyle(host.querySelector('.dstats')).color);
+      host.remove();
+
+      /* flat at rest: no 3D context to soften the type; 3D only while it turns */
+      var rc = fig.querySelector('.dcard'), rf = rc.querySelector('.dfront'), rb = rc.querySelector('.dback');
+      ok('crisp: a card at rest has no transform', getComputedStyle(rc).transform === 'none' && getComputedStyle(rc).transformStyle === 'flat',
+        getComputedStyle(rc).transform + ' / ' + getComputedStyle(rc).transformStyle);
+      ok('crisp: …and no backface layer on its faces', getComputedStyle(rf).backfaceVisibility === 'visible' && getComputedStyle(rb).transform === 'none');
+      ok('crisp: only the side that is up is there', getComputedStyle(rf).visibility === 'visible' && getComputedStyle(rb).visibility === 'hidden');
+      deckFlip(it, page);
+      ok('crisp: the turn goes 3D', rc.classList.contains('turning') && rc.classList.contains('flipped') && getComputedStyle(rc).transformStyle === 'preserve-3d' &&
+        getComputedStyle(rb).backfaceVisibility === 'hidden');
+      await sleep(700);
+      ok('crisp: …and comes back out flat on the other side', !rc.classList.contains('turning') && getComputedStyle(rc).transform === 'none' &&
+        getComputedStyle(rb).visibility === 'visible' && getComputedStyle(rf).visibility === 'hidden' && getComputedStyle(rb).transform === 'none');
+      deckFlip(it, page); await sleep(700);
+      ok('crisp: the static export keeps its scripted-free 3D flip', css.indexOf('.deck.static .dcard{transform-style:preserve-3d') > 0);
+
+      /* the scope: the throw's hints */
+      openScope(it, page); await sleep(40);
+      var sc = Q('#scope .deck');
+      ok('scope: the card carries both stamps', sc && sc.querySelectorAll('.dfront .dstamp').length === 2 && sc.querySelectorAll('.dback .dstamp').length === 2);
+      ok('scope: the gate posts stand at the edges', sc && !!sc.querySelector('.dedge.no') && !!sc.querySelector('.dedge.ok'));
+      ok('scope: the hint says which way is which', /throw it left/.test(Q('#scope .shint').textContent) && /throw it right/.test(Q('#scope .shint').textContent));
+      var stg = sc.querySelector('.dstage'), okst = sc.querySelector('.dfront .dstamp.ok'), nost = sc.querySelector('.dfront .dstamp.no');
+      ok('scope: at rest the stamps are down', parseFloat(getComputedStyle(okst).opacity) === 0 && parseFloat(getComputedStyle(nost).opacity) === 0);
+      stg.style.setProperty('--tr', '0.5');
+      ok('scope: the card going right brings the ✓ up', parseFloat(getComputedStyle(okst).opacity) > 0.6 && parseFloat(getComputedStyle(nost).opacity) === 0,
+        getComputedStyle(okst).opacity + ' / ' + getComputedStyle(nost).opacity);
+      stg.style.setProperty('--tr', '-0.5');
+      ok('scope: …and going left brings the ✗ up', parseFloat(getComputedStyle(nost).opacity) > 0.6 && parseFloat(getComputedStyle(okst).opacity) === 0);
+      ok('scope: the marks sit ✗ left, ✓ right, like the throw',
+        sc.querySelector('.dfoot .dno').compareDocumentPosition(sc.querySelector('.dfoot .dok')) & Node.DOCUMENT_POSITION_FOLLOWING);
+      renderDeck(sc, it, page);
+      ok('scope: a redraw puts the throw down', !stg.style.getPropertyValue('--tr'));
+      /* a real fling: graded once — and it must not haunt the card behind it */
+      deckReplay(it, page, false); renderDeck(sc, it, page);
+      var tc = sc.querySelector('.dcard'), tb = tc.getBoundingClientRect(), tw = tc.offsetWidth || 600;
+      tc.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 8, clientX: tb.left + 40, clientY: tb.top + 40 }));
+      for (var ts = 1; ts <= 5; ts++) {
+        await sleep(16);
+        tc.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 8, clientX: tb.left + 40 + ts * tw * 0.16, clientY: tb.top + 40 }));
+      }
+      tc.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 8, clientX: tb.left + 40 + tw * 0.8, clientY: tb.top + 40 }));
+      await sleep(260);
+      ok('throw: a real fling right grades it and moves on', it.i === 1 && cardsOf(it)[0].res === 'right', it.i + ' / ' + cardsOf(it)[0].res);
+      await sleep(420);                                 /* the buggy fly-out was still painting --tr here */
+      var st2 = sc.querySelector('.dfront .dstamp.ok');
+      ok('throw: the fling does not haunt the next card', !stg.style.getPropertyValue('--tr') && parseFloat(getComputedStyle(st2).opacity) === 0,
+        '--tr=' + stg.style.getPropertyValue('--tr') + ' stamp=' + getComputedStyle(st2).opacity);
+      /* a card already thrown away cannot be grabbed into a second verdict */
+      var gh = sc.querySelector('.dcard'), gdone = deckStats(it).done;
+      gh._gone = true;
+      gh.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, clientX: tb.left + 40, clientY: tb.top + 40 }));
+      gh.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: tb.left + 400, clientY: tb.top + 40 }));
+      gh.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 9, clientX: tb.left + 400, clientY: tb.top + 40 }));
+      await sleep(260);
+      ok('throw: a card already thrown away cannot be graded again', deckStats(it).done === gdone && it.i === 1, deckStats(it).done + ' / ' + it.i);
+      delete gh._gone;
+      /* the foot holds still across a mark, so a rapid second tap lands on a live button */
+      var ft = sc.querySelector('.dfoot'), okb = ft.querySelector('.dok');
+      okb.click(); await sleep(30);
+      ok('mark: the foot holds still for a rapid second tap', sc.querySelector('.dfoot') === ft && sc.querySelector('.dfoot .dok') === okb && it.i === 2,
+        String(it.i));
+      /* the chrome is drawn with one pen: every button an inline stroke icon */
+      ok('icons: the bar buttons draw themselves', !!sc.querySelector('.dbar [data-a=stats] svg.dico') &&
+        !!sc.querySelector('.dbar [data-a=replay] svg.dico') && !!sc.querySelector('.dbar [data-a=close] svg.dico'));
+      ok('icons: the marks and the turn wear theirs', !!sc.querySelector('.dfoot .dok svg.dico') &&
+        !!sc.querySelector('.dfoot .dno svg.dico') && !!sc.querySelector('.dfoot .dflip svg.dico'));
+      deckFlip(it, page); await sleep(30);
+      var flb = sc.querySelector('.dfoot .dflip');
+      ok('icons: turning patches the word and keeps the icon', !!flb.querySelector('svg.dico') && flb.querySelector('.dfl').textContent === 'question');
+      deckFlip(it, page); await sleep(700);
+      /* studying, a widget is a picture: the tap goes through it to the card */
+      it.i = 0; renderDeck(sc, it, page);
+      var swel = sc.querySelector('.dwidget');
+      ok('study: a widget lets the tap through to the card', !!swel && getComputedStyle(swel).pointerEvents === 'none');
+      DECK_EDIT.add(it.id); renderDeck(sc, it, page);
+      var ewel = sc.querySelector('.dwidget');
+      ok('edit: …and wakes up when you write', !!ewel && getComputedStyle(ewel).pointerEvents !== 'none');
+      DECK_EDIT.delete(it.id); renderDeck(sc, it, page);
+      ok('scope: the bar offers the stock and the file', !!sc.querySelector('.dbar [data-a=look]') && !!sc.querySelector('.dbar [data-a=export]'));
+      SCOPE.stats = true; renderDeck(sc, it, page);
+      ok('scope: Σ is the same board', !!sc.querySelector('.dstats .dsring'));
+      closeScope();
+
+      /* the sounds */
+      ['card', 'slide', 'whoosh', 'right', 'wrong', 'done'].forEach(function (n) {
+        ok('sound: SND.' + n + ' exists', typeof SND[n] === 'function');
+      });
+      var src = deckStatic.toString() + renderDeck.toString() + deckFlip.toString() + deckGo.toString() + markCard.toString();
+      ok('sound: the cards no longer tick, pluck or crackle', src.indexOf('SND.tick') < 0 && src.indexOf('SND.pluck') < 0 && src.indexOf('SND.flip') < 0);
+
+      /* the deck as a file of its own */
+      var html = deckExportHTML(it, {});
+      ok('file: a whole document', /^<!DOCTYPE html>/.test(html) && html.indexOf('</html>') > 0, html.length + ' bytes');
+      ok('file: named after the deck', html.indexOf('<title>Harness deck — flip cards</title>') > 0);
+      ok('file: carries the app\'s styles', html.indexOf('.deck[data-look="night"]') > 0 && html.indexOf('.dstamp') > 0);
+      ok('file: every card, both sides', (html.match(/class="dslot/g) || []).length === 3 && (html.match(/class="dface dback"/g) || []).length === 3);
+      ok('file: wears the look', html.indexOf('data-look="index"') > 0 && html.indexOf('data-deck="' + it.id + '"') > 0);
+      ok('file: the widgets are drawn in it', html.indexOf('class="item dwidget" data-id="' + blk.it.id + '"') > 0 && html.indexOf('tgrid') > 0);
+      ok('file: the stamps and the gate posts are there', (html.match(/class="dstamp ok"/g) || []).length === 6 && html.indexOf('class="dedge no"') > 0);
+      ok('file: the study row, ✗ left of ✓', html.indexOf('data-a="wrong"') > 0 && html.indexOf('data-a="wrong"') < html.indexOf('data-a="right"'));
+      ok('file: carries the scoreboard\'s own renderer', html.indexOf('var deckScoreHTML=function') > 0 || html.indexOf('var deckScoreHTML=') > 0);
+      ok('file: and the study loop', html.indexOf('localStorage.setItem(KEY') > 0 && html.indexOf('function mark(') > 0 && html.indexOf("'open-note-deck:'") > 0);
+      ok('file: no live handles, no app', html.indexOf('class="rot"') < 0 && html.indexOf('contenteditable') < 0 && html.indexOf('boot.js') < 0);
+      ok('file: the toolbar offers it', !!QA('#pageHost .item[data-type=deck] .tools button').find(function (b) { return b.textContent === '⤓'; }));
+      ok('file: the study bar has a way to close its own window', html.indexOf('data-a="close" class="dclose"') > 0 && html.indexOf("window.close()") > 0);
+      /* the desk card: the document parked in the store, and the loader page becoming it */
+      var realOpen = window.open, opened = null, written = '';
+      window.open = function (u, n, f) {
+        opened = { u: u, n: n, f: f };
+        return { closed: false, document: { open: function () {}, close: function () {}, write: function (h) { written += h; } } };
+      };
+      var went = await deckDesk(it, page);
+      ok('desk: in a browser the popup is handed the deck itself — no store between them',
+        went && opened && opened.u === '' && /popup/.test(opened.f) && written.indexOf('data-deck="' + it.id + '"') > 0,
+        JSON.stringify(opened) + ' · ' + written.length + ' bytes');
+      /* the desktop shell's path: parked in the store under the deck's id for desk.html */
+      var realName = PLAT.name; PLAT.name = 'electron'; opened = null;
+      went = await deckDesk(it, page);
+      PLAT.name = realName; window.open = realOpen;
+      ok('desk: the desktop shell gets desk.html on the deck\'s id', went && opened && /^desk\.html\?id=/.test(opened.u), JSON.stringify(opened));
+      var parked = await kvGet('desk:' + it.id);
+      ok('desk: …with the document parked in the app\'s own store', typeof parked === 'string' && parked.indexOf('data-deck="' + it.id + '"') > 0);
+      var dfr = document.createElement('iframe');
+      dfr.style.cssText = 'position:fixed;left:-3000px;top:0;width:900px;height:700px';
+      dfr.src = 'desk.html?id=' + it.id;
+      document.body.appendChild(dfr);
+      await sleep(900);
+      var dd = dfr.contentDocument;
+      ok('desk: the loader became the deck', !!dd && !!dd.querySelector('.deck.study[data-deck="' + it.id + '"]'), dd && dd.body.textContent.slice(0, 60));
+      ok('desk: …on the app\'s origin, so it shares the store', !!dd && dfr.contentWindow.location.origin === location.origin);
+      dfr.remove();
+      await kvDel('desk:' + it.id);
+      var dfr2 = document.createElement('iframe');
+      dfr2.style.cssText = 'position:fixed;left:-3000px;top:0;width:300px;height:200px';
+      dfr2.src = 'desk.html?id=nothing-here';
+      document.body.appendChild(dfr2);
+      await sleep(600);
+      ok('desk: a card that is gone says so', /No deck here/.test(dfr2.contentDocument.body.textContent));
+      dfr2.remove();
+      /* the ⤓ menu offers both */
+      var xb = QA('#pageHost .item[data-type=deck] .tools button').find(function (b) { return b.textContent === '⤓'; });
+      xb.click(); await sleep(30);
+      var deeds = QA('#props .prgo').map(function (b) { return b.textContent; });
+      ok('desk: ⤓ offers the desk and the file', deeds.length === 2 && /desk/.test(deeds[0]) && /file/.test(deeds[1]), deeds.join(' | '));
+      closeProps(); await sleep(30);
+      /* the file runs: its script over its own markup, in a frame of its own */
+      var fr = document.createElement('iframe');
+      fr.style.cssText = 'position:fixed;left:-3000px;top:0;width:900px;height:700px';
+      document.body.appendChild(fr);
+      fr.contentDocument.open(); fr.contentDocument.write(html.replace(/<link [^>]*>/, '')); fr.contentDocument.close();
+      await sleep(250);
+      var fd = fr.contentDocument, fw = fr.contentWindow;
+      try { fw.localStorage.removeItem('open-note-deck:' + it.id); } catch (x) {}
+      var errs = [];
+      fw.addEventListener('error', function (ev) { errs.push(ev.message); });
+      ok('file: the first card is up', !!fd.querySelector('.dslot.on') && fd.querySelector('.dpos').textContent === '1 / 3',
+        fd.querySelector('.dpos') && fd.querySelector('.dpos').textContent);
+      fd.querySelector('[data-a=flip]').click(); await sleep(30);
+      ok('file: the card turns', fd.querySelector('.dslot.on .dcard').classList.contains('flipped'));
+      fd.querySelector('[data-a=right]').click(); await sleep(30);
+      ok('file: ✓ moves on', fd.querySelector('.dpos').textContent === '2 / 3' && fd.querySelector('.dtally').textContent === '1✓ 0✗',
+        fd.querySelector('.dpos').textContent + ' · ' + fd.querySelector('.dtally').textContent);
+      fd.querySelector('[data-a=wrong]').click(); await sleep(30);
+      fd.querySelector('[data-a=right]').click(); await sleep(30);
+      ok('file: the last card brings the score up', !!fd.querySelector('.dscore.on .dsring') && /67/.test(fd.querySelector('.dscore .pct').textContent),
+        fd.querySelector('.dscore') && fd.querySelector('.dscore').className);
+      ok('file: with the run in the record', (fd.querySelectorAll('.dscore .dshist rect') || []).length === 1);
+      var kept = null; try { kept = JSON.parse(fw.localStorage.getItem('open-note-deck:' + it.id)); } catch (x) {}
+      ok('file: what it learnt is kept in the browser', !!kept && kept.hist.length === 1 && kept.hist[0].right === 2, JSON.stringify(kept).slice(0, 100));
+      fd.querySelector('[data-a=replaywrong]').click(); await sleep(30);
+      ok('file: replaying the missed ones', fd.querySelector('.dpos').textContent === '1 / 1 · missed' && !fd.querySelector('.dscore.on'));
+      ok('file: no errors in there', errs.length === 0, errs.join(' | '));
+      try { fw.localStorage.removeItem('open-note-deck:' + it.id); } catch (x) {}
+      fr.remove();
+
+      page.items = keep; await render();
+    });
+
     /* ---- clipboard pictures land in the part of the canvas being viewed ---- */
     await stage('image paste', async function () {
       var page = sheet(), keep = page.items.slice();
@@ -7200,7 +7562,8 @@
       /* the keys find the molecule under the pointer, so the whole sheet must be on screen */
       fitToDesk(true); await sleep(150);
       ok('chem: Science holds molecules, Feynman diagrams and logic circuits', !!TOOL_CATS.science &&
-        palTools('science').length === 8 && ['molecule','feynman','circuit','atlas','country'].every(function (kind) {
+        palTools('science').length === 9 &&
+        ['molecule','feynman','circuit','atlas','country','continent'].every(function (kind) {
           return palTools('science').some(function (t) { return t.kind === kind; });
         }),
         palTools('science').map(function (t) { return t.kind; }).join(','));
@@ -8525,6 +8888,43 @@
       ok('atlas: …and what it draws is a fraction of what it drew',
         svgA.querySelector('path.atland').getAttribute('d').length < landD.length,
         svgA.querySelector('path.atland').getAttribute('d').length + ' vs ' + landD.length);
+
+      /* ---- and a zoom is smooth because it does none of that ----
+         The step the detail and the window both come off is quantised and it
+         is STICKY. Without the stickiness a spring settling across a boundary
+         crosses it three or four times and rebuilds the world every crossing;
+         without the quantising the window followed k, which moves every frame,
+         and the world was rebuilt sixty times a second. With the height layer
+         on that rebuild is a contouring pass, and this is what the map used to
+         flicker with. */
+      ok('atlas: the detail step is whole octaves, and sticky',
+        atlStepOf(1.4, null) === 1 && atlStepOf(1.5, 1) === 1 && atlStepOf(0.5, 1) === 1 &&
+        atlStepOf(1.7, 1) === 2 && atlStepOf(0.2, 1) === 0 && atlStepOf(9, 3) === ATL_NMAX,
+        [atlStepOf(1.5, 1), atlStepOf(1.7, 1), atlStepOf(0.2, 1)].join(','));
+      /* the wheel's own arc, frame by frame, counting what it costs */
+      var seen = {}, builds = 0, dPrev = null;
+      for(var zi = 0; zi <= 240; zi++){
+        L.sz.jump(0.6 + zi / 240 * 3);
+        atlPaint(els[0], a, atlView(a, L));
+        var dNow = svgA.querySelector('path.atland').getAttribute('d');
+        if(dNow !== dPrev){ builds++; dPrev = dNow; }
+        seen[atlBuilt(a, atlView(a, L))] = 1;
+      }
+      ok('atlas: two and a half octaves of zoom is 241 frames and four rebuilds — ' +
+         'it used to be a rebuild on every frame there was',
+        builds <= 4 && Object.keys(seen).length <= 4, builds + ' rebuilds, ' +
+        Object.keys(seen).length + ' distinct pictures over 241 frames');
+      /* and the window really does cover the picture at every one of them,
+         which is the thing a quantised window could get wrong */
+      var gap = 0;
+      for(var zj = 0; zj <= 240; zj++){
+        L.sz.jump(0.6 + zj / 240 * 3);
+        var vj = atlView(a, L);
+        if(!atlCovers(atlWin(a, vj), vj)) gap++;
+      }
+      ok('atlas: …and at every one of them the window still reaches the edges',
+        gap === 0, gap + ' frames short');
+      L.sz.jump(3); atlPaint(els[0], a, atlView(a, L));
       var tf2 = svgA.querySelector('.atworld').getAttribute('transform');
       ok('atlas: …it is the transform that moved', tf2 !== tf, tf2);
       var k2 = +tf2.match(/scale\(([\d.]+)\)/)[1];
@@ -8796,6 +9196,22 @@
       ok('atlas: the coarsest step draws less than the finest',
         len(geoReliefBands('mercator', 'smooth', 0, null)) < len(bd),
         (len(geoReliefBands('mercator', 'smooth', 0, null)) / 1024).toFixed(0) + ' KB');
+      /* …and the steps are NESTED. This is the other half of why a zoom is
+         smooth: a step that changed which nine levels it drew repainted the
+         whole map in different colours as it crossed a boundary. Every level a
+         coarse step draws, a finer one draws too — so refining ADDS a contour
+         between two that are already there and moves nothing to a new tint. */
+      var tints = function (lod) {
+        return geoReliefBands('mercator', 'smooth', lod, null).map(function (b) { return b.fill; });
+      };
+      ok('atlas: a finer step adds contours between the ones already drawn, and\n' +
+         '        never gives ground it has already coloured a different colour',
+        [0, 1, 2, 3].every(function (lo) {
+          return [0, 1, 2, 3].every(function (hi) {
+            return hi < lo || tints(lo).every(function (f) { return tints(hi).indexOf(f) >= 0; });
+          });
+        }) && tints(3).length > tints(0).length,
+        [0, 1, 2, 3].map(function (l) { return tints(l).length; }).join(' → '));
 
       /* ================= all of it, on a map ================= */
       var m = mk(3, { proj: 'mercator', ar: .6, zm: 0, w: 60 });
@@ -8861,9 +9277,30 @@
         !!pg.querySelector('path.atpick') && !!pg.querySelector('text.atconame') &&
         pg.querySelector('text.atconame').textContent === 'France');
       ok('atlas: the name is drawn in world units inside the group that moves',
-        +pg.querySelector('text.atconame').getAttribute('font-size') > 20 &&
+        Math.abs(+pg.querySelector('text.atconame').getAttribute('font-size') -
+                 geoCoLabel('mercator', CO('France')).fs) < .1 &&
         pg.closest('.atworld') === msvg.querySelector('.atworld'),
         pg.querySelector('text.atconame').getAttribute('font-size'));
+      /* …and it is a LABEL and not a headline: the fit says how much room there
+         is and the name keeps GEO_LBL_AIR of it, tracked capitals in a halo
+         thin enough to read the map through */
+      ok('atlas: …at a fraction of the room there is, not at all of it',
+        GEO_LBL_AIR > .5 && GEO_LBL_AIR < .85 &&
+        geoCoLabel('mercator', CO('France')).fs < .85 *
+          geoFitFs(geoCoGeom('mercator')[CO('France')].rings,
+                   geoCoSpot('mercator', CO('France')).x, geoCoSpot('mercator', CO('France')).y,
+                   400, 6 * GEO_LBL_W, GEO_LBL_H),
+        geoCoLabel('mercator', CO('France')).fs.toFixed(1));
+      ok('atlas: …tracked, and pulled back half a space so the ink is centred',
+        Math.abs(+pg.querySelector('text.atconame').getAttribute('x') -
+                 (geoCoLabel('mercator', CO('France')).x +
+                  geoCoLabel('mercator', CO('France')).fs * GEO_LBL_TRK / 2)) < .1 &&
+        GEO_LBL_TRK > 0,
+        pg.querySelector('text.atconame').getAttribute('x'));
+      ok('atlas: …and its halo is a thin one',
+        +pg.querySelector('text.atconame').getAttribute('stroke-width') ===
+          rd1(geoCoLabel('mercator', CO('France')).fs * ATL_HALO) && ATL_HALO < .1,
+        pg.querySelector('text.atconame').getAttribute('stroke-width'));
       var landD2 = msvg.querySelector('path.atland').getAttribute('d');
       atlPick(mel, m, page, 'Spain', false);
       ok('atlas: picking another rebuilds ONE layer and no geometry at all',
@@ -8890,7 +9327,7 @@
 
       /* ---- ⌕ walks there ---- */
       atlPick(mel, m, page, 'Japan', true);
-      atlFlyTo(m, CO('Japan'));
+      atlFlyTo(m, geoRegKeyOf('Japan'));
       ok('atlas: ⌕ lights it up while it goes',
         msvg.querySelector('.atlay[data-l="pick"]').classList.contains('blink'));
       var jb = geoCoMain('mercator', CO('Japan'));
@@ -8913,27 +9350,72 @@
                                      clientX: x, clientY: y, bubbles: true, cancelable: true });
       };
       var before = page.items.length;
-      msvg.dispatchEvent(pev('pointerdown', mb.left + mb.width / 2, mb.top + mb.height / 2));
-      msvg.dispatchEvent(pev('pointermove', mb.right + 90, mb.top + mb.height / 2));
-      ok('atlas: pulling a country out of the map takes it out of the map',
+      var midx = mb.left + mb.width / 2, midy = mb.top + mb.height / 2;
+      var reset = function () {
+        ML.sx.jump((fb.x0 + fb.x1) / 2); ML.sy.jump((fb.y0 + fb.y1) / 2); ML.sz.jump(3);
+        atlPaint(mel, m, atlView(m, ML), true);
+      };
+      /* A DRAG ON A COUNTRY THAT IS NOT PICKED IS STILL A PAN, and that is the
+         half of this the hold protects: moving before the hold is up cancels it
+         and the country stays on the map. This is what used to pull the whole
+         world out to the edge. */
+      m.sel = 'Spain'; atlDrawPick(mel, m, false);
+      var cx0 = ML.cx;
+      msvg.dispatchEvent(pev('pointerdown', midx, midy));
+      msvg.dispatchEvent(pev('pointermove', midx - 120, midy));
+      ok('atlas: moving before the hold is up is a pan and nothing is picked up',
+        !document.querySelector('.atcarry') && Math.abs(ML.cx - cx0) > 1,
+        (ML.cx - cx0).toFixed(1));
+      msvg.dispatchEvent(pev('pointerup', midx - 120, midy));
+      await sleep(60);
+      m.sel = 'France'; atlDrawPick(mel, m, false);
+      reset();
+
+      /* ---- the picked one needs no hold: it is already in the hand ---- */
+      msvg.dispatchEvent(pev('pointerdown', midx, midy));
+      msvg.dispatchEvent(pev('pointermove', midx - 40, midy));
+      ok('atlas: dragging the country that is PICKED takes it off at once',
         !!document.querySelector('.atcarry') &&
         document.querySelector('.atcarry b').textContent === 'France');
-      msvg.dispatchEvent(pev('pointerup', mb.right + 120, mb.top + mb.height / 2));
+      ok('atlas: …and that drag is not a pan either',
+        Math.abs(ML.cx - (fb.x0 + fb.x1) / 2) < 1, ML.cx);
+      msvg.dispatchEvent(pev('pointercancel', midx - 40, midy));
+      await sleep(60);
+      ok('atlas: …and a cancelled one leaves nothing behind',
+        !document.querySelector('.atcarry'));
+      reset();
+
+      /* ---- and held, one that is not picked comes off too ---- */
+      m.sel = 'Spain'; atlDrawPick(mel, m, false);
+      msvg.dispatchEvent(pev('pointerdown', midx, midy));
+      ok('atlas: a country is not in the hand the instant it is pressed',
+        !document.querySelector('.atcarry'));
+      await sleep(ATL_HOLD + 90);
+      ok('atlas: pressing and holding a country takes it out of the map',
+        !!document.querySelector('.atcarry') &&
+        document.querySelector('.atcarry b').textContent === 'France');
+      ok('atlas: …the one under the hand, not the one that happens to be picked',
+        m.sel === 'Spain');
+      msvg.dispatchEvent(pev('pointermove', mb.right + 90, midy));
+      ok('atlas: …and the map does not follow the hand out of itself',
+        Math.abs(ML.cx - (fb.x0 + fb.x1) / 2) < 1, ML.cx);
+      msvg.dispatchEvent(pev('pointerup', mb.right + 120, midy));
       await sleep(120);
       ok('atlas: …and letting go puts it on the page', page.items.length === before + 1 &&
         page.items[page.items.length - 1].type === 'country' &&
         page.items[page.items.length - 1].co === 'France' &&
         !document.querySelector('.atcarry'),
         page.items.map(function (x) { return x.type; }).join(','));
-      /* the pan it was until then is put back where it started */
+      /* it was never a pan, so there is nothing to put back */
       ok('atlas: the map did not go anywhere while that happened',
         Math.abs(ML.sx.target - (fb.x0 + fb.x1) / 2) < 1, ML.sx.target);
       /* brought back over the map, nothing happened */
       var before2 = page.items.length;
-      msvg.dispatchEvent(pev('pointerdown', mb.left + mb.width / 2, mb.top + mb.height / 2));
-      msvg.dispatchEvent(pev('pointermove', mb.right + 90, mb.top + mb.height / 2));
-      msvg.dispatchEvent(pev('pointermove', mb.left + mb.width / 2, mb.top + mb.height / 2));
-      msvg.dispatchEvent(pev('pointerup', mb.left + mb.width / 2, mb.top + mb.height / 2));
+      msvg.dispatchEvent(pev('pointerdown', midx, midy));
+      await sleep(ATL_HOLD + 90);
+      msvg.dispatchEvent(pev('pointermove', mb.right + 90, midy));
+      msvg.dispatchEvent(pev('pointermove', midx, midy));
+      msvg.dispatchEvent(pev('pointerup', midx, midy));
       await sleep(60);
       ok('atlas: carried back over the map, nothing happened at all',
         page.items.length === before2 && !document.querySelector('.atcarry'));
@@ -8961,6 +9443,55 @@
         !cel.querySelector('svg.ctrysvg text.atconame') &&
         !cel.querySelector('svg.ctrysvg text.ctrycapn'));
       c0.lbl = 1; c0.cp = 1; c0.ctx = 0; ctryRedraw(cel, c0, page);
+
+      /* ---- the map's own layers, on the card ----
+         Height, lakes and rivers, drawn from the same geometry the map draws
+         them from and CLIPPED TO THE COUNTRY — which is the one difference
+         between the two pictures, and the whole of what makes a card a card:
+         a map is a piece of the world and its rivers run off the edge of it, a
+         country is a country and its water stops at its border.
+
+         They are OFF unless asked for, and that matters: a card written down
+         before they existed has no field for them at all, and must not come
+         back from this change wearing something nobody asked it for. */
+      var old0 = { id: 'old0', type: 'country', co: 'France', proj: 'mercator', look: 'smooth' };
+      ok('atlas: a card written down before any of this has none of it, and still\n' +
+         '        has its name and its capital',
+        ctrySVG(old0).indexOf('clip-path') < 0 && ctrySVG(old0).indexOf('ctryriver') < 0 &&
+        !ctryOn(old0, 'rel') && !ctryOn(old0, 'lak') && !ctryOn(old0, 'riv') &&
+        ctryOn(old0, 'lbl') && ctryOn(old0, 'cp') && !ctryOn(old0, 'ctx'));
+      c0.rel = 0; c0.lak = 0; c0.riv = 0; ctryRedraw(cel, c0, page);
+      ok('atlas: …and switched off, a card is the card it always was',
+        !cel.querySelector('svg.ctrysvg g[clip-path]') &&
+        !cel.querySelector('svg.ctrysvg path.ctryedge'));
+      c0.rel = 1; c0.lak = 1; c0.riv = 1; ctryRedraw(cel, c0, page);
+      var csv2 = cel.querySelector('svg.ctrysvg'), cg = csv2.querySelector('g[clip-path]');
+      ok('atlas: …and then all three are drawn, inside one clip of the country itself',
+        !!cg && cg.querySelectorAll('path[fill^="#"]').length >= 4 &&
+        !!cg.querySelector('path.ctrylake') && !!cg.querySelector('path.ctryriver') &&
+        csv2.querySelector('clipPath').id === 'ctryc-' + c0.id &&
+        csv2.querySelector('clipPath path').getAttribute('d') ===
+          csv2.querySelector('path.ctryland').getAttribute('d'),
+        cg ? cg.querySelectorAll('path[fill^="#"]').length + ' bands' : 'no clipped group');
+      ok('atlas: …the outline drawn a second time over the top of them',
+        !!csv2.querySelector('path.ctryedge') &&
+        !!(csv2.querySelector('path.ctryedge').compareDocumentPosition(cg) & 2));
+      ok('atlas: …and the water is the country\u2019s own window of the world\u2019s, not\n' +
+         '        the whole of it',
+        csv2.querySelector('path.ctryriver').getAttribute('d').length > 40 &&
+        csv2.querySelector('path.ctryriver').getAttribute('d').length <
+          geoDetailPaths('mercator', 'smooth').riv.length / 8,
+        csv2.querySelector('path.ctryriver').getAttribute('d').length + ' vs ' +
+        geoDetailPaths('mercator', 'smooth').riv.length);
+      /* two cards of the same country are two clips, the way two maps are two */
+      var c1 = { id: 'other', type: 'country', co: 'France', proj: 'mercator', look: 'smooth', rel: 1 };
+      ok('atlas: two cards of the same country are two clips, the way two maps\n' +
+         '        are two — a clip id carries the item it belongs to',
+        ctrySVG(c1).indexOf('"ctryc-other"') > 0 &&
+        ctrySVG(c1).indexOf('ctryc-' + c0.id) < 0 &&
+        csv2.querySelector('clipPath').id === 'ctryc-' + c0.id);
+      c0.rel = 0; c0.lak = 0; c0.riv = 0; ctryRedraw(cel, c0, page);
+
       ok('atlas: a country card knows what it is called and what its capital is',
         ITEMS.country.label(c0) === 'France' && ITEMS.country.meta(c0).indexOf('Paris') === 0,
         ITEMS.country.meta(c0));
@@ -8971,6 +9502,346 @@
         JSON.stringify(page.items) === cjson &&
         !!cst.querySelector('.item[data-type="country"] svg.ctrysvg path.ctryland') &&
         !cst.querySelector('.item[data-type="country"] button'));
+
+      /* ================= countries that click together =================
+         The claim is not that they end up next to each other — it is that they
+         end up IN REGISTER: one point of the world at one point on the paper in
+         both pictures at once. That is what is checked here, by mapping a world
+         coordinate through each card's own viewBox and rect and asking how far
+         apart the two answers are. Everything else — the glue, the arrangement
+         moving as one, the scale — is only ever a way of getting that. */
+      var keepItems = page.items;
+      var mkC = function (co, x, y, w) {
+        return { id: uid(), type: 'country', x: x, y: y, w: w, rot: 0, z: 3, lay: curLayerId(),
+                 cap: '', co: co, proj: 'mercator', look: 'smooth', lbl: 1, cp: 1 };
+      };
+      var cF = mkC('France', 8, 8, 26), cS = mkC('Spain', 62, 62, 20);
+      page.items = [cF, cS]; await render();
+      var elOf = function (x) { return Q('#pageHost .item[data-id="' + x.id + '"]'); };
+      var csOf = function (x) { return elOf(x).querySelector('svg.ctrysvg'); };
+      var fig = elOf(cF).querySelector('.ctry'), fst = getComputedStyle(fig);
+      ok('atlas: a country card is the country and not a card — no paper, no box',
+        fst.boxShadow === 'none' && fst.paddingTop === '0px' && fst.paddingLeft === '0px' &&
+        /^rgba\(0, 0, 0, 0\)$|^transparent$/.test(fst.backgroundColor),
+        fst.backgroundColor + ' / ' + fst.paddingLeft + ' / ' + fst.boxShadow);
+      /* the geometry below reads the ITEM's percentages and the SVG's viewBox as
+         one mapping, which only holds while the figure adds nothing between them */
+      ok('atlas: …and the picture starts exactly where the card does',
+        Math.abs(csOf(cF).getBoundingClientRect().left - elOf(cF).getBoundingClientRect().left) < .6 &&
+        Math.abs(csOf(cF).getBoundingClientRect().top - elOf(cF).getBoundingClientRect().top) < .6);
+      ok('atlas: …and the shape carries its own shadow, not a rectangle of one',
+        getComputedStyle(csOf(cF)).filter.indexOf('drop-shadow') === 0,
+        getComputedStyle(csOf(cF)).filter);
+
+      /* one world point, through both cards, in pixels */
+      var reg = function (A, B) {
+        var ea = csOf(A), eb = csOf(B);
+        var va = ea.getAttribute('viewBox').split(' ').map(Number);
+        var vbb = eb.getAttribute('viewBox').split(' ').map(Number);
+        var ra = ea.getBoundingClientRect(), rb = eb.getBoundingClientRect();
+        var X = (va[0] + vbb[0]) / 2, Y = (va[1] + vbb[1]) / 2;
+        return Math.hypot(ra.left + (X - va[0]) / va[2] * ra.width -
+                          (rb.left + (X - vbb[0]) / vbb[2] * rb.width),
+                          ra.top + (Y - va[1]) / va[3] * ra.height -
+                          (rb.top + (Y - vbb[1]) / vbb[3] * rb.height));
+      };
+      ok('atlas: two cards dropped anywhere are in no register at all', reg(cF, cS) > 20,
+        reg(cF, cS).toFixed(1));
+      /* Spain, brought up to where the world puts it beside France */
+      var pS = ctryPlace(ctryFrame(cF), cS);
+      ok('atlas: …and there is a place the world puts one beside the other',
+        !!pS && isFinite(pS.x) && isFinite(pS.y) && pS.w > 0, pS && [pS.x, pS.y, pS.w].join(','));
+      /* THE HITBOX IS THE TWO COUNTRIES MEETING, and nothing wider. A card
+         short of that is a card being moved past another one and is left
+         alone — a generous magnet here made the pair fight the hand for the
+         width of the paper. */
+      var gapNow = function () { return ctryGap(ctryLandOf(cF), ctryLandOf(cS)); };
+      /* Bringing them together is NOT the same as putting one where it will
+         end up: two cards of the same width are at two different scales, so a
+         Spain that has to grow by half to sit under France cannot be both
+         touching now and touching after. The gesture is the first of those. */
+      var ASP = pgW() / pgH();
+      var lay = function (a, b, fx, fy, gx, gy) {   // b's (gx,gy) onto a's (fx,fy)
+        var la = ctryLandOf(a), lb = ctryLandOf(b);
+        b.x += (la.x + la.w * fx) - (lb.x + lb.w * gx);
+        b.y += ((la.y + la.h * fy) - (lb.y + lb.h * gy)) * ASP;
+      };
+      lay(cF, cS, .25, .92, .75, .08);              // Spain up under France's south-west
+      var met = { x: cS.x, y: cS.y };
+      cS.x = met.x - 30;
+      ok('atlas: two countries not brought together are never asked',
+        gapNow() > 2 && !ctrySnap(page, cS), gapNow().toFixed(2) + ' apart');
+      /* the box that has to be met is the COUNTRY'S, not the card's: a card
+         carries a margin all the way round, and two margins meeting is not two
+         countries meeting */
+      ok('atlas: …and it is the country that has to meet it, not the card',
+        ctryLandOf(cF).w < cF.w * .95 && ctryLandOf(cF).x > cF.x,
+        ctryLandOf(cF).w.toFixed(2) + ' of a card ' + cF.w);
+      cS.x = met.x; cS.y = met.y;
+      elOf(cS).style.left = cS.x + '%'; elOf(cS).style.top = cS.y + '%';
+      var snap = ctrySnap(page, cS);
+      ok('atlas: brought up against it, one country finds the other',
+        gapNow() === 0 && !!snap && snap.on === cF && snap.move === cS,
+        gapNow().toFixed(2) + ' apart');
+      /* and that is what core/drag.js is handed while the hand is still on it */
+      var offer = ctryDragMove(page, cS, null);
+      ok('atlas: …and that is what the hand is offered, to light the other up',
+        !!offer && offer.it === cF && !!offer.el && !!offer.snap);
+      /* …and it lands where the world puts it, not where the hand let go */
+      ok('atlas: …and the click is what puts it right, not the drop',
+        Math.abs(snap.at.x - cS.x) > 3 || Math.abs(snap.at.w - cS.w) > 3,
+        [snap.at.x - cS.x, snap.at.w - cS.w].map(function (v) { return v.toFixed(1); }).join(' , '));
+      ctryDragDrop(page, cS, { snap: snap });
+      ok('atlas: …clicking them together names one from the other',
+        cS.glue === cF.id && ctryStuck(page, cF).length === 1);
+      ok('atlas: …AND ONE POINT OF THE WORLD IS NOW ONE POINT ON THE PAPER,\n' +
+         '        in both pictures — which is the whole claim',
+        reg(cF, cS) < 1.2, reg(cF, cS).toFixed(2) + ' px apart');
+      var vbF = csOf(cF).getAttribute('viewBox').split(' ').map(Number);
+      var vbS = csOf(cS).getAttribute('viewBox').split(' ').map(Number);
+      ok('atlas: …which is one scale for the pair, and not two',
+        Math.abs(cS.w / vbS[2] - cF.w / vbF[2]) < 1e-9,
+        (cS.w / vbS[2]) + ' vs ' + (cF.w / vbF[2]));
+      /* ONE SCALE MEANS ONE PEN. A stroke that stayed a fraction of each
+         country's own span would draw the smaller of the two four times finer
+         — Belgium's coast a hairline beside France's — which reads as a bug in
+         the drawing rather than as a small country. */
+      var guWant = Math.max(ctryGeom(cF).u, ctryGeom(cS).u);
+      ok('atlas: …and one pen, measured against the biggest country in it',
+        cF.gu === guWant && cS.gu === guWant, cF.gu + ' / ' + cS.gu + ' want ' + guWant);
+      var swOf = function (x) {
+        return +csOf(x).querySelector('path.ctryland').getAttribute('stroke-width') /
+               csOf(x).getAttribute('viewBox').split(' ').map(Number)[2] * x.w;
+      };
+      ok('atlas: …so the two coastlines are inked at the same width on the paper',
+        Math.abs(swOf(cF) - swOf(cS)) < 1e-3, swOf(cF) + ' vs ' + swOf(cS));
+      /* the type is NOT shared: a capital set at the run's scale is wider than
+         the smaller country and is cut off by the edge of its own card. France
+         is the smaller of these two — Spain's box carries the Canaries. */
+      var capF = +csOf(cF).querySelector('text.ctrycapn').getAttribute('font-size');
+      ok('atlas: …while the type stays each shape\u2019s own, and not the run\u2019s',
+        cF.gu > ctryGeom(cF).u * 1.05 &&
+        Math.abs(capF - ctryGeom(cF).u / 21) < ctryGeom(cF).u / 21 * .02,
+        capF + ' — its own is ' + (ctryGeom(cF).u / 21).toFixed(3) +
+        ', the run\u2019s would be ' + (cF.gu / 21).toFixed(3));
+
+      /* ---- and then they are one thing ---- */
+      var chain = ctryChain(page, cF), sx0 = cS.x, sy0 = cS.y;
+      ok('atlas: an arrangement is what the hand now has hold of', !!chain);
+      cF.x += 9; cF.y += 6;
+      elOf(cF).style.left = cF.x + '%'; elOf(cF).style.top = cF.y + '%';
+      chain.carry();
+      ok('atlas: moving one moves the other exactly as far',
+        Math.abs(cS.x - (sx0 + 9)) < .01 && Math.abs(cS.y - (sy0 + 6)) < .01,
+        (cS.x - sx0).toFixed(3) + ' , ' + (cS.y - sy0).toFixed(3));
+      ok('atlas: …and they are still in register after it', reg(cF, cS) < 1.2,
+        reg(cF, cS).toFixed(2));
+      cF.w = 34; elOf(cF).style.width = cF.w + '%';
+      ctryLayFrom(page, cF);
+      ok('atlas: resizing one resizes the arrangement, because there is one scale',
+        Math.abs(cS.w / vbS[2] - cF.w / vbF[2]) < 1e-9 && reg(cF, cS) < 1.2,
+        reg(cF, cS).toFixed(2));
+
+      /* ---- the small one comes to the big one, whichever is in the hand ----
+         Luxembourg's own scale would draw France four sheets wide, so a France
+         dragged up to a Luxembourg cannot take its frame. The two swap parts
+         rather than the gesture doing nothing. No render for these: what is
+         being checked is which card the arithmetic picks, and the arithmetic
+         reads the records. */
+      var same = function (A, B) {           // is B standing exactly where A's frame puts it?
+        var p = ctryPlace(ctryFrame(A), B);
+        return !!p && Math.abs(p.x - B.x) < .002 && Math.abs(p.y - B.y) < .002 &&
+               Math.abs(p.w - B.w) < .002;
+      };
+      var cL = mkC('Luxembourg', 70, 20, 22), cF2 = mkC('France', 12, 46, 26);
+      page.items = [cL, cF2];
+      var pL = ctryPlace(ctryFrame(cF2), cL);
+      cL.x = pL.x + 1.2; cL.y = pL.y + 0.8;
+      var sn2 = ctrySnap(page, cF2);
+      ok('atlas: a country dragged up to one far smaller brings that one to it',
+        !!sn2 && sn2.on === cL && sn2.move === cL,
+        sn2 ? sn2.move.co : 'no click at all');
+      ctryDragDrop(page, cF2, { snap: sn2 });
+      ok('atlas: …and the pair is in one frame all the same', same(cF2, cL),
+        [cL.x, cL.y, cL.w].join(','));
+      ok('atlas: …with the card that MOVED naming the one that stood still',
+        cL.glue === cF2.id && cF2.glue == null);
+
+      /* ---- and nothing clicks onto the far side of the world ----
+         Dropped right on top of each other, which is as together as two cards
+         on a sheet can be: they are still a world apart and must not click. */
+      var cJ = mkC('Japan', 20, 20, 24), cB = mkC('Brazil', 22, 22, 24);
+      page.items = [cJ, cB];
+      ok('atlas: two countries that are nowhere near each other never click,\n' +
+         '        however near each other they are put',
+        ctryGap(ctryLandOf(cJ), ctryLandOf(cB)) === 0 &&
+        !ctrySnap(page, cJ) && !ctrySnap(page, cB));
+      /* …and neither do two that the world does not have meeting: Spain is
+         between Portugal and France, so they do not touch and do not click */
+      var cP = mkC('Portugal', 20, 20, 24), cF3 = mkC('France', 22, 22, 24);
+      page.items = [cP, cF3];
+      ok('atlas: …nor two that the world itself does not have touching',
+        ctryGap(ctryLandOf(cP), ctryLandOf(cF3)) === 0 && !ctrySnap(page, cP));
+
+      /* ---- coming apart ---- */
+      page.items = [cF, cS];
+      var ux = cS.x, uy = cS.y;
+      ok('atlas: coming apart has a sound of its own — the click, backwards',
+        typeof SND.unpop === 'function' && typeof SND.pop === 'function');
+      ok('atlas: an arrangement comes apart when it is asked to',
+        ctryUnglue(page, cS) === true && cS.glue == null &&
+        ctryStuck(page, cF).length === 0 && !ctryChain(page, cF));
+      ok('atlas: …and nothing moves when it does — it is where it was left',
+        cS.x === ux && cS.y === uy);
+      ok('atlas: …and asking a lone card again is nothing to do',
+        ctryUnglue(page, cS) === false);
+      ok('atlas: …and a card on its own is back to its own pen',
+        cS.gu == null && cF.gu == null);
+      ok('atlas: the glue is a plain id, so it goes into a save like anything else',
+        JSON.parse(JSON.stringify({ g: cF.id })).g === cF.id &&
+        JSON.stringify(cS).indexOf('glue') < 0);
+
+      /* ---- and a card dropped on a card never files ----
+         Everything else on the page goes into a folder that way, and a card
+         that has to be pushed up against another to click would start one by
+         accident every time. A country is `filedOnly`: it goes into a folder
+         already on the sheet, in either hand, but no folder begins with one. */
+      var fold = { id: uid(), type: 'folder', x: 10, y: 10, w: 13, kids: [] };
+      var pic = { id: uid(), type: 'image', x: 40, y: 40, w: 20 };
+      ok('atlas: a country still goes into a folder that is already there',
+        canFile(cS) && foldPair(cS, fold) && foldPair(fold, cS));
+      ok('atlas: …but two cards dropped on each other start no folder',
+        !foldPair(cS, cF) && !foldPair(cF, cS));
+      ok('atlas: …and neither does a card dropped on anything else',
+        !foldPair(cS, pic) && !foldPair(pic, cS) && foldPair(pic, pic));
+      /* which is a question about the PAIR, so that is what core hands it */
+      ok('atlas: …because what may be filed is asked of both, not of one',
+        dropTarget.length === 3);
+
+      /* ================= a continent is a shape too =================
+         The same card, the same map and the same arithmetic, over a SET of
+         countries instead of one. Three things have to be true of the set for
+         any of it to work: it has one outline rather than fifty-seven, its name
+         is written inside that outline, and its frame is still the world's — so
+         a card of France clicks onto a card of Europe exactly where the world
+         puts France, which is the last assertion here and the point of the rest. */
+      var CT = function (n) { return geoRegKeyOf(n); };
+      ok('atlas: every country on Earth is in exactly one continent',
+        geoCountries().every(function (c, i) { return geoContOf(i) >= 0; }) &&
+        geoContinents().reduce(function (n, t) { return n + t.cos.length; }, 0) ===
+          geoCountries().length,
+        geoContinents().map(function (t) { return t.name + ' ' + t.cos.length; }).join(' · '));
+      ok('atlas: …and one is asked for by name the way a country is',
+        geoRegKind(CT('Africa')) === 'ct' && geoRegName(CT('Africa')) === 'Africa' &&
+        geoRegKind(CT('France')) === 'co' && geoRegName(CT('France')) === 'France' &&
+        CT('nowhere at all') === '');
+      /* the two places where this table is a judgement rather than a fact */
+      ok('atlas: …with Russia drawn in Asia, where three quarters of it is, and\n' +
+         '        Greenland in North America',
+        geoContName(geoContOf(CO('Russia'))) === 'Asia' &&
+        geoContName(geoContOf(CO('Greenland'))) === 'North America' &&
+        geoContName(geoContOf(CO('Turkey'))) === 'Asia' &&
+        geoContName(geoContOf(CO('Kenya'))) === 'Africa');
+      var gAf = geoReg('mercator', CT('Africa')), gEu = geoReg('mercator', CT('Europe'));
+      /* THE SET IS THE SAME GEOMETRY AND NOT A COPY OF IT: a country that needed
+         no carrying into the continent's frame is in there as the very array its
+         own card is drawn from, which is why the two are in register at all */
+      var frR = geoCoMain('mercator', CO('France')).rings.map(function (k) {
+        return geoCoGeom('mercator')[CO('France')].rings[k];
+      });
+      ok('atlas: a continent is built out of its countries’ own rings',
+        frR.length > 0 && frR.every(function (r) { return gEu.rings.indexOf(r) >= 0; }));
+      /* one pass over those rings splits them: a piece of outline one country of
+         the set drew is the continent's coast, a piece two of them drew is a
+         border inside it, and between them they are every segment there is */
+      var segs = function (runs, open) {
+        return runs.reduce(function (n, r) { return n + r.length - (open ? 1 : 0); }, 0);
+      };
+      ok('atlas: …and its coast and its borders are that outline, counted once each',
+        segs(gAf.edge, 1) + segs(gAf.bord, 1) === segs(gAf.rings, 0) &&
+        gAf.edge.length > 10 && gAf.bord.length > 10,
+        segs(gAf.edge, 1) + ' + ' + segs(gAf.bord, 1) + ' of ' + segs(gAf.rings, 0));
+      ok('atlas: …so a continent whose countries share no land border has none',
+        geoReg('mercator', CT('Oceania')).bord.length === 0 &&
+        geoReg('mercator', CT('France')).bord.length === 0 &&
+        geoRegBord('mercator', 'smooth', CT('France')) === '');
+      /* the name belongs to the SHAPE, and the shape is the continent: AFRICA is
+         written across the borders inside it, which no country's name may ever
+         do, and stays inside the coast, which is the same rule one page up */
+      var lbA = geoRegLabel('mercator', CT('Africa'));
+      var lbx = [lbA.x - lbA.w / 2, lbA.y - lbA.h / 2, lbA.x + lbA.w / 2, lbA.y + lbA.h / 2];
+      ok('atlas: a continent’s name is set inside its coast and across its borders',
+        lbA.fs > 0 && geoRunsClear(gAf.edgeB, lbx[0], lbx[1], lbx[2], lbx[3], 1) &&
+        !geoRectClear(gAf.rings, lbx[0], lbx[1], lbx[2], lbx[3]),
+        'AFRICA set at ' + lbA.fs.toFixed(1) + ' world units');
+      ok('atlas: …at the point furthest inside it',
+        geoRegSpot('mercator', CT('Africa')).r > 0 && geoInRings(gAf.rings, lbA.x, lbA.y));
+      ok('atlas: and a country put the same questions answers exactly as it did',
+        geoRegPath('mercator', 'smooth', CT('France'), 1) ===
+          geoCoPath('mercator', 'smooth', CO('France'), 1) &&
+        geoRegLabel('mercator', CT('France')) === geoCoLabel('mercator', CO('France')) &&
+        geoRegMain('mercator', CT('France')) === geoCoMain('mercator', CO('France')));
+      ok('atlas: the capitals of a continent are every one of its countries’',
+        geoRegCapitals(CT('Africa')).length > 40 &&
+        geoRegCapitals(CT('Africa')).some(function (c) { return c.name === 'Cairo'; }) &&
+        geoRegCapitals(CT('Africa')).some(function (c) { return c.name === 'Nairobi'; }) &&
+        geoRegCapitals(CT('France')).length === geoCoCapitals(CO('France')).length,
+        geoRegCapitals(CT('Africa')).length + ' of them');
+      ok('atlas: …and the ⌕ box offers the seven of them before a word is typed',
+        geoFindReg('', 9).slice(0, 7).map(geoRegName).join(',') ===
+          'Africa,Asia,Europe,North America,South America,Oceania,Antarctica' &&
+        geoRegName(geoFindReg('afr', 9)[0]) === 'Africa',
+        geoFindReg('', 9).map(geoRegName).join(','));
+
+      /* ---- and it is a card like any other ---- */
+      var cE = mkC('Europe', 3, 5, 46), cFr = mkC('France', 40, 40, 14);
+      page.items = [cE, cFr]; await render();
+      var esv = csOf(cE), fsv = csOf(cFr);
+      ok('atlas: a plate of a continent is filled once and inked twice — the\n' +
+         '        borders inside it, and the coast round the outside of it',
+        !!esv.querySelector('path.ctryland.ctryflat') &&
+        esv.querySelector('path.ctrybord').getAttribute('d').length > 2000 &&
+        esv.querySelector('path.ctrycoast').getAttribute('d').length > 2000 &&
+        getComputedStyle(esv.querySelector('path.ctryflat')).stroke === 'none',
+        getComputedStyle(esv.querySelector('path.ctryflat')).stroke);
+      ok('atlas: …where a country is one outline and its own fill carries it',
+        !fsv.querySelector('path.ctryflat') && !fsv.querySelector('path.ctrybord') &&
+        !fsv.querySelector('path.ctrycoast') &&
+        getComputedStyle(fsv.querySelector('path.ctryland')).stroke !== 'none');
+      var caps = esv.querySelectorAll('text.ctrycapn');
+      ok('atlas: …and it carries the capitals that fit on it, not all forty-four',
+        caps.length > 4 && caps.length < geoRegCapitals(CT('Europe')).length,
+        caps.length + ' of ' + geoRegCapitals(CT('Europe')).length);
+      ok('atlas: …every one of them inside the picture',
+        [].slice.call(caps).every(function (t) {
+          var b = t.getBoundingClientRect(), r = esv.getBoundingClientRect();
+          return b.left >= r.left - .5 && b.right <= r.right + .5 &&
+                 b.top >= r.top - .5 && b.bottom <= r.bottom + .5;
+        }));
+      ok('atlas: …and it says what it is under its icon',
+        ITEMS.country.label(cE) === 'Europe' &&
+        ITEMS.country.meta(cE).indexOf(' countries · ') > 0,
+        ITEMS.country.meta(cE));
+      /* THE FRAME IS STILL THE WORLD'S. Everything above is only worth having if
+         this holds: a card of France brought up against a card of Europe clicks
+         onto it, and lands where the world has France — not beside Europe, IN
+         it, at Europe's own scale, with one point of the world at one point on
+         the paper in both pictures at once. */
+      lay(cE, cFr, .5, .5, .5, .5);                 /* brought together, middle on middle */
+      var snapE = ctrySnap(page, cFr);
+      ok('atlas: a country clicks onto the continent it is in',
+        !!snapE && snapE.on === cE && snapE.move === cFr,
+        snapE ? snapE.move.co + ' onto ' + snapE.on.co : 'no click at all');
+      ctryDragDrop(page, cFr, { snap: snapE });
+      ok('atlas: …and one point of the world is one point on the paper in both',
+        reg(cE, cFr) < 1.2, reg(cE, cFr).toFixed(2) + ' px apart');
+      var vE = esv.getAttribute('viewBox').split(' ').map(Number);
+      var vF = csOf(cFr).getAttribute('viewBox').split(' ').map(Number);
+      ok('atlas: …drawn at the continent’s scale, because there is one scale',
+        Math.abs(cFr.w / vF[2] - cE.w / vE[2]) < 1e-9 && cFr.w < 14,
+        cFr.w.toFixed(2) + '% of the sheet');
+
+      page.items = keepItems; await render();
 
       /* ---- the height map on a real map ---- */
       m.on = { relief: 1, rivers: 1 };
@@ -9001,7 +9872,94 @@
       ok('atlas: …and the rivers came with it',
         !!msvg2.querySelector('path.atriver') &&
         msvg2.querySelector('path.atriver').getAttribute('d').length > 1000);
+
+      /* ---- and it is not contoured while anything is moving ----
+         Contouring the field is tens of milliseconds; a frame is sixteen. So
+         the height layer alone is `heavy`: a hand or a spring still in motion
+         gets the bands that are already drawn, scaled, and the field is
+         contoured once when the map stands still. THIS is the deferral the
+         smoothness rests on, and the map above is the thing that used to do it
+         on every frame of a zoom. */
+      var MH = ATL_LIVE.get(m.id);
+      var relD = function () {
+        return [].slice.call(msvg2.querySelectorAll('.atlay[data-l="relief"] path[fill^="#"]'))
+          .map(function (n) { return n.getAttribute('d'); }).join('').length;
+      };
+      MH.hand = 0; MH.sx.jump(2100); MH.sy.jump(1180); MH.sz.jump(0);
+      atlPaint(mel, m, atlView(m, MH));
+      var rel0 = relD(), land0 = msvg2.querySelector('path.atland').getAttribute('d');
+      MH.hand = 1;                                    /* a hand on the map, mid-gesture */
+      MH.sz.jump(2);
+      atlPaint(mel, m, atlView(m, MH));
+      ok('atlas: with the hand still down, two steps in redraws the outlines and\n' +
+         '        leaves the height field exactly where it was',
+        msvg2.querySelector('path.atland').getAttribute('d') !== land0 && relD() === rel0,
+        relD() + ' vs ' + rel0);
+      MH.hand = 0;
+      atlPaint(mel, m, atlView(m, MH));
+      ok('atlas: …and the moment the hand comes off, the field catches up',
+        relD() !== rel0, relD() + ' vs ' + rel0);
+      /* it arrives rather than appearing: the old bands are moved on top of the
+         new ones and faded off them, so at no point is the picture nothing */
+      ok('atlas: …arriving over the top of the old one rather than blinking into it',
+        !!msvg2.querySelector('.atlay[data-l="relief"] g.atfade') &&
+        msvg2.querySelector('.atlay[data-l="relief"] g.atfade path[fill^="#"]'),
+        (msvg2.querySelector('.atlay[data-l="relief"] g.atfade') || {}).outerHTML ? 'faded' : 'no fade group');
+
+      /* ---- a country dragged off a map wears what the map was wearing ---- */
+      m.on = { relief: 1, rivers: 1, lakes: 0 };
+      atlSpawn('Nepal', m, page, { x: pctW(10), y: pctH(10) });
+      var np = page.items[page.items.length - 1];
+      ok('atlas: a country taken off a map keeps its height and its rivers, and\n' +
+         '        does not gain the lakes the map had turned off',
+        np.type === 'country' && np.co === 'Nepal' && np.rel === 1 && np.riv === 1 && !np.lak,
+        [np.co, np.rel, np.lak, np.riv].join(','));
+      page.items.pop();
       m.on = {}; atlRebuild(mel, m, page);
+
+      /* ---- and the map picks at two grains ----
+         One switch, and it changes exactly one thing: what a press on the map
+         means. The shade, the name, the hold, the drag off onto the page and ⇱
+         all read `it.sel`, and not one of them knows the difference. */
+      m.tap = 'cont';
+      ok('atlas: with the map set to continents, what is under the finger is all of it',
+        atlRegOf(m, CO('Kenya')) === geoRegKeyOf('Africa') &&
+        atlRegOf(m, CO('France')) === geoRegKeyOf('Europe') && atlRegOf(m, -1) === '');
+      atlTap(mel, m, page, CO('Kenya'));
+      ok('atlas: …so a tap picks a continent by picking a country in it',
+        m.sel === 'Africa' && atlSel(m) === geoRegKeyOf('Africa'));
+      var pkg = mel.querySelector('.atworld .atlay[data-l="pick"]');
+      ok('atlas: …and what is shaded is the whole continent, in one piece',
+        !!pkg && pkg.querySelector('path.atpick').getAttribute('d') ===
+          geoRegPath('mercator', 'smooth', geoRegKeyOf('Africa')) &&
+        pkg.querySelector('text.atconame').textContent === 'Africa',
+        pkg && pkg.querySelector('text.atconame')
+          ? pkg.querySelector('text.atconame').textContent : 'no name on it');
+      atlTap(mel, m, page, CO('Tanzania'));
+      ok('atlas: …and a tap on its neighbour is a tap on the same thing, which\n' +
+         '        puts it down again', !m.sel && atlSel(m) === '');
+      delete m.tap;
+      ok('atlas: with the map back on countries, the same finger means the country',
+        atlRegOf(m, CO('Kenya')) === geoRegKeyOf('Kenya'));
+      /* what comes up in the hand is the continent, and what it leaves behind is
+         a card of one — the same two calls a country makes */
+      m.tap = 'cont';
+      atlPick(mel, m, page, 'Africa', false);
+      var ghost = atlCarry(m, atlSel(m));
+      ok('atlas: a continent comes up off the map in the shape of the continent',
+        ghost.querySelector('svg path').getAttribute('d') ===
+          geoRegPath('mercator', 'smooth', geoRegKeyOf('Africa'), 1) &&
+        ghost.querySelector('b').textContent === 'Africa');
+      ghost.remove();
+      var nWas = page.items.length;
+      atlSpawn('Africa', m, page, { x: pctW(10), y: pctH(10) });
+      var af = page.items[page.items.length - 1];
+      ok('atlas: …and lands on the page as a plate of it',
+        page.items.length === nWas + 1 && af.type === 'country' && af.co === 'Africa' &&
+        ctryGeom(af).cont === true && ctryGeom(af).i < 0,
+        af.type + ' of ' + af.co);
+      page.items.pop();
+      delete m.tap; delete m.sel;
 
       page.items = []; await render();
     });

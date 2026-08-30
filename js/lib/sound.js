@@ -159,10 +159,63 @@ const SND = (() => {
     p.out.gain.setTargetAtTime(0.0001, t, release / 3);
     try{ p.src.stop(t + release + 0.025); }catch(e){}
   }
+  /* ---- the flip cards ----
+     A study card is handled rather than clicked, so its sounds are the card
+     stock itself: a breath of air as one turns, a shorter one as the next slides
+     in, a longer one as it is thrown — and two small notes for the marks, warm
+     enough to hear fifty times in a row. No square waves, no crackle. */
+  function soft(freq, dur, gainAmt, delay, slideTo){
+    const v = vol(); if(!v) return;
+    const c = ac(); if(!c) return;
+    const t = c.currentTime + (delay || 0);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gainAmt * v, t + 0.018);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.connect(c.destination);
+    /* a sine with two quiet partials: a soft mallet on wood, not a beep */
+    [[1, 1], [2, 0.16], [3, 0.04]].forEach(([h, a]) => {
+      const o = c.createOscillator(), og = c.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(freq * h, t);
+      if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo * h, t + dur * 0.7);
+      og.gain.value = a;
+      o.connect(og).connect(g);
+      o.start(t); o.stop(t + dur + 0.05);
+    });
+  }
+  /* a low-passed breath of the pink noise bed: card stock moving through air */
+  function hush(dur, from, to, gainAmt, delay){
+    const v = vol(); if(!v) return;
+    const c = ac(); if(!c) return;
+    const t = c.currentTime + (delay || 0);
+    const s = c.createBufferSource(); s.buffer = paperBuf; s.loop = true;
+    s.loopStart = paperLoopStart;
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.7;
+    f.frequency.setValueAtTime(from, t);
+    f.frequency.exponentialRampToValueAtTime(to, t + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gainAmt * v, t + dur * 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f).connect(g).connect(c.destination);
+    const span = Math.max(0.1, paperBuf.duration - paperLoopStart - 0.1);
+    s.start(t, paperLoopStart + Math.random() * span); s.stop(t + dur + 0.05);
+  }
   let lastScratch = 0;
   return {
+    card(){  hush(0.17, 800, 2600, 0.55); soft(440, 0.07, 0.035, 0.09); },        // a card turning over
+    slide(){ hush(0.13, 600, 1900, 0.42); },                                        // the next card sliding in
+    whoosh(){ hush(0.28, 500, 3400, 0.7); },                                        // a card thrown off the stack
+    right(){ soft(659, 0.16, 0.11); soft(988, 0.28, 0.09, 0.09); },                 // ✓ — a fifth, rising
+    wrong(){ soft(311, 0.18, 0.10); soft(233, 0.30, 0.09, 0.11); },                 // ✗ — a fourth, falling, no buzz
+    done(){  soft(523, 0.18, 0.09, 0.26); soft(659, 0.18, 0.09, 0.37); soft(784, 0.36, 0.11, 0.48); },   // the run is over — after the last mark
     plop(){ tone(300 + Math.random() * 60, 0.16, 'sine', 0.22, 120); },              // placing things
     pop(){  tone(560 + Math.random() * 80, 0.10, 'sine', 0.16, 260); },              // stickers
+    /* the pop run backwards, the way redo is undo backwards: pop falls and
+       unpop rises, so two things coming apart is audibly the two things
+       clicking together played the other way up */
+    unpop(){ tone(260, 0.10, 'sine', 0.16, 560 + Math.random() * 80); },             // …and coming apart again
     pluck(){ tone(180, 0.12, 'triangle', 0.14, 90); },                               // delete
     tick(){ tone(1150, 0.045, 'square', 0.05); tone(760, 0.06, 'sine', 0.06); },     // checkbox
     flip(){                                                                           // papery page turn

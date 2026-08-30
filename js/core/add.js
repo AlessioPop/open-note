@@ -53,5 +53,8 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-add]');
   if(!b) return;
   const at = qCtx && qCtx.at, pg = qCtx && qCtx.page;   // the palette remembers where it was opened
+  /* a feature may have opened the palette for itself — a card taking a widget
+     onto its face — and gets the pick first; the sheet only if it declines */
+  if(qCtx && qCtx.take && qCtx.take(b.dataset.add)) return;
   addItem(b.dataset.add, at || undefined, pg || undefined);
 }, true);

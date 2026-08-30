@@ -8,7 +8,14 @@
    registry — every tile is a defineTool() some feature declared in its own
    file — so a new feature appears here without this file changing. It warps out
    of the exact point it was summoned from (ui/glass.js), and remembers the
-   shelf you left it on. */
+   shelf you left it on.
+
+   The context it is opened with says where the pick goes. `{page, at}` is the
+   sheet, and core/add.js puts the item there. A feature that wants the pick
+   for itself — a flip card taking a widget onto its face — passes
+   `{into:'the card', accept: kind => bool, take: kind => bool}`: the panel says
+   "onto the card", dims every tile `accept` refuses, and add.js hands the pick
+   to `take` first, adding to the sheet only if it declines. */
 
 defineToolCat('write',  { label: 'Write',  icon: 'pencil',  order: 10 });
 defineToolCat('math',   { label: 'Math',   icon: 'sigma',   order: 20 });
@@ -30,10 +37,13 @@ const palTools = cat => TOOLS.filter(t => (t.cat || 'decor') === cat)
 let curCat = 'write', palClosing = false;
 try { curCat = localStorage.getItem('dsk.shelf') || 'write'; } catch(e){}
 
-const palTile = (t, tag) =>
-  '<button class="ptile" data-add="' + t.kind + '" title="' + esc(t.hint || t.label) + '">' +
+const palTile = (t, tag) => {
+  const off = !!(qCtx && qCtx.accept && !qCtx.accept(t.kind));
+  return '<button class="ptile' + (off ? ' off' : '') + '" data-add="' + t.kind + '" title="' +
+    esc(off ? t.label + ' — stays on the sheet' : t.hint || t.label) + '">' +
   icn(t.icon) + '<span class="lb">' + esc(t.label) + '</span>' +
   (tag ? '<span class="tag">' + esc(tag) + '</span>' : '') + '</button>';
+};
 
 function rebuildPalette(){
   $('#palTabs').innerHTML = '<span class="pthumb"></span>' + palCats().map(c =>
@@ -98,6 +108,11 @@ function openQuickMenu(x, y, ctx, above, ox, oy){
   palClosing = false;
   $('#palSeek').value = '';
   qmenu.classList.add('open');
+  /* where the pick is going, when it is not the sheet */
+  let into = qmenu.querySelector('.pinto');
+  if(!into){ into = document.createElement('div'); into.className = 'pinto'; $('#palTabs').before(into); }
+  into.textContent = qCtx && qCtx.into ? '→ onto ' + qCtx.into : '';
+  into.style.display = qCtx && qCtx.into ? '' : 'none';
   renderGrid();
   const w = qmenu.offsetWidth, h = qmenu.offsetHeight;
   qmenu.style.left = clamp(x, 8, innerWidth - w - 8) + 'px';
@@ -162,11 +177,11 @@ $('#palSeek').addEventListener('keydown', e => {
   }
   if(e.key === 'Enter'){
     e.stopPropagation();
-    const t = $('#palGrid .ptile'); if(t) t.click();
+    const t = $('#palGrid .ptile:not(.off)'); if(t) t.click();
   }
   if(e.key === 'ArrowDown'){
     e.stopPropagation(); e.preventDefault();
-    const t = $('#palGrid .ptile'); if(t) t.focus();
+    const t = $('#palGrid .ptile:not(.off)'); if(t) t.focus();
   }
 });
 qmenu.addEventListener('keydown', e => {
@@ -212,6 +227,10 @@ addCSS('palette', `
 .ptile .ic{width:25px;height:25px;opacity:.9}
 .ptile .lb{max-width:100%;padding:0 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;opacity:.72}
 .ptile .tag{position:absolute;top:6px;right:8px;font-size:7.5px;letter-spacing:.12em;text-transform:uppercase;opacity:.38}
+.ptile.off{opacity:.26;pointer-events:none}
+.pinto{margin:9px 2px -3px;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent2)}
+/* summoned from inside the scope, it has to sit above it */
+body:has(.scope.on) .palette{z-index:96}
 .ptile:hover{background:rgba(255,255,255,.085);color:#fff;transform:translateY(-1px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.13),0 7px 18px rgba(0,0,0,.28)}
 .ptile:hover .lb{opacity:.95}
 .pnone{grid-column:1/-1;align-self:center;text-align:center;font-size:10px;letter-spacing:.12em;text-transform:uppercase;opacity:.4;padding:26px 0}

@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 2146 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 2355 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -22,7 +22,7 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 2146 assertions, and they should
+It prints a pass/fail count and every failure. 2355 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
@@ -376,12 +376,26 @@ all pass — if one doesn't, that is a real regression.
   one up and aims the springs at its own box, that dragging one out of the map
   puts it on the page while the map stays where it was and carrying it back does
   nothing at all; and the country card — its viewBox, its name, its capital, its
-  three switches, and that it prints with no buttons; that a pan inside the
-  window the world was built for **rebuilds no geometry at all** while a jump
-  that crosses a detail step rebuilds deliberately and draws a fraction of what
-  it drew; and that the height of the land is nine filled contours with no
-  picture and no clip anywhere, a window really is a fraction of the world, and
-  the coarsest step draws less than the finest;
+  six switches, that its height, its lakes and its rivers are one clip of the
+  country's own outline with the outline inked again over the top, that its
+  water is the country's own window of the world's rather than the whole of it,
+  that two cards are two clips, and that a card written down before any of that
+  existed has none of it and still has its name and its capital; that a country
+  taken off a map keeps what the map was wearing; that it prints with no
+  buttons; that a pan inside the window the world was built for **rebuilds no
+  geometry at all** while a jump that crosses a detail step rebuilds
+  deliberately and draws a fraction of what it drew; that the detail step is
+  whole octaves and sticky, so **two and a half octaves of zoom is four
+  rebuilds over 241 frames** where it used to be a rebuild on every one of
+  them, and that the window still reaches the edges of the picture at every one
+  of those frames; that with a hand still on the map a step in redraws the
+  outlines and **leaves the height field exactly where it was**, catches it up
+  the moment the hand comes off, and fades the new bands in over the old rather
+  than blinking between them; that a finer step adds contours between the ones
+  already drawn and never recolours ground it has already coloured; and that
+  the height of the land is filled contours with no picture and no clip
+  anywhere, a window really is a fraction of the world, and the coarsest step
+  draws less than the finest;
 - **Export for real** — a known handful of items is put on the sheet, the blob
   is intercepted, and it is checked for every feature's styles and for the
   absence of any flipbook chrome.

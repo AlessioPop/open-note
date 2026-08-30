@@ -27,10 +27,17 @@ body[data-theme="kraft"]{--desk:#3a3128;--paper:#d9c39a;--ink:#2c2318;--soft:#7a
 /* The desk is painted on the root as well as on the body. The body's colour only
    ever reached the window by propagating up to the canvas, and a canvas nobody
    paints is a see-through window rather than a grey one. Both carry --desk, so
-   the desk still follows the theme and none of it looks any different. */
+   the desk still follows the theme and none of it looks any different.
+
+   BOTH CARRY A LITERAL FALLBACK, and it is the only var() here that needs one.
+   An unresolved custom property does not fall back to the last colour or to
+   white — the declaration becomes `unset`, and unset on a background is
+   transparent. Everywhere else in this app that is a wrong colour for a
+   moment; here it is the whole window turning into a hole onto the desktop.
+   The fallback is the light theme's own desk, so it is never seen. */
 html,body{height:100%}
-html{background:var(--desk)}
-body{margin:0;background:var(--desk);color:var(--ink);font-family:var(--body);overflow:hidden;-webkit-font-smoothing:antialiased}
+html{background:var(--desk,#2a2e33)}
+body{margin:0;background:var(--desk,#2a2e33);color:var(--ink);font-family:var(--body);overflow:hidden;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 input,select{font:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}

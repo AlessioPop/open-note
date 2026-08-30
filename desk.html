@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Open Note — desk card</title>
+<!--
+  A desk card: one deck of flip cards in a window of its own, with the app closed.
+
+  This page is nothing but a loader. js/items/write/deck.js writes the deck's
+  standalone document — the same one "Save it as a file" hands you — into the
+  app's own store under desk:<id>, and opens this page in a small window. It reads
+  that document back and becomes it. Being served from the app's origin is what
+  lets it: the store is the app's, and so is the localStorage the card keeps its
+  marks in, so a desk card remembers across the app's restarts. desktop/main.js
+  gives it a frameless window that floats above the rest and comes back with the
+  app; a browser gives it a popup.
+-->
+<style>
+  html,body{height:100%;margin:0;background:#101214;color:#a9a49a;font:11px/1.6 'IBM Plex Mono',ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase}
+  .ph{position:fixed;inset:0;display:grid;place-items:center;text-align:center;padding:24px}
+</style>
+</head>
+<body>
+<div class="ph" id="ph">reading the deck…</div>
+<script src="js/core/store.js"></script>
+<script>
+(async function(){
+  const id = new URLSearchParams(location.search).get('id');
+  const doc = id ? await kvGet('desk:' + id) : null;
+  if(!doc){
+    document.getElementById('ph').textContent = 'No deck here any more — open Open Note and put it on the desk again.';
+    return;
+  }
+  document.open(); document.write(doc); document.close();
+})();
+</script>
+</body>
+</html>

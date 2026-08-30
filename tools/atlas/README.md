@@ -106,3 +106,18 @@ one step and the next, and almost all inhabited land is in the first two steps
 of that; the root spends the levels where the land is. Sea is nought and
 nothing else is, so the ocean is one long run and the run-length coding eats it
 whole — two thirds of the planet costs a few hundred characters.
+
+## What is *not* in any of these files: the continents
+
+Which continent a country is in is not geometry and cannot be recovered from
+it. Natural Earth carries it as a `CONTINENT` field on the admin-0 layer;
+`pack.py` reads `world-atlas`'s TopoJSON, which keeps only the name, and even
+if it kept the field a continent would still be a decision rather than a
+measurement. So the membership is a table of seven lists in `js/lib/atlas.js`,
+in the same names this file writes, next to the code that unions them — see
+`GEO_CONT`, and the note over it about the two places it is a judgement.
+
+If `pack.py` is ever run against a source that renames a country, nothing
+breaks: a name the table cannot find is simply not placed in a continent, and
+the harness's *every country on Earth is in exactly one continent* assertion is
+what will say so.

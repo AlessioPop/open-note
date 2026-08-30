@@ -29,6 +29,7 @@
     "directories": { "output": "dist" },
     "files": [
       "index.html",
+      "desk.html",
       "js/**/*",
       "fonts/**/*",
       "desktop/main.js",

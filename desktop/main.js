@@ -116,8 +116,16 @@ function createWindow() {
 
   /* An attachment asks for a tab (items/file.js). There are no tabs here, so we
      refuse — and file.js already falls back to saving it, which gets a proper
-     Save dialog. A real link goes to the user's actual browser, never in here. */
+     Save dialog. A real link goes to the user's actual browser, never in here.
+     The one window the app may open is a desk card (desk.html — a deck of flip
+     cards on its own), and that gets the small floating window below. */
   win.webContents.setWindowOpenHandler(({ url }) => {
+    /* Not `allow`: a window Chromium opens for window.open() belongs to its
+       opener and dies with it, and the whole point of a desk card is to outlive
+       the app window. So the shell opens one of its own and says no to the page —
+       whose window.open() then returns null, which platform/web.js reads as
+       "the host took it" when it is running in here. */
+    if (isDesk(url)) { openDesk(url); return { action: 'deny' }; }
     if (/^https?:/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
@@ -162,6 +170,62 @@ function createWindow() {
   return win;
 }
 
+/* ================= desk cards =================
+   A deck of flip cards taken to the desk (items/write/deck.js → desk.html) is a
+   small window of its own: no frame — the deck's own bar is what you hold it
+   by — floating above the rest, and NOT tied to the app window: close Open
+   Note and the card stays, and the app stays up for it. Which cards were out,
+   and where, is remembered next to the notes, so they come back with the app. */
+const DESK = SCHEME + '://' + HOST + '/desk.html';
+const isDesk = url => typeof url === 'string' && url.startsWith(DESK);
+const deskFile = () => path.join(app.getPath('userData'), 'desk.json');
+const desks = new Map();                             // BrowserWindow → its url
+
+function deskOptions(bounds) {
+  return {
+    width: 640, height: 580, minWidth: 380, minHeight: 340, ...(bounds || {}),
+    frame: false, alwaysOnTop: true, title: 'Open Note — desk card',
+    backgroundColor: '#101214', autoHideMenuBar: true, icon: path.join(__dirname, 'icon.png'),
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, devTools: DEV }
+  };
+}
+function rememberDesks() {
+  try {
+    const out = [];
+    for (const [w, url] of desks) if (!w.isDestroyed()) out.push({ url, ...w.getNormalBounds() });
+    fs.writeFileSync(deskFile(), JSON.stringify(out));
+  } catch (e) {}
+}
+const deskId = url => { try { return new URL(url).searchParams.get('id'); } catch (e) { return null; } };
+/* one window per deck: asked again, the card that is already out reloads to the
+   rewritten deck and comes to the front */
+function openDesk(url, bounds) {
+  const id = deskId(url);
+  for (const [w, u] of desks) if (!w.isDestroyed() && deskId(u) === id) {
+    w.loadURL(url); w.show(); w.focus();
+    return w;
+  }
+  const w = new BrowserWindow(deskOptions(bounds));
+  w.loadURL(url);
+  desks.set(w, url);
+  ['resize', 'move'].forEach(ev => w.on(ev, rememberDesks));
+  w.on('closed', () => { desks.delete(w); rememberDesks(); });
+  rememberDesks();
+  return w;
+}
+function restoreDesks() {
+  let list = [];
+  try { list = JSON.parse(fs.readFileSync(deskFile(), 'utf8')); } catch (e) {}
+  if (!Array.isArray(list)) return;
+  for (const d of list) {
+    if (!isDesk(d.url)) continue;
+    const b = Number.isFinite(d.width) && Number.isFinite(d.height)
+      ? { x: d.x, y: d.y, width: d.width, height: d.height } : null;
+    openDesk(d.url, b);
+  }
+}
+const mainWindow = () => BrowserWindow.getAllWindows().find(w => !desks.has(w)) || null;
+
 /* ================= one copy at a time =================
    Two instances share one userData directory, so they would open the same
    IndexedDB twice. store.js resolves an onblocked open to null, which silently
@@ -172,8 +236,9 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    const win = BrowserWindow.getAllWindows()[0];
-    if (!win) return;
+    /* the app window if there is one — with only desk cards out, a second
+       launch is the way back in */
+    const win = mainWindow() || createWindow();
     if (win.isMinimized()) win.restore();
     win.focus();
   });
@@ -182,8 +247,9 @@ if (!app.requestSingleInstanceLock()) {
     protocol.handle(SCHEME, serve);
     installMenu();
     createWindow();
+    restoreDesks();
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      if (!mainWindow()) createWindow();
     });
   });
 

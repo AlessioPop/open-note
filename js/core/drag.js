@@ -26,15 +26,16 @@ function pageOfEl(el){
   const en = BOARD && BOARD.entries.find(x => x.wrap === w);
   return en ? en.page : null;
 }
-/* what the icon is hovering over: the topmost other item under the pointer, if it
-   is something a folder can be made of. The dragged item is pointer-transparent. */
-function dropTarget(ev, selfEl){
+/* what the icon is hovering over: the topmost other item under the pointer, if
+   the two of them are something a folder can be made of — which is a question
+   about the pair, not about either one. The dragged item is pointer-transparent. */
+function dropTarget(ev, selfEl, drag){
   for(const n of document.elementsFromPoint(ev.clientX, ev.clientY)){
     const el = n.closest && n.closest('#pageHost .item');
     if(!el || el === selfEl) continue;
     const pg = pageOfEl(el);
     const it = pg && pg.items.find(x => x.id === el.dataset.id);
-    return canFile(it) ? { el, it, page: pg } : null;
+    return foldPair(drag, it) ? { el, it, page: pg } : null;
   }
   return null;
 }
@@ -54,6 +55,10 @@ function startDrag(e, it, el, page){
     ? selectionItems(page).map(x => ({ it: x, x: x.x, y: x.y,
         el: document.querySelector('#pageHost .item[data-id="' + x.id + '"]') })).filter(x => x.el)
     : null;
+  /* things that have been clicked together and travel as one arrangement —
+     today that is country cards, and the feature owns every bit of what the
+     word means. Null unless this item is in one. See items/science/atlas.js. */
+  const chain = !group && typeof ctryChain === 'function' ? ctryChain(page, it) : null;
   let moved = false, over = null;
   const mark = t => {
     if((t && t.el) === (over && over.el)) return;
@@ -93,7 +98,12 @@ function startDrag(e, it, el, page){
       it.x = clamp(ox + (ev.clientX - sx) / r.width * 100, -offX, inX);
       it.y = clamp(oy + (ev.clientY - sy) / r.height * 100, -offY, inY);
       el.style.left = it.x + '%'; el.style.top = it.y + '%';
-      if(canFile(it)) mark(dropTarget(ev, el));    // …and drop it on another to file them together
+      /* …carrying whatever is stuck to it, and looking for something to click
+         onto. It is asked first because a click is the more particular answer:
+         two countries brought together mean each other, not a folder. */
+      const snap = typeof ctryDragMove === 'function' ? ctryDragMove(curPage, it, chain) : null;
+      if(snap) mark(snap);
+      else if(canFile(it)) mark(dropTarget(ev, el, it));  // …and drop it on another to file them together
       else if(MATH_CARD[it.type]) mark(mathDrop(ev, el, it)); // …or onto a plot, or another card
     }
     /* carried paper leans into the push — a few degrees, sprung, gone at rest */
@@ -126,6 +136,7 @@ function startDrag(e, it, el, page){
     if(moved && drop && drop.page === curPage){
       if(tsp) el._tiltStop();                   // filing rebuilds the page; the tilt goes with it
       it.x = clamp(it.x, -offX, inX);
+      if(drop.snap){ ctryDragDrop(curPage, it, drop); return; }
       if(drop.math){ doMathDrop(curPage, it, drop, home); return; }
       foldMerge(curPage, it, drop.it);
       render();
@@ -136,7 +147,9 @@ function startDrag(e, it, el, page){
       el.style.left = it.x + '%';
       queueSave(curPage.id); SND.plop();
       if(tsp) tsp.to(0);                        // the lean settles home to the item's own rotation
-      flingItem(el, it, curPage, fl.vel(), r,   // the release keeps the hand's momentum
+      /* an arrangement is not thrown: the glide writes one item's x and y over
+         the next half second, and the rest of the run would be left behind it */
+      if(!chain) flingItem(el, it, curPage, fl.vel(), r,   // the release keeps the hand's momentum
         { x0: -offX, x1: inX, y0: -offY, y1: inY });
     }
   };
@@ -178,9 +191,13 @@ function startResize(e, it, el, page){
   if(autoWidth(it) && pinWidth(it, elWidthPct(el))){ ow = it.w; applyWidth(el, it); }
   el.setPointerCapture(e.pointerId);
   const mn = minItemW();
+  const chain = typeof ctryChain === 'function' ? ctryChain(page, it) : null;
   const mv = ev => {
     it.w = clamp(ow + (ev.clientX - sx) / r.width * 100, mn, 100);
     el.style.width = it.w + '%';
+    /* an arrangement is drawn at ONE scale, so resizing any card of it resizes
+       all of them — the run is laid out again from the one under the hand */
+    if(chain) chain.carry();
     wakeRopes();
   };
   const up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); queueSave(page.id); };

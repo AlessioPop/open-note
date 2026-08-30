@@ -23,19 +23,25 @@
 
    The countries are the second half of the file. A tap picks the one under it
    and writes its name across it at whatever size fits inside its own borders;
-   ⌕ walks the map to one by name and lights it; and a country dragged OUT of
-   the picture comes off it as a card of its own — the `country` item at the
-   bottom, which is the same geometry drawn once at one country's own scale.
+   ⌕ walks the map to one by name and lights it; and a country PRESSED AND HELD
+   comes up off the map into the hand, to be dropped on the page as a card of
+   its own — the `country` item at the bottom, which is the same geometry drawn
+   once at one country's own scale. The hold is what tells a country being
+   picked up from a map being panned, and it is why neither one moves the other.
 
    Prefix `atl`. The geometry is js/lib/atlas.js (`geo`), the table is
    js/data/atlasworld.js. */
 
 const ATL_W = 1000;                                // the picture is 1000 wide, like the ink and the plot
 const ATL_ZMAX = 5;                                // 32× — as far as 110m outlines are worth pushing
+const ATL_NMAX = Math.ceil(ATL_ZMAX);              // the most octaves a detail step may name
+const ATL_HYST = 0.6;                              // how far past a boundary the zoom must be pushed to change step
+const ATL_FADE = 260;                              // how long a rebuilt height layer takes to arrive, ms
 const ATL_MOVE = new Set();                        // maps picked up to be moved about the page
 const ATL_LIVE = new Map();                        // id → the springs and the view they drive. Never saved
 const ATL_PANEL = new Set();                       // …and whose layer panel is open
 const ATL_BLINK = 2600;                            // how long ⌕ keeps a country lit, ms
+const ATL_HOLD = 330;                              // how long a country is held before it comes off the map, ms
 let ATL_NEXT = null;                               // the country the next `country` item is of
 
 /* Mercator unless the record says otherwise. A map made before this line said
@@ -43,6 +49,22 @@ let ATL_NEXT = null;                               // the country the next `coun
    feature that never thought about the question, gets the projection every map
    on a screen is drawn in. */
 const atlProj = it => it.proj || 'mercator';
+
+/* ---- what a tap picks ----
+   A country, or the whole continent it is in. `it.tap` is 'cont' for the second
+   and absent for the first, so a map made before there were continents on it
+   goes on picking countries. Everything downstream of the tap is a REGION —
+   `co:12` or `ct:2` — and from there on nothing in this file asks which kind it
+   is: one shape, one name, one thing that comes off in the hand. */
+const atlTapCont = it => it.tap === 'cont';
+/* the region a country belongs to at this map's grain. '' where there is no
+   answer at all: open water, or a country the continents table does not place. */
+function atlRegOf(it, i){
+  if(!(i >= 0)) return '';
+  if(!atlTapCont(it)) return 'co:' + i;
+  const c = geoContOf(i);
+  return c < 0 ? '' : 'ct:' + c;
+}
 
 /* ---- the layers ----
    A layer says what it is called, when it is drawn, and either:
@@ -100,9 +122,14 @@ defineMapLayer('bord', {
    drawing, and it is why nothing here needs a clip. */
 defineMapLayer('relief', {
   label: 'Height', order: 32, on: 0, sw: 0,
+  /* the only layer here that is arithmetic rather than lookup — a marching
+     square per cell of the window, nine times over. `heavy` is what keeps that
+     off the frames of a zoom, and `fade` is what keeps the answer, when it
+     comes, from arriving as a blink. Both are read in atlReworld. */
+  heavy: 1, fade: 1,
   world(ctx){
     const it = ctx.it, v = ctx.view, proj = atlProj(it), look = it.look || 'smooth';
-    const w = atlWin(it, v), lod = atlLod(v.z);
+    const w = atlWin(it, v), lod = atlLod(atlN(v));
     const bands = geoReliefBands(proj, look, lod, w);
     if(!bands.length) return '';
     const P = geoProj(proj);
@@ -114,16 +141,27 @@ defineMapLayer('relief', {
   }
 });
 /* a lake is a closed run filled with the sea's own colour — which is what
-   makes it read as water and not as a hole cut in the paper */
+   makes it read as water and not as a hole cut in the paper.
+
+   IT DOES NOT FADE, and that is the one layer here that says so on purpose. A
+   fade means two copies of the picture and a transparency group animating over
+   both — see atlSwap — and a lake is the one shape on the map that is filled
+   AND inked, so a group over it is an offscreen buffer the size of the world.
+   The bands earn that because nine filled contours all move at once; a lake at
+   a finer step moves by less than a hairline, and the runs that come and go
+   with the window come and go half a view outside the picture. There is
+   nothing there to fade. */
 defineMapLayer('lakes', {
   label: 'Lakes', order: 34, on: 1, sw: 1.2,
   world: ctx => '<path class="atlake" d="' +
-    geoDetailPaths(atlProj(ctx.it), ctx.it.look || 'smooth', atlLod(ctx.view.z), atlWin(ctx.it, ctx.view)).lak + '"/>'
+    geoDetailPaths(atlProj(ctx.it), ctx.it.look || 'smooth', atlLod(atlN(ctx.view)), atlWin(ctx.it, ctx.view)).lak + '"/>'
 });
+/* a finer step is a river with tributaries it did not have — which is a change
+   worth fading in rather than cutting to, for the same reason the bands are */
 defineMapLayer('rivers', {
-  label: 'Rivers', order: 36, on: 0, sw: 1.6,
+  label: 'Rivers', order: 36, on: 0, sw: 1.6, fade: 1,
   world: ctx => '<path class="atriver" d="' +
-    geoDetailPaths(atlProj(ctx.it), ctx.it.look || 'smooth', atlLod(ctx.view.z), atlWin(ctx.it, ctx.view)).riv + '"/>'
+    geoDetailPaths(atlProj(ctx.it), ctx.it.look || 'smooth', atlLod(atlN(ctx.view)), atlWin(ctx.it, ctx.view)).riv + '"/>'
 });
 /* the coast is inked separately from the land it fills — see the note over
    geoPaths: a filled ring has to close, and Antarctica's closes across the
@@ -361,33 +399,46 @@ defineMapLayer('tiny', {
    `it.sel` is the country's NAME and not its number. tools/atlas/pack.py can
    renumber the table the day Natural Earth changes, and a number would move a
    reader's pin from Chad to Kenya without a word. */
-const atlSel = it => (it.sel ? geoCoIndexOf(it.sel) : -1);
+const atlSel = it => (it.sel ? geoRegKeyOf(it.sel) : '');
 const atlPickLayer = () => ATL_LAYERS.find(L => L.id === 'pick');
 /* the label the capitals have to keep off, in picture units — nothing at all
    unless a country really is picked and the layer that draws it is on */
 function atlNameBox(it, v){
   if(!it.sel || !atlOn(it, atlPickLayer())) return null;
-  const i = atlSel(it);
-  if(i < 0) return null;
-  const lb = geoCoLabel(atlProj(it), i);
+  const k = atlSel(it);
+  if(!k) return null;
+  const lb = geoRegLabel(atlProj(it), k);
   if(!(lb.fs > 0)) return null;
   const w = lb.w * v.k, h = lb.h * v.k;
   return [{ x: (lb.x - v.cx) * v.k + ATL_W / 2 - w / 2,
             y: (lb.y - v.cy) * v.k + v.H / 2 - h / 2, w, h }];
 }
-/* one country's name as lines of type, centred on the spot geoCoLabel found.
-   The halo is a stroke width in WORLD units set on the element itself: the
-   group's own stroke-width is the outline's, and an attribute here beats the
-   one inherited from it — see the note in atlPaint about why neither may be
-   a stylesheet rule. */
+/* the halo the name is read through, as a fraction of its own size. It is a
+   stroke width in WORLD units set on the element itself: the group's own
+   stroke-width is the outline's, and an attribute here beats the one inherited
+   from it — see the note in atlPaint about why neither may be a stylesheet
+   rule. Thin: it is there to lift the letters off a border or a river, not to
+   punch a white slab out of the map. */
+const ATL_HALO = 0.07;
+/* WHERE TRACKED TYPE ACTUALLY SITS, which is not where it is asked to.
+   text-anchor:middle centres the ADVANCE of the line, and letter-spacing adds
+   one more space AFTER the last letter — so the ink of a tracked line stands
+   half a space to the left of the spot it was centred on. At the tracking an
+   atlas uses that is a tenth of the letter height and it reads as a name that
+   has slipped off its country. Half a space back is the whole of the fix. */
+const atlNameX = fs => fs * GEO_LBL_TRK / 2;
+/* one country's name as lines of type, centred on the spot geoCoLabel found —
+   horizontally by the line above, vertically on half a cap height, which is
+   exactly the middle of a line of capitals and is why the name is set in them.
+   A block of n lines is centred by its middle line, not by its first. */
 function atlNameSVG(lb, r){
   if(!lb || !(lb.fs > 0)) return '';
   r = r || rd1;                                    /* a card writes at the country's own scale */
-  const n = lb.lines.length, fs = lb.fs, x = r(lb.x);
+  const n = lb.lines.length, fs = lb.fs, x = r(lb.x + atlNameX(fs));
   return '<text class="atconame" x="' + x + '" y="' + r(lb.y) + '" font-size="' + r(fs) +
-    '" stroke-width="' + r(fs * 0.16) + '">' +
+    '" stroke-width="' + r(fs * ATL_HALO) + '">' +
     lb.lines.map((t, k) => '<tspan x="' + x + '" dy="' +
-      r(k ? fs * GEO_LBL_H : fs * (0.34 - (n - 1) * GEO_LBL_H / 2)) + '">' + esc(t) + '</tspan>').join('') +
+      r(k ? fs * GEO_LBL_H : fs * (GEO_LBL_MID - (n - 1) * GEO_LBL_H / 2)) + '">' + esc(t) + '</tspan>').join('') +
     '</text>';
 }
 /* the smallest name worth writing on the country itself. Below this a country
@@ -398,12 +449,12 @@ const ATL_LBL_MIN = 9 / (ATL_W / GEO_W * Math.pow(2, ATL_ZMAX));
 const atlOnShape = lb => !!lb && lb.fs >= ATL_LBL_MIN;
 
 defineMapLayer('pick', {
-  label: 'Picked country', order: 70, on: 1, sw: 2.6,
+  label: 'Picked place', order: 70, on: 1, sw: 2.6,
   world(ctx){
-    const it = ctx.it, i = atlSel(it);
-    if(i < 0) return '';
-    const lb = geoCoLabel(atlProj(it), i);
-    return '<path class="atpick" d="' + geoCoPath(atlProj(it), it.look || 'smooth', i) + '"/>' +
+    const it = ctx.it, k = atlSel(it);
+    if(!k) return '';
+    const lb = geoRegLabel(atlProj(it), k);
+    return '<path class="atpick" d="' + geoRegPath(atlProj(it), it.look || 'smooth', k) + '"/>' +
       (atlOnShape(lb) ? atlNameSVG(lb) : '');
   },
   build: () => '<g class="atcap atpickn"><text class="atname" x="' + (ATL_TINY + 6) +
@@ -411,14 +462,14 @@ defineMapLayer('pick', {
   frame(g, ctx){
     const el = g.firstElementChild;
     if(!el) return;
-    const it = ctx.it, v = ctx.view, i = atlSel(it);
-    const lb = i < 0 ? null : geoCoLabel(atlProj(it), i);
+    const it = ctx.it, v = ctx.view, k = atlSel(it);
+    const lb = k ? geoRegLabel(atlProj(it), k) : null;
     if(!lb || atlOnShape(lb)){                     /* the country writes its own name */
       if(el.classList.contains('on')){ el.classList.remove('on'); el.firstElementChild.textContent = ''; }
       return;
     }
     const x = (lb.x - v.cx) * v.k + ATL_W / 2, y = (lb.y - v.cy) * v.k + v.H / 2;
-    const name = geoCoName(i);
+    const name = geoRegName(k);
     if(el.firstElementChild.textContent !== name) el.firstElementChild.textContent = name;
     const flip = x + name.length * ATL_FS * 0.46 + ATL_TINY + 12 > ATL_W;
     const f = flip ? '1' : '0';
@@ -444,8 +495,40 @@ defineMapLayer('pick', {
    the promise at the top of this file is intact. When one is crossed, the
    world layers' markup is replaced, which is a few milliseconds once. */
 const atlLod = z => Math.max(0, Math.min(GEO_LOD_MAX, Math.round(z)));
+/* ---- the zoom in whole octaves, and STICKY ----
+   THE ONE NUMBER BOTH OF THEM COME FROM, and the reason it exists. The detail
+   step and the window used to be read off the live zoom, and the live zoom is
+   a spring: it passes a boundary, overshoots it, comes back over it and settles
+   on it, so a single flick of the wheel crossed one boundary three or four
+   times and rebuilt the world every time it did. With the height layer on,
+   that rebuild is a contouring pass, and three or four of them inside half a
+   second is what the map was flickering with.
+
+   So the step is quantised and it is sticky: it takes six tenths of an octave
+   past the one we are on to leave it, which no overshoot of this spring
+   reaches. Between crossings the zoom is a scale on a transform and nothing
+   else at all. */
+const atlStepOf = (z, prev) => {
+  const n = Math.max(0, Math.min(ATL_NMAX, Math.round(z)));
+  if(prev == null) return n;
+  const p = Math.max(0, Math.min(ATL_NMAX, prev));
+  return Math.abs(z - p) > ATL_HYST ? n : p;
+};
+/* the step a view is at — the sticky one if it came from atlView, the plain one
+   for a view somebody put together by hand */
+const atlN = v => v.n == null ? Math.max(0, Math.min(ATL_NMAX, Math.round(v.z))) : v.n;
 function atlWin(it, v){
-  const hw = ATL_W / (2 * v.k), hh = v.H / (2 * v.k);
+  /* THE WINDOW IS MEASURED AT THE STEP, NOT AT THE ZOOM. k moves every frame of
+     a zoom, and a window that followed k would be a new window — a new clip, a
+     new field, a new set of contours — sixty times a second. So it is measured
+     at the step. The step's own band is six tenths of an octave either side of
+     it, and a window already carries half a view of slack — 1.5 views of reach
+     against the 1.52 the bottom of the band asks for — so a fifth of an octave
+     of headroom is all it takes for the window to cover every zoom the step
+     covers, and never be asked again inside one. Any more than that is world
+     nobody is looking at, built and clipped and contoured for nothing. */
+  const kq = ATL_W / GEO_W * Math.pow(2, atlN(v) - 0.2);
+  const hw = ATL_W / (2 * kq), hh = v.H / (2 * kq);
   /* the whole world fits: no window at all, and no key that changes with the
      pan — which is what keeps a map at arm's length from ever rebuilding */
   if(2 * hw >= GEO_W && 2 * hh >= v.P.h) return null;
@@ -457,7 +540,22 @@ function atlWin(it, v){
            y0: Math.floor((v.cy - hh - g) / g) * g, y1: Math.ceil((v.cy + hh + g) / g) * g };
 }
 const atlWinKey = w => w ? w.x0 + ',' + w.y0 + ',' + w.x1 + ',' + w.y1 : '';
-const atlPathsFor = (it, v) => geoPaths(atlProj(it), it.look || 'smooth', atlLod(v.z), atlWin(it, v));
+/* …and back again, so a picture that arrived as markup knows what it covers */
+const atlWinOf = k => {
+  if(!k) return null;
+  const a = k.split(',').map(Number);
+  return a.length === 4 && a.every(v => v === v) ? { x0: a[0], y0: a[1], x1: a[2], y1: a[3] } : null;
+};
+/* what a picture was built for: one string, and the only thing that decides
+   whether any geometry is made again */
+const atlBuilt = (it, v) => atlLod(atlN(v)) + '|' + atlWinKey(atlWin(it, v));
+/* is what is already drawn still reaching the edges of the picture? */
+function atlCovers(w, v){
+  if(!w) return true;                              /* the whole world is in the DOM */
+  const hw = ATL_W / (2 * v.k), hh = v.H / (2 * v.k);
+  return v.cx - hw >= w.x0 && v.cx + hw <= w.x1 && v.cy - hh >= w.y0 && v.cy + hh <= w.y1;
+}
+const atlPathsFor = (it, v) => geoPaths(atlProj(it), it.look || 'smooth', atlLod(atlN(v)), atlWin(it, v));
 
 /* ---- the view ----
    `k` takes world units to picture units: at z = 0 the world is exactly as
@@ -492,7 +590,11 @@ function atlView(it, L){
     const c = g.P.fwd(nz(it.lon, 8), nz(it.lat, 16)), lim = atlLimits(it, k);
     cx = clamp(c[0], lim.x0, lim.x1); cy = clamp(c[1], lim.y0, lim.y1);
   }
-  return { ar: g.ar, H: g.H, P: g.P, W: ATL_W, z, k, cx, cy };
+  /* the sticky step lives on the live record, because stickiness is a memory
+     and a map that is not being handled has nothing to remember */
+  const n = atlStepOf(z, L ? L.n : null);
+  if(L) L.n = n;
+  return { ar: g.ar, H: g.H, P: g.P, W: ATL_W, z, k, cx, cy, n };
 }
 
 /* ---- the picture ----
@@ -511,7 +613,7 @@ function atlSVG(it, view){
     if(L.build) pins += '<g class="atlay" data-l="' + L.id + '"></g>';
   }
   return '<svg class="atmap" viewBox="0 0 ' + ATL_W + ' ' + v.H + '" xmlns="http://www.w3.org/2000/svg"' +
-    ' data-built="' + esc(atlLod(v.z) + '|' + atlWinKey(atlWin(it, v))) + '"' +
+    ' data-built="' + esc(atlBuilt(it, v)) + '"' +
     ' style="aspect-ratio:' + ATL_W + '/' + v.H + '">' +
     '<defs><clipPath id="atl-' + id + '"><rect x="0" y="0" width="' + ATL_W + '" height="' + v.H + '" rx="14"/></clipPath>' +
     '<linearGradient id="atlsea-' + id + '" x1="0" y1="0" x2="0" y2="1">' +
@@ -528,9 +630,12 @@ function atlSVG(it, view){
    once and hung on the <svg> — a frame must not be querying the document. */
 function atlPlan(svg, it){
   if(svg.__plan) return svg.__plan;
-  const plan = { world: svg.querySelector('.atworld'), lay: [], pins: [], built: svg.dataset.built || '' };
+  const built = svg.dataset.built || '';
+  const plan = { world: svg.querySelector('.atworld'), lay: [], pins: [],
+                 built, heavy: built, hwin: atlWinOf(built.split('|')[1]) };
   for(const g of svg.querySelectorAll('.atworld .atlay'))
     plan.lay.push({ g, sw: +g.dataset.sw || 0, spec: ATL_LAYERS.find(L => L.id === g.dataset.l) });
+  plan.slow = plan.lay.some(L => L.spec && L.spec.heavy);
   for(const L of ATL_LAYERS){
     if(!L.frame || !atlOn(it, L)) continue;
     const g = svg.querySelector('.atpins .atlay[data-l="' + L.id + '"]');
@@ -539,23 +644,66 @@ function atlPlan(svg, it){
   svg.__plan = plan;
   return plan;
 }
+/* ---- one layer's markup, changed under the reader ----
+   For a line layer the new geometry lands within a hairline of the old and the
+   swap is not there to be seen. The height bands are the one exception: a finer
+   sample moves a contour by a cell, and nine filled bands all moving at once is
+   a blink however quick it is. So a layer may ask to arrive rather than to
+   appear — the new markup goes in UNDERNEATH the old, which is then faded off
+   the top of it and dropped. The picture is the old one, then both, then the
+   new one, and at no point is it nothing.
+
+   The old markup is MOVED, not built again: setting innerHTML detaches those
+   nodes, it does not destroy them, so putting them back into the fading group
+   costs no parsing at all. */
+function atlSwap(g, d, fade){
+  if(!fade || !g.firstChild){ g.innerHTML = d; return; }
+  /* A PAN CAN CROSS TWO BOUNDARIES INSIDE ONE FADE, and the picture already on
+     its way out has nothing left to say — it is a third copy of the same world
+     under a second copy of it. Carrying it along would nest one transparency
+     group inside another, and every level of that is an offscreen buffer as
+     big as the group's box, painted again every frame until it expires. So it
+     is dropped rather than kept: what is under it is the whole picture. */
+  const keep = [...g.childNodes].filter(n => !(n.classList && n.classList.contains('atfade')));
+  g.innerHTML = d + '<g class="atfade"></g>';
+  const f = g.lastChild;
+  for(const n of keep) f.appendChild(n);
+  requestAnimationFrame(() => f.classList.add('off'));
+  setTimeout(() => f.remove(), ATL_FADE + 80);
+}
 /* the world's markup, replaced — only ever because the detail step or the
-   window changed. Everything else about a map is the transform. */
-function atlReworld(svg, it, v, p){
+   window changed. Everything else about a map is the transform.
+
+   `slow` is whether the layers that cost real arithmetic come too. They do not,
+   while the hand or a spring is still moving, because contouring a height field
+   is tens of milliseconds and a zoom cannot afford one: what is already drawn
+   is vector and scales, so the zoom rides on it and the field is contoured once
+   when the map stands still. */
+function atlReworld(svg, it, v, p, slow){
   const paths = atlPathsFor(it, v), ctx = { it, view: v, paths };
   for(const L of p.lay){
-    if(!L.spec.world) continue;
+    if(!L.spec || !L.spec.world) continue;
+    if(L.spec.heavy && !slow) continue;
     const d = L.spec.world(ctx);
-    if(d !== L.d){ L.d = d; L.g.innerHTML = d; }
+    if(d !== L.d){ L.d = d; atlSwap(L.g, d, L.spec.fade); }
   }
-  p.built = atlLod(v.z) + '|' + atlWinKey(atlWin(it, v));
+  const key = atlBuilt(it, v);
+  p.built = key;
+  if(slow || !p.slow){ p.heavy = key; p.hwin = atlWin(it, v); }
 }
 function atlPaint(el, it, v, force){
   const svg = el.querySelector('svg.atmap');
   if(!svg) return;
   const p = atlPlan(svg, it);
-  const built = atlLod(v.z) + '|' + atlWinKey(atlWin(it, v));
-  if(p.built !== built) atlReworld(svg, it, v, p);
+  const built = atlBuilt(it, v);
+  if(p.built !== built || (p.slow && p.heavy !== built)){
+    const L = ATL_LIVE.get(it.id);
+    const busy = !!L && !!(L.hand || L.sx.active || L.sy.active || L.sz.active);
+    /* a rebuild the hand is owed is put off until the hand stops — unless what
+       is drawn no longer reaches the edge of the picture, and then it is not a
+       refinement any more but a hole, and holes are not deferred */
+    if(p.built !== built || !busy) atlReworld(svg, it, v, p, !busy || !atlCovers(p.hwin, v));
+  }
   /* a settling spring's last frames move the picture by a fraction of a pixel.
      Nothing on screen can show that, so nothing on screen is touched for it */
   const was = p.was;
@@ -589,7 +737,13 @@ function atlLive(el, it, page){
     if(L.raf) return;
     L.raf = requestAnimationFrame(() => { L.raf = 0; atlPaint(L.el, it, atlView(it, L)); });
   };
-  const rest = () => { if(!L.sx.active && !L.sy.active && !L.sz.active) atlSettle(it, L); };
+  /* standing still is also when the heavy layers are owed their rebuild — see
+     atlPaint. One more paint, and the height of the land catches up. */
+  const rest = () => {
+    if(L.sx.active || L.sy.active || L.sz.active) return;
+    atlSettle(it, L);
+    atlPaint(L.el, it, atlView(it, L));
+  };
   L.sx = spring({ from: v.cx, damping: 1, response: .3, rest: .5, onUpdate: x => { L.cx = x; bump(); }, onRest: rest });
   L.sy = spring({ from: v.cy, damping: 1, response: .3, rest: .5, onUpdate: y => { L.cy = y; bump(); }, onRest: rest });
   L.sz = spring({ from: v.z, damping: 1, response: .22, rest: .0015, restSpeed: .02,
@@ -617,7 +771,8 @@ const atlBand = (v, lo, hi) => lo >= hi ? lo : v < lo ? lo - (lo - v) * 0.42 : v
 function atlPointers(svg, el, it, page, L){
   const pts = new Map();
   const fl = flickTrack();
-  let mode = 0, st = null, dn = null, carry = null;
+  let mode = 0, st = null, dn = null, carry = null, hold = 0, moved = 0, grab = 0;
+  const unhold = () => { if(hold){ clearTimeout(hold); hold = 0; } };
 
   /* where in the world the pointer is standing */
   const world = e => {
@@ -628,12 +783,12 @@ function atlPointers(svg, el, it, page, L){
     const v = atlView(it, L), q = svgAt(svg, e), w = world(e);
     /* what is under the finger is worked out ONCE, here — the whole gesture
        hangs off it, and asking again per move would be asking 177 countries a
-       question whose answer cannot have changed. The box is read once for the
-       same reason: reading it per move is a layout in the middle of a drag. */
+       question whose answer cannot have changed. */
     const ring = atlRingAt(it, v, q);
     st = { k: v.k, px: q[0], py: q[1], cx: L.cx, cy: L.cy, lim: atlLimits(it, v.k),
-           co: ring >= 0 ? ring : geoCoAt(atlProj(it), w[0], w[1], ATL_TINY / v.k),
-           box: svg.getBoundingClientRect() };
+           co: ring >= 0 ? ring : geoCoAt(atlProj(it), w[0], w[1], ATL_TINY / v.k) };
+    const reg = atlRegOf(it, st.co);
+    grab = reg && reg === atlSel(it) && atlOn(it, atlPickLayer()) ? 1 : 0;
     mode = 1;
     L.sx.stopAt(); L.sy.stopAt(); L.sz.stopAt();
   };
@@ -646,26 +801,32 @@ function atlPointers(svg, el, it, page, L){
     mode = 2;
     L.sx.stopAt(); L.sy.stopAt(); L.sz.stopAt();
   };
-  /* ---- out of the map, still holding land ----
-     The gesture IS the sentence. Inside the picture a drag pans, which is what
-     it has always been, so nothing that worked before has been taken away. It
-     is only when the hand leaves the picture still holding a country that the
-     map lets go: the pan it was until a moment ago springs back to where it
-     started, and the country comes with the hand instead. */
-  const outside = e => {
-    const b = st.box, m = 14;
-    return e.clientX < b.left - m || e.clientX > b.right + m ||
-           e.clientY < b.top - m || e.clientY > b.bottom + m;
-  };
+  /* ---- picking a country up ----
+     THE MAP MUST NOT MOVE WHILE A COUNTRY IS COMING OFF IT. It used to: a drag
+     was a pan until the hand left the picture, so pulling Brazil onto the page
+     dragged the whole world out to the edge with it and then sprang the world
+     back — half a screen of travel each way, for a gesture that was never a pan
+     at all. The trouble was that the sentence was only finished at the edge,
+     and everything before the edge had to be read as a pan and then unread.
+
+     So the gesture says which one it is BEFORE anything moves. Press on a
+     country and hold still for a third of a second and the country comes up
+     into the hand: the plop is the map saying it let go. Move before that and
+     it is a pan, exactly the pan it has always been, and the hold is off. The
+     map is never asked to move and put back, because it is never moved.
+
+     THE PICKED COUNTRY NEEDS NO HOLD AT ALL. It is already the one the reader
+     asked for — shaded, named, and the only country on the map that is answering
+     to the hand — so a drag off it is a drag OF it, and it comes away on the
+     first movement. That is what `grab` is: the hold is how you say WHICH
+     country, and a country that has already been said needs no saying twice. */
   const startCarry = e => {
-    carry = atlCarry(it, st.co);
+    unhold();
+    carry = atlCarry(it, atlRegOf(it, st.co));
     atlCarryAt(carry, e);
-    L.sx.set({ response: .4 }).to(st.cx);
-    L.sy.set({ response: .4 }).to(st.cy);
     SND.plop();
   };
   const movePan = e => {
-    if(st.co >= 0 && !ATL_MOVE.has(it.id) && outside(e)) return startCarry(e);
     const q = svgAt(svg, e);
     atlJump(L, atlBand(st.cx - (q[0] - st.px) / st.k, st.lim.x0, st.lim.x1),
                atlBand(st.cy - (q[1] - st.py) / st.k, st.lim.y0, st.lim.y1));
@@ -700,24 +861,47 @@ function atlPointers(svg, el, it, page, L){
     try{ svg.setPointerCapture(e.pointerId); }catch(err){}
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     fl.track(e);
-    if(pts.size === 1){ dn = { x: e.clientX, y: e.clientY };
-                        L.sx.set({ response: .3 }); L.sy.set({ response: .3 }); startPan(e); }
-    else if(pts.size === 2) startPinch();
+    /* a hand on the map counts as movement, the same as a spring does: a drag
+       jumps the springs rather than running them, so without this the height
+       field would be contoured again on every window a pan crossed */
+    L.hand = 1;
+    if(pts.size === 1){ dn = { x: e.clientX, y: e.clientY }; moved = 0; grab = 0;
+                        L.sx.set({ response: .3 }); L.sy.set({ response: .3 }); startPan(e);
+                        /* the event itself is not kept — it is stale by the time this
+                           runs, and all the hold needs of it is where the finger is */
+                        if(atlRegOf(it, st.co)){
+                          const at = { clientX: e.clientX, clientY: e.clientY };
+                          hold = setTimeout(() => { hold = 0; if(!carry && mode === 1) startCarry(at); }, ATL_HOLD);
+                        } }
+    else if(pts.size === 2){ unhold(); startPinch(); }
   });
   svg.addEventListener('pointermove', e => {
     if(!pts.has(e.pointerId)) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    /* moved before the hold was up: this is a pan, and the country stays put —
+       unless it is the picked one, which needs no hold and comes away now */
+    if(dn && !moved && Math.hypot(e.clientX - dn.x, e.clientY - dn.y) > 5){
+      moved = 1; unhold();
+      if(grab && mode === 1 && !carry) startCarry(e);
+    }
     if(carry) return atlCarryAt(carry, e);
     if(mode === 2) movePinch();
     else if(mode === 1){ fl.track(e); movePan(e); }
   });
   const off = e => {
     if(!pts.has(e.pointerId)) return;
+    unhold();
     pts.delete(e.pointerId);
+    if(!pts.size) L.hand = 0;
     if(carry){                                       /* a country in the hand: nothing else applies */
       if(pts.size) return;
-      atlDrop(carry, el, it, page, e, st.co);
+      const i = st.co, still = !moved && e.type === 'pointerup';
+      atlDrop(carry, el, it, page, e, atlRegOf(it, i));
       carry = null; mode = 0; st = null;
+      /* held and let go without ever going anywhere: the reader took longer
+         over the tap than the hold, and a slow tap is still a tap. atlDrop has
+         already found the drop inside the picture and done nothing with it. */
+      if(still) atlTap(el, it, page, i);
       return;
     }
     if(pts.size === 1 && mode === 2){                /* one finger lifted off a pinch: carry on panning */
@@ -741,7 +925,7 @@ function atlPointers(svg, el, it, page, L){
    Tapping the country that is already picked puts it back, so the same tap is
    both halves of the gesture and there is nothing to learn. */
 function atlTap(el, it, page, i){
-  const name = i < 0 ? '' : geoCoName(i);
+  const k = atlRegOf(it, i), name = k ? geoRegName(k) : '';
   atlPick(el, it, page, (it.sel || '') === name ? '' : name, false);
 }
 function atlPick(el, it, page, name, blink){
@@ -749,6 +933,14 @@ function atlPick(el, it, page, name, blink){
   if(page) queueSave(page.id);
   atlDrawPick(el, it, blink);
   SND.tick();
+}
+/* ⌕ can change the grain too, and the button that shows which one is on may be
+   on screen while it does — the same refresh ⊗ does on a card, for the reason */
+function atlToolMarks(el, it){
+  const b = el && el.__atlgrain;
+  if(!b) return;
+  b.classList.toggle('on', atlTapCont(it));
+  b.title = 'A tap picks: ' + (atlTapCont(it) ? 'the whole continent' : 'a country');
 }
 /* One layer's markup, replaced. Everything else about the map — the transform,
    every other layer, the springs mid-flight — is left exactly as it stands,
@@ -768,10 +960,10 @@ function atlDrawPick(el, it, blink){
 /* ⌕ takes you there rather than putting you there: the three springs are
    retargeted at the country's own box and the map walks, so the reader sees
    WHERE in the world it went — which is most of what a map is for. */
-function atlFlyTo(it, i){
+function atlFlyTo(it, key){
   const L = ATL_LIVE.get(it.id);
-  if(!L) return;
-  const b = geoCoMain(atlProj(it), i), g = atlGeom(it);
+  if(!L || !key) return;
+  const b = geoRegMain(atlProj(it), key), g = atlGeom(it);
   const bw = Math.max(b.x1 - b.x0, 8), bh = Math.max(b.y1 - b.y0, 8);
   const k = Math.min(ATL_W / (bw * 1.35), g.H / (bh * 1.35));   /* fit it, with air round it */
   const z = clamp(Math.log2(k * GEO_W / ATL_W), atlZMin(it), ATL_ZMAX);
@@ -786,56 +978,68 @@ function atlFlyTo(it, i){
    not an item yet and must not be treated as one, because the drop may never
    happen. On the way down it becomes an ordinary `country` card at the point
    it was let go of; brought back over the map, nothing happened at all. */
-function atlCarry(it, i){
-  const proj = atlProj(it), b = geoCoMain(proj, i);
+function atlCarry(it, key){
+  const proj = atlProj(it), b = geoRegMain(proj, key);
   const w = Math.max(b.x1 - b.x0, 1), h = Math.max(b.y1 - b.y0, 1), m = Math.max(w, h) * .07;
   const d = document.createElement('div');
   d.className = 'atcarry';
   d.innerHTML = '<svg viewBox="' + [rd1(b.x0 - m), rd1(b.y0 - m), rd1(w + 2 * m), rd1(h + 2 * m)].join(' ') +
     '" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">' +
-    '<path d="' + geoCoPath(proj, it.look || 'smooth', i, 1) + '" stroke-width="' +
-    rd1(Math.max(w, h) / 110) + '"/></svg><b>' + esc(geoCoName(i)) + '</b>';
+    '<path d="' + geoRegPath(proj, it.look || 'smooth', key, 1) + '" stroke-width="' +
+    rd1(Math.max(w, h) / 110) + '"/></svg><b>' + esc(geoRegName(key)) + '</b>';
   document.body.appendChild(d);
   return d;
 }
 const atlCarryAt = (d, e) => { d.style.left = e.clientX + 'px'; d.style.top = e.clientY + 'px'; };
-function atlDrop(d, el, it, page, e, i){
+function atlDrop(d, el, it, page, e, key){
   d.remove();
   const svg = el.querySelector('svg.atmap'), surf = el.parentElement;
-  if(e.type !== 'pointerup' || !surf) return;        /* cancelled: nothing happened */
+  if(e.type !== 'pointerup' || !surf || !key) return;   /* cancelled: nothing happened */
   const b = svg.getBoundingClientRect();
   if(e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom) return;
-  atlSpawn(geoCoName(i), it, page, pctFrom(e, surf));
+  atlSpawn(geoRegName(key), it, page, pctFrom(e, surf));
 }
 /* the one way a country card is ever made: the kind is registered like any
    other, and WHICH country is left here for its maker to pick up — an add-kind
    takes no argument of its own, and inventing one for this would change the
    shape of the registry for every feature that never needed it */
 function atlSpawn(name, it, page, at){
-  ATL_NEXT = { co: name, proj: atlProj(it), look: it.look || 'smooth' };
+  /* the card is the same picture at the country's own distance, so it leaves
+     the map wearing what the map was wearing: the projection, the outlines, and
+     whichever of height, lakes and rivers were on when it came off */
+  ATL_NEXT = { co: name, proj: atlProj(it), look: it.look || 'smooth',
+               rel: atlOn(it, ATL_LAYERS.find(L => L.id === 'relief')) ? 1 : 0,
+               lak: atlOn(it, ATL_LAYERS.find(L => L.id === 'lakes')) ? 1 : 0,
+               riv: atlOn(it, ATL_LAYERS.find(L => L.id === 'rivers')) ? 1 : 0 };
   addItem('country', at, page);
 }
 
 /* ---- the ⌕ box: a country by name ----
    The same glass box the molecules use, over the same kind of list. It serves
-   the map and the country card both: on a map picking a name walks there and
-   lights it up, on a card it is simply which country the card is of. */
+   the map and the card both: on a map picking a name walks there and lights it
+   up, on a card it is simply which country the card is of. It offers CONTINENTS
+   as well as countries — all seven of them when nothing has been typed, which is
+   how a reader finds out they can be had at all. */
 let ATL_ASK = null;
 function atlAskEl(){
   let d = $('#atlask');
   if(d) return d;
   d = document.createElement('div');
   d.className = 'atlask glass'; d.id = 'atlask';
-  d.innerHTML = '<input placeholder="a country — Japan, Peru, Côte d’Ivoire, USA…" spellcheck="false">' +
+  d.innerHTML = '<input placeholder="a country or a continent — Japan, Peru, Africa…" spellcheck="false">' +
     '<div class="atsug"></div>';
   document.body.appendChild(d);
   d.addEventListener('pointerdown', e => e.stopPropagation());
   const inp = d.querySelector('input'), sug = d.querySelector('.atsug');
   const list = () => {
-    sug.innerHTML = geoFindCo(inp.value, 9).map(i => {
-      const c = geoCoCapitals(i)[0];
-      return '<button data-i="' + i + '">' + esc(geoCoName(i)) +
-        '<small>' + esc(c ? c.name : '—') + '</small></button>';
+    sug.innerHTML = geoFindReg(inp.value, 9).map(k => {
+      /* what is said about it under the name: a country's capital, and how many
+         countries a continent is — which is the same kind of fact one line down */
+      const cont = geoRegKind(k) === 'ct';
+      const c = cont ? null : geoCoCapitals(geoRegNum(k))[0];
+      const n = cont ? geoContinents()[geoRegNum(k)].cos.length + ' countries' : c ? c.name : '—';
+      return '<button data-k="' + k + '">' + esc(geoRegName(k)) +
+        '<small>' + esc(n) + '</small></button>';
     }).join('');
   };
   d.__list = list;
@@ -843,7 +1047,7 @@ function atlAskEl(){
   inp.addEventListener('keydown', e => {
     e.stopPropagation();
     if(e.key === 'Escape'){ e.preventDefault(); atlAskClose(); }
-    if(e.key === 'Enter'){ e.preventDefault(); const b = sug.querySelector('button'); if(b) atlAskTake(+b.dataset.i); }
+    if(e.key === 'Enter'){ e.preventDefault(); const b = sug.querySelector('button'); if(b) atlAskTake(b.dataset.k); }
     if(e.key === 'ArrowDown'){ e.preventDefault(); const b = sug.querySelector('button'); if(b) b.focus(); }
   });
   sug.addEventListener('keydown', e => {
@@ -851,11 +1055,11 @@ function atlAskEl(){
     const b = e.target.closest('button');
     if(!b) return;
     if(e.key === 'Escape'){ e.preventDefault(); atlAskClose(); }
-    if(e.key === 'Enter'){ e.preventDefault(); atlAskTake(+b.dataset.i); }
+    if(e.key === 'Enter'){ e.preventDefault(); atlAskTake(b.dataset.k); }
     if(e.key === 'ArrowDown' && b.nextElementSibling){ e.preventDefault(); b.nextElementSibling.focus(); }
     if(e.key === 'ArrowUp'){ e.preventDefault(); (b.previousElementSibling || inp).focus(); }
   });
-  sug.addEventListener('click', e => { const b = e.target.closest('button'); if(b) atlAskTake(+b.dataset.i); });
+  sug.addEventListener('click', e => { const b = e.target.closest('button'); if(b) atlAskTake(b.dataset.k); });
   return d;
 }
 function atlAsk(anchor, it, el, page){
@@ -879,13 +1083,25 @@ function atlAskClose(){
   if(d.contains(document.activeElement)) document.activeElement.blur();
   warpOut(d, () => { if(!ATL_ASK) d.classList.remove('open'); });
 }
-function atlAskTake(i){
-  if(!ATL_ASK || !(i >= 0)) return;
+function atlAskTake(key){
+  if(!ATL_ASK || !key) return;
   const { it, el, page } = ATL_ASK;
   atlAskClose();
-  if(it.type === 'country'){ it.co = geoCoName(i); queueSave(page.id); ctryRedraw(el, it, page); SND.pop(); return; }
-  atlPick(el, it, page, geoCoName(i), true);
-  atlFlyTo(it, i);
+  if(it.type === 'country'){
+    it.co = geoRegName(key); queueSave(page.id); ctryRedraw(el, it, page);
+    /* a card that is now a different country is a different shape and a
+       different box, so an arrangement it is part of is laid out again round it */
+    ctryWeigh(page, it); ctryLayFrom(page, it);
+    SND.pop(); return;
+  }
+  /* THE BOX AND THE MAP AGREE ABOUT WHAT IS BEING PICKED. Ask for a continent
+     and the map picks continents from now on; ask for a country and it is back
+     to countries. Otherwise the thing just asked for could not be dragged off
+     the map, because a press on it would have meant something else. */
+  if(geoRegKind(key) === 'ct') it.tap = 'cont'; else delete it.tap;
+  atlPick(el, it, page, geoRegName(key), true);
+  atlFlyTo(it, key);
+  atlToolMarks(el, it);
   SND.pop();
 }
 window.addEventListener('pointerdown', e => {
@@ -1042,9 +1258,33 @@ defineItem('atlas', {
       if(ATL_PANEL.has(it.id)) ATL_PANEL.delete(it.id); else ATL_PANEL.add(it.id);
       atlPanel(el, it, page);
     });
-    mk('⌕', 'Find a country — the map walks there and lights it up', b => atlAsk(b, it, el, page));
-    mk('⇱', 'Take the picked country off onto the page — or drag it out of the map',
-      () => { const i = atlSel(it); if(i >= 0) atlSpawn(geoCoName(i), it, page, { x: it.x + pctW(40), y: it.y + pctH(40) }); });
+    mk('⌕', 'Find a country or a continent — the map walks there and lights it up',
+      b => atlAsk(b, it, el, page));
+    /* ---- the grain ----
+       One button, and it changes one thing: what a press on the map means. The
+       shading, the name, the hold, the drag off onto the page and ⇱ all read
+       `it.sel` and none of them knows the difference. */
+    const tg = mk('▣', 'A tap picks: a country', b => {
+      const k = atlSel(it);
+      if(atlTapCont(it)) delete it.tap; else it.tap = 'cont';
+      b.classList.toggle('on', atlTapCont(it));
+      b.title = 'A tap picks: ' + (atlTapCont(it) ? 'the whole continent' : 'a country');
+      /* what was picked is picked again at the new grain — a country widens to
+         the continent it is in, and a continent, which no tap could now mean,
+         is put back down */
+      let name = it.sel || '';
+      if(atlTapCont(it) && geoRegKind(k) === 'co'){
+        const c = geoContOf(geoRegNum(k));
+        name = c >= 0 ? geoContName(c) : '';
+      }else if(!atlTapCont(it) && geoRegKind(k) === 'ct') name = '';
+      atlPick(el, it, page, name, false);
+    });
+    tg.classList.toggle('on', atlTapCont(it));
+    tg.title = 'A tap picks: ' + (atlTapCont(it) ? 'the whole continent' : 'a country');
+    tg.__it = it; el.__atlgrain = tg;
+    mk('⇱', 'Take what is picked off onto the page — or drag it out of the map',
+      () => { const k = atlSel(it);
+              if(k) atlSpawn(geoRegName(k), it, page, { x: it.x + pctW(40), y: it.y + pctH(40) }); });
     mk('◎', 'Projection — flat or Mercator', b => {
       it.proj = atlProj(it) === 'mercator' ? 'equirect' : 'mercator';
       b.title = 'Projection: ' + geoProj(it.proj).label;
@@ -1098,10 +1338,15 @@ svg.atmap{display:block;width:100%;height:auto;background:none;touch-action:none
 .atmap .atsea1{stop-color:color-mix(in srgb,var(--accent2) 10%,var(--paper));stop-opacity:1}
 .atmap .atedge{fill:none;stroke:var(--line);stroke-width:2;opacity:.8}
 .atmap .atlay{fill:none;stroke-linejoin:round;stroke-linecap:round}
+/* a layer that has just been rebuilt at a finer step: the old picture, on top
+   of the new one, on its way out. See atlSwap — nothing else ever has this */
+.atmap .atfade{transition:opacity .26s linear}   /* ATL_FADE */
+.atmap .atfade.off{opacity:0}
+@media (prefers-reduced-motion:reduce){.atmap .atfade{transition:none}}
 .atmap path.atland{fill:color-mix(in srgb,var(--paper) 88%,var(--ink));fill-rule:evenodd;stroke:none}
-.atmap path.atcoast{fill:none;stroke:var(--ink);opacity:.9}
-.atmap path.atbord{fill:none;stroke:var(--ink);opacity:.3}
-.atmap path.atgrat{fill:none;stroke:var(--line);opacity:.55}
+.atmap path.atcoast{fill:none;stroke:var(--ink);stroke-opacity:.9}
+.atmap path.atbord{fill:none;stroke:var(--ink);stroke-opacity:.3}
+.atmap path.atgrat{fill:none;stroke:var(--line);stroke-opacity:.55}
 /* the capitals: every one is a node from the start, and the frame decides which
    of them is set. The fade is what stops one popping in as the zoom crosses it */
 .atmap .atcap{opacity:0;pointer-events:none;transition:opacity .22s ease-out}
@@ -1111,13 +1356,23 @@ svg.atmap{display:block;width:100%;height:auto;background:none;touch-action:none
   fill:var(--ink);stroke:var(--paper);stroke-width:5;paint-order:stroke;stroke-linejoin:round}
 @media (prefers-reduced-motion: reduce){ .atmap .atcap{transition:none} }
 /* the picked country: a wash of the accent over it, its own outline inked, and
-   its name written across it at whatever size fits inside its borders. All of
-   it is in WORLD units inside the group that moves, which is why the name goes
-   on fitting the country however far in the map is taken. */
+   its name written across it. All of it is in WORLD units inside the group that
+   moves, which is why the name goes on fitting the country however far in the
+   map is taken.
+
+   THE NAME IS SET THE WAY AN ATLAS SETS ONE and not the way a heading is:
+   capitals, tracked out, one weight down from a title, in ink the map can be
+   read through and behind a halo thin enough to be a halo. The size is not the
+   biggest that fits either — geoCoLabel keeps GEO_LBL_AIR of the room it found
+   and gives the rest back, because a name grown until the border stops it is a
+   sticker on a country rather than a label on a map. */
 .atmap path.atpick{fill:color-mix(in srgb,var(--accent) 30%,transparent);
   stroke:var(--accent);stroke-linejoin:round}
-.atconame{font-family:var(--disp);font-weight:700;letter-spacing:.02em;text-anchor:middle;
-  fill:var(--ink);stroke:var(--paper);paint-order:stroke;stroke-linejoin:round;pointer-events:none}
+.atconame{font-family:var(--disp);font-weight:600;text-transform:uppercase;
+  letter-spacing:${GEO_LBL_TRK}em;text-anchor:middle;
+  fill:color-mix(in srgb,var(--ink) 74%,transparent);
+  stroke:color-mix(in srgb,var(--paper) 78%,transparent);
+  paint-order:stroke;stroke-linejoin:round;pointer-events:none}
 /* ⌕ lit it: it breathes for a moment and is then left alone */
 .atmap .atlay.blink path.atpick{animation:atblink 1.1s ease-in-out 0s infinite}
 @keyframes atblink{
@@ -1158,10 +1413,18 @@ svg.atmap{display:block;width:100%;height:auto;background:none;touch-action:none
 .atmap .atlay[data-l="relief"]{opacity:.92}
 .atmap .atlay[data-l="relief"] path{stroke:none}
 .atmap path.atrelsea{fill:color-mix(in srgb,var(--accent2) 12%,var(--paper));fill-rule:evenodd}
-/* water. A lake is the sea's own colour, which is what makes it read as water */
+/* water. A lake is the sea's own colour, which is what makes it read as water.
+   FILL-OPACITY AND STROKE-OPACITY, NEVER PLAIN OPACITY, AND THAT IS THE WHOLE
+   OF WHY LAKES ARE FAST. Bare opacity on a shape that is both filled and inked
+   is a GROUP: the browser has to paint the shape into an offscreen buffer the
+   size of its box and composite it, and this path's box is the whole world
+   — four thousand units square, times the zoom, redone on every frame of every
+   pan. The two paint opacities say the same thing about one shape and need no
+   buffer at all. The stroke-only paths below are the same rule, kept the same
+   way: nothing under .atworld may carry a bare opacity of its own. */
 .atmap path.atlake{fill:color-mix(in srgb,var(--accent2) 34%,var(--paper));
-  stroke:color-mix(in srgb,var(--accent2) 70%,var(--ink));opacity:.95}
-.atmap path.atriver{fill:none;stroke:color-mix(in srgb,var(--accent2) 72%,var(--ink));opacity:.75}
+  fill-opacity:.95;stroke:color-mix(in srgb,var(--accent2) 70%,var(--ink));stroke-opacity:.95}
+.atmap path.atriver{fill:none;stroke:color-mix(in srgb,var(--accent2) 72%,var(--ink));stroke-opacity:.75}
 /* the cities: the capitals again, quieter — see the note over the layer */
 .atmap .atcity{opacity:0;pointer-events:none;transition:opacity .22s ease-out}
 .atmap .atcity.on{opacity:1}
@@ -1214,9 +1477,9 @@ defineTool({ kind:'atlas', cat:'science', label:'World', icon:'globe', order:60,
    `co` is the country's name, the same as a map's `it.sel`, and for the same
    reason. Prefix `ctry`. */
 function ctryGeom(it){
-  const proj = atlProj(it), i = geoCoIndexOf(it.co);
-  if(i < 0) return null;
-  const b = geoCoMain(proj, i);
+  const proj = atlProj(it), key = geoRegKeyOf(it.co);
+  if(!key) return null;
+  const b = geoRegMain(proj, key);
   /* NO FLOOR ON THE SPAN, and no fixed number of decimal places on the
      viewBox. Both are the same mistake: a card is the one picture in this
      feature drawn at the country's OWN scale rather than the world's, and the
@@ -1227,33 +1490,99 @@ function ctryGeom(it){
   const u = Math.max(w, h), m = u * 0.06;
   const p = Math.max(1, Math.pow(10, Math.ceil(4 - Math.log10(u))));
   const r = v => Math.round(v * p) / p;
-  return { i, proj, look: it.look || 'smooth', b, w, h, u, m, r,
+  const cont = geoRegKind(key) === 'ct';
+  return { key, cont, i: cont ? -1 : geoRegNum(key), at: geoReg(proj, key).at,
+           proj, look: it.look || 'smooth', b, w, h, u, m, r,
            vb: [r(b.x0 - m), r(b.y0 - m), r(w + 2 * m), r(h + 2 * m)] };
 }
-/* a capital into the country's own frame — Suva is at 178°E and Fiji's frame is
-   just past the 180th, so the dot has to be carried the same way the rings were */
+/* a capital into the region's own frame — Suva is at 178°E and Fiji's frame is
+   just past the 180th, so the dot has to be carried the same way the rings were.
+   A region knows where it put each of its countries, and it is that country's
+   place a capital is carried to: Papeete is in Oceania's frame to the EAST of
+   Australia, which is the same side of the picture French Polynesia is on. */
 function ctryCapXY(g, c){
   const P = geoProj(g.proj), q = P.fwd(c.lon, c.lat), W = P.wrap;
-  if(W) q[0] += Math.round(((g.b.x0 + g.b.x1) / 2 - q[0]) / W) * W;
+  if(!W) return q;
+  const home = g.at.get(geoCoIndexOf(c.of));
+  q[0] += Math.round(((home == null ? (g.b.x0 + g.b.x1) / 2 : home) - q[0]) / W) * W;
   return q;
 }
-function ctrySVG(it){
+/* ---- every capital in a continent, and the ones that fit ----
+   The map's own layout, in the card's own units: biggest city first, a name is
+   set if its box is clear of every box already down, and the continent's own
+   name is handed in as a box that is taken before any of them. A plate of
+   Africa carries a dozen names and not fifty-six, and they are the dozen an
+   atlas would have set. */
+function ctryCapsSVG(G, sw){
+  const g = G.g, r = g.r, vb = G.vb, fs = g.u / 34, dot = g.u / 150;
+  const cands = [];
+  for(const c of geoRegCapitals(g.key)){
+    const q = ctryCapXY(g, c);
+    /* Barlow Condensed is narrow, and this only has to be right enough to keep
+       two names off each other — the same measure the map makes */
+    const w = c.name.length * fs * 0.46 + dot * 3;
+    const flip = q[0] + w > vb[0] + vb[2];
+    cands.push({ c, x: q[0], y: q[1], flip,
+      box: { x: (flip ? q[0] - w : q[0] - dot) - vb[0], y: q[1] - fs * 0.62 - vb[1],
+             w: w + dot, h: fs * 1.2 } });
+  }
+  const lb = G.under ? null : G.lb;
+  const seed = lb && lb.fs > 0
+    ? [{ x: lb.x - lb.w / 2 - vb[0], y: lb.y - lb.h / 2 - vb[1], w: lb.w, h: lb.h }] : [];
+  return geoLayout(cands, vb[2], vb[3], 0, seed).map(t =>
+    '<g class="ctrycap"><circle class="ctrydot" cx="' + r(t.x) + '" cy="' + r(t.y) +
+    '" r="' + r(dot) + '" stroke-width="' + r(dot * 0.55) + '"/>' +
+    '<text class="ctrycapn" x="' + r(t.x + (t.flip ? -dot * 2.1 : dot * 2.1)) +
+    '" y="' + r(t.y + fs * 0.34) + '" font-size="' + r(fs) +
+    '" stroke-width="' + r(fs * 0.17) + '" text-anchor="' + (t.flip ? 'end' : 'start') +
+    '">' + esc(t.c.name) + '</text></g>').join('');
+}
+/* ---- the picture's own box ----
+   The country's box, plus the room a name written UNDER the shape takes. Two
+   things need it and they must agree to the unit: ctrySVG, which draws it, and
+   the arrangement below, which lines two cards up by their boxes. So it is
+   worked out once, here, and neither of them may work it out again.
+
+   The card is framed on the country, so almost every name fits it at a readable
+   size — Chile's is thin because Chile is thin. The exception is an
+   archipelago: the Marshall Islands are a thousandth of their own box, and a
+   name written inside one of those islands would be a smudge. Those get their
+   name under the shape instead, where an atlas puts the name of anything too
+   small to carry one, and the picture opens out to make room. The threshold is
+   read against GEO_LBL_W's own metric — the tracked capitals a name is set in
+   — which is why it is not the round number it looks like it should be. */
+function ctryVB(it){
   const g = ctryGeom(it);
+  if(!g) return null;
+  const lb = ctryOn(it, 'lbl') ? geoRegLabel(g.proj, g.key) : null;
+  const under = lb && lb.fs < g.u / 110 ? g.u / 9 : 0;
+  return { g, lb, under,
+           vb: [g.vb[0], g.vb[1], g.vb[2], under ? g.r(g.vb[3] + under * 1.5) : g.vb[3]] };
+}
+function ctrySVG(it){
+  const G = ctryVB(it), g = G && G.g;
   if(!g) return '<svg class="ctrysvg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 62"' +
     ' style="aspect-ratio:100/62"><text class="ctryno" x="50" y="38">?</text></svg>';
-  const r = g.r, sw = g.u / 190;
-  /* The card is framed on the country, so almost every name fits it at a
-     readable size — Chile's is thin because Chile is thin. The exception is an
-     archipelago: the Marshall Islands are a thousandth of their own box, and a
-     name written inside one of those islands would be a smudge. Those get
-     their name under the shape instead, where an atlas puts the name of
-     anything too small to carry one, and the picture opens out to make room. */
-  const lb = (it.lbl == null || it.lbl) ? geoCoLabel(g.proj, g.i) : null;
-  const under = lb && lb.fs < g.u / 60 ? g.u / 9 : 0;
-  const vb = [g.vb[0], g.vb[1], g.vb[2], under ? r(g.vb[3] + under * 1.5) : g.vb[3]];
+  const r = g.r;
+  /* THE PEN IS THE ARRANGEMENT'S, NOT THE CARD'S. A card on its own is drawn at
+     one country across the picture and its outline is a fraction of that span.
+     Clicked together, the cards share one scale — and an outline that stayed a
+     fraction of each country's OWN span would draw Belgium's coast four times
+     finer than France's, which reads as Belgium drawn faintly rather than as
+     Belgium drawn small. `gu` is the run's own span, written onto every card of
+     it by ctryWeigh, and the outline is measured against that.
+
+     THE TYPE IS NOT. A pen is the map's and a name is the shape's: a Brussels
+     set at France's scale is wider than Belgium and is cut off by the edge of
+     its own card, and a country too small to carry its capital's name at a
+     readable size is a country that is small here — which is the true thing,
+     and what an atlas shows. So `u` is the pen and `g.u` is everything set in
+     type, and the two are different on purpose. */
+  const u = it.gu > 0 ? it.gu : g.u, sw = u / 190;
+  const lb = G.lb, under = G.under, vb = G.vb;
   let s = '<svg class="ctrysvg" xmlns="http://www.w3.org/2000/svg" viewBox="' + vb.join(' ') +
     '" style="aspect-ratio:' + vb[2] + '/' + vb[3] + '">';
-  if(it.ctx){
+  if(ctryOn(it, 'ctx')){
     /* the neighbours, faintly. It is the world's own path, in the world's own
        units, and the edge of the picture is what crops it — no clip, no second
        projection, and the memoised string the map is already drawn from */
@@ -1263,14 +1592,79 @@ function ctrySVG(it){
     s += '<g class="ctxall" stroke-width="' + r(sw * 0.7) + '">' + copy(0) +
       (W && g.b.x1 > W ? copy(W) : '') + (W && g.b.x0 < 0 ? copy(-W) : '') + '</g>';
   }
-  s += '<path class="ctryland" d="' + geoCoPath(g.proj, g.look, g.i, 1) +
-       '" stroke-width="' + r(sw) + '"/>';
+  const shape = geoRegPath(g.proj, g.look, g.key, 1);
+  /* ---- the ink ----
+     A country is one outline and the fill carries it. A continent is a set of
+     countries filled as one — the even-odd rule unions them, because they meet
+     exactly along the arcs they share — and its ink is two pens rather than
+     one: the borders inside it, and the coast round the outside of it. Stroking
+     the fill instead would draw every internal border at the weight of a coast,
+     which is the one thing a plate of a continent must not look like. */
+  const ink = g.cont
+    ? '<path class="ctrybord" d="' + geoRegBord(g.proj, g.look, g.key) +
+      '" stroke-width="' + r(sw * 0.6) + '"/>' +
+      '<path class="ctrycoast" d="' + geoRegCoast(g.proj, g.look, g.key) +
+      '" stroke-width="' + r(sw) + '"/>'
+    : '';
+  s += '<path class="ctryland' + (g.cont ? ' ctryflat' : '') + '" d="' + shape +
+    '" stroke-width="' + r(sw) + '"/>' + ink;
+  /* ---- the land as it really is ----
+     The map's own height, lake and river layers, at the country's own distance
+     and CLIPPED TO THE COUNTRY. That clip is the whole difference between the
+     two pictures and it is deliberate: a map is a piece of the world and its
+     rivers run off the edge of it, but a card is one country, and a card whose
+     water and terrain spilled over the border into a neighbour it does not
+     draw would read as a mistake. So the border is where they stop — which is
+     also what an atlas does on the page facing a country's own entry.
+
+     The window handed down is the country's own box, so a card of Luxembourg
+     contours Luxembourg and not the world, and the step is the finest there is
+     because nothing here zooms: this is the one distance the card is ever seen
+     at. Both are memoised in js/lib/atlas.js, so a second card of the same
+     country costs nothing at all. */
+  const rel = ctryOn(it, 'rel'), lak = ctryOn(it, 'lak'), riv = ctryOn(it, 'riv');
+  if(rel || lak || riv){
+    /* Fiji's frame sits just past the 180th and the field's does not, so the
+       window is asked for in the world's own frame and the answer carried back
+       — the same carry ctryCapXY does for the capital */
+    const wr = geoProj(g.proj).wrap;
+    const sh = wr ? Math.round(((g.b.x0 + g.b.x1) / 2 - wr / 2) / wr) * wr : 0;
+    const win = { x0: g.b.x0 - g.m - sh, y0: g.b.y0 - g.m,
+                  x1: g.b.x1 + g.m - sh, y1: g.b.y1 + g.m };
+    /* the card's own zoom, counted in the octaves a map counts in: the picture
+       is the country's span and not the world's, so a card of Luxembourg is
+       nine steps in and a card of Russia is barely one. The detail step follows
+       from it exactly as it does on a map — which is what keeps a card of
+       Russia from contouring a sixth of the planet a cell at a time. */
+    const lod = atlLod(Math.round(Math.log2(GEO_W / g.u)));
+    let inner = '';
+    if(rel) for(const b of geoReliefBands(g.proj, g.look, lod, win))
+      inner += '<path fill="' + b.fill + '" d="' + b.d + '"/>';
+    if(lak || riv){
+      const w = geoDetailPaths(g.proj, g.look, lod, win);
+      if(lak && w.lak) inner += '<path class="ctrylake" d="' + w.lak +
+        '" stroke-width="' + r(sw * 0.7) + '"/>';
+      if(riv && w.riv) inner += '<path class="ctryriver" d="' + w.riv +
+        '" stroke-width="' + r(sw * 0.9) + '"/>';
+    }
+    if(inner){
+      const cp = 'ctryc-' + esc(String(it.id));
+      s += '<defs><clipPath id="' + cp + '"><path d="' + shape + '"/></clipPath></defs>' +
+        '<g clip-path="url(#' + cp + ')"' + (sh ? ' transform="translate(' + r(sh) + ' 0)"' : '') +
+        '>' + inner + '</g>' +
+        /* the outline again, over the top: the fill under it has been painted
+           over, and half of a stroke sits inside its own shape */
+        (g.cont ? ink : '<path class="ctryedge" d="' + shape + '" stroke-width="' + r(sw) + '"/>');
+    }
+  }
   if(lb) s += under
-    ? '<text class="atconame" x="' + r((g.b.x0 + g.b.x1) / 2) + '" y="' + r(g.b.y1 + g.m + under * 0.85) +
-      '" font-size="' + r(under) + '" stroke-width="' + r(under * 0.16) + '">' +
-      esc(geoCoName(g.i)) + '</text>'
+    ? '<text class="atconame" x="' + r((g.b.x0 + g.b.x1) / 2 + atlNameX(under)) +
+      '" y="' + r(g.b.y1 + g.m + under * 0.85) +
+      '" font-size="' + r(under) + '" stroke-width="' + r(under * ATL_HALO) + '">' +
+      esc(geoRegName(g.key)) + '</text>'
     : atlNameSVG(lb, r);
-  if(it.cp == null || it.cp){
+  if(ctryOn(it, 'cp') && g.cont) s += ctryCapsSVG(G, sw);
+  else if(ctryOn(it, 'cp')){
     const c = geoCoCapitals(g.i)[0];
     if(c){
       const q = ctryCapXY(g, c), fs = g.u / 21, dot = g.u / 80;
@@ -1290,9 +1684,277 @@ function ctryRedraw(el, it, page){
   const old = el.querySelector('svg.ctrysvg');
   if(old) old.outerHTML = ctrySVG(it);
 }
-/* one of the card's three switches, and the button that says which way it is */
+
+/* ================= countries that click together =================
+   Two cards of countries that share a border, brought near each other on the
+   paper, snap into the arrangement the world has them in — and then move as
+   one until they are pulled apart.
+
+   THE ONE IDEA THIS RESTS ON: a card's viewBox IS its country's box in world
+   units, so two cards are in register exactly when they are drawn at the same
+   number of percent per world unit and their viewBox origins stand that many
+   percent apart. There is no second projection, no re-render, no shared
+   picture — it is one multiplication per card, and it is why a Belgium that
+   has clicked onto France is really Belgium where France's border leaves off
+   rather than a picture arranged to look like it.
+
+   `glue` names ONE other card, and an arrangement is the connected run of
+   them — the same shape a chain of `[[links]]` has, and for the same reason: a
+   set has to be stored somewhere and an id on each end stores it without a
+   table for core to know about. Whichever card the hand is on is the one the
+   rest are laid out from, so there is no leader to lose and no order to keep.
+
+   THE HAND IS THE ONLY THING THAT DECIDES SCALE. A card dragged up to another
+   takes that one's scale, because that one is standing still and the reader is
+   looking at it. When it cannot — Luxembourg's scale would put France six
+   sheets wide — the two swap parts and the small one comes to the big one
+   instead. Either way exactly one card is asked to move and the reader was
+   already moving it. */
+
+/* how many percent of the sheet's HEIGHT one percent of its width is worth.
+   x, y and w are all percentages, but not all of the same thing. */
+const ctryAsp = () => pgW() / pgH();
+/* ---- when two countries click ----
+   TWICE TOUCHING, and both times it is the same question asked of two different
+   pictures. On the paper: has the reader actually brought these two shapes
+   together? In the world: are they two countries that meet? Neither is a
+   distance the reader has to guess at, and there is no third number.
+
+   The first is the hitbox, and it wants to be small — while a card is inside it
+   the click is on offer and the card lights up, and everywhere else the card is
+   simply being moved. It used to be a card's box plus a further eighth of the
+   sheet, which is most of the paper and made the two of them fight the hand.
+   It is now the countries' own boxes, meeting.
+
+   WHAT IS DELIBERATELY NOT ASKED is whether the card is already about where it
+   will land. It cannot be: two cards of the same width are at two different
+   scales, so a Spain brought up against a France has to grow by half to sit
+   under it, and no drop can be both touching now and touching after. Bringing
+   them together is the whole of what the reader has to do; putting them right
+   is the whole of what the click is for. */
+const CTRY_TOUCH = 0.06;                           // of the smaller country: how near still counts as touching
+const CTRY_TOUCHMAX = 1.5;                         // …and never further apart than this, in width-%
+const CTRY_SIZE = [0.4, 260];                      // and how big a card may be asked to become
+/* the country cards on a page, in the order they are drawn */
+const ctryCards = page => (page && page.items || []).filter(x => x.type === 'country' && ctryGeom(x));
+/* everything stuck to this one, itself excluded — the run walked both ways,
+   because `glue` is written on whichever card arrived second */
+function ctryStuck(page, it){
+  const all = ctryCards(page), seen = new Set([it.id]), q = [it], out = [];
+  while(q.length){
+    const c = q.pop();
+    for(const o of all){
+      if(seen.has(o.id) || (o.glue !== c.id && c.glue !== o.id)) continue;
+      seen.add(o.id); out.push(o); q.push(o);
+    }
+  }
+  return out;
+}
+const ctryHeld = (page, it) => it.type === 'country' && ctryStuck(page, it).length > 0;
+/* one card's frame: where its viewBox stands, and what a world unit is worth
+   in it. Everything below is this and arithmetic. */
+function ctryFrame(it){
+  const G = ctryVB(it);
+  return G && it.w > 0 ? { vb: G.vb, proj: G.g.proj, s: it.w / G.vb[2], x: it.x, y: it.y } : null;
+}
+/* where `it` must stand, and how wide it must be, for its country to sit
+   where the world puts it inside the frame `f` */
+function ctryPlace(f, it){
+  const G = ctryVB(it);
+  if(!G || G.g.proj !== f.proj) return null;
+  const W = geoProj(f.proj).wrap;
+  let dx = G.vb[0] - f.vb[0];
+  /* the seam down the back of the world: Alaska and Chukotka are neighbours
+     and their boxes are a world apart, so the offset is taken the short way */
+  if(W) dx -= Math.round(dx / W) * W;
+  return { w: f.s * G.vb[2], x: f.x + dx * f.s,
+           y: f.y + (G.vb[1] - f.vb[1]) * f.s * ctryAsp() };
+}
+/* ---- one space to measure in ----
+   x and w are percentages of the sheet's width and y is a percentage of its
+   height, which is three quantities and two units. A box here is all four in
+   WIDTH-percent, and everything that compares two cards compares boxes. */
+function ctryBox(x, y, w, h){ return { x, y: y / ctryAsp(), w, h }; }
+/* THE COUNTRY'S OWN BOX, not the card's, wherever the card is standing. A card
+   is its country plus a margin all the way round — six percent of the span, so
+   a shape has air and does not sit against its own edge — and two margins
+   meeting is not two countries meeting. This is the box whose edge the reader
+   can see, and it is the only box anything below measures. */
+function ctryLandAt(p, it){
+  const G = ctryVB(it);
+  if(!G || !(p.w > 0)) return null;
+  const s = p.w / G.vb[2], b = G.g.b;
+  return ctryBox(p.x + (b.x0 - G.vb[0]) * s, p.y + (b.y0 - G.vb[1]) * s * ctryAsp(),
+                 (b.x1 - b.x0) * s, (b.y1 - b.y0) * s);
+}
+const ctryLandOf = it => ctryLandAt(it, it);       // …which is where it is standing now
+/* HOW NEAR TWO CARDS ARE IS THE GAP BETWEEN THEIR BOXES, and it has to be:
+   two middles is the obvious measure and it is wrong, because a card fifty
+   times the size of another has its middle a quarter of a sheet from its own
+   corner. Luxembourg brought up against France is touching it and half a sheet
+   from its middle. Nought if they touch or overlap. */
+function ctryGap(a, b){
+  const dx = Math.max(a.x - (b.x + b.w), b.x - (a.x + a.w), 0);
+  const dy = Math.max(a.y - (b.y + b.h), b.y - (a.y + a.h), 0);
+  return Math.hypot(dx, dy);
+}
+/* …and how much of a gap still reads as none. A fraction of the smaller of the
+   two, so the same gesture works at any size the cards are drawn at. */
+const ctryTouches = (a, b) => ctryGap(a, b) <=
+  Math.min(CTRY_TOUCHMAX, CTRY_TOUCH * Math.min(Math.max(a.w, a.h), Math.max(b.w, b.h)));
+/* would this card go there? Only if what it becomes is a card — not a speck
+   and not three sheets — and only if, once it is there, the two countries are
+   touching. That second test is the world's own, and it is the whole of what
+   keeps Japan from clicking onto Brazil when it is dropped right on top of it:
+   they ARE together on the paper, and the place the world puts them is a world
+   apart. It is also why Portugal will not click straight onto France: Spain is
+   between them and they do not meet. */
+function ctryTry(f, move, stay){
+  const p = ctryPlace(f, move);
+  if(!p || !(p.w >= CTRY_SIZE[0] && p.w <= CTRY_SIZE[1])) return null;
+  const there = ctryLandAt(p, move), here = ctryLandOf(stay);
+  return there && here && ctryTouches(there, here) ? { at: p, far: ctryGap(there, here) } : null;
+}
+/* the best click this card could make: which other card, which of the two
+   takes the other's scale, and where whichever of them moves ends up */
+function ctrySnap(page, it){
+  const mine = new Set([it.id, ...ctryStuck(page, it).map(x => x.id)]);
+  const lMe = ctryLandOf(it), fMe = ctryFrame(it);
+  if(!lMe || !fMe) return null;
+  let best = null;
+  for(const A of ctryCards(page)){
+    if(mine.has(A.id)) continue;
+    const lA = ctryLandOf(A), fA = ctryFrame(A);
+    if(!lA || !fA) continue;
+    if(!ctryTouches(lA, lMe)) continue;            /* not brought together: not asked */
+    /* the card in the hand takes the standing one's frame if it can. If it
+       cannot — the standing one is so much smaller that this card at its scale
+       would be sheets wide — then the standing one comes to this one instead,
+       which is the same arrangement reached from the other end. */
+    let r = ctryTry(fA, it, A), move = it;
+    if(!r){ r = ctryTry(fMe, A, it); move = A; }
+    if(!r) continue;
+    const score = ctryGap(lA, lMe) + r.far;
+    if(best && best.score <= score) continue;
+    best = { score, on: A, move, at: r.at };
+  }
+  return best;
+}
+/* a card put where a placement says, records and DOM together. The width is
+   written straight onto the element: applyWidth is core's, and this is one
+   number of the same kind. */
+function ctrySet(it, p){
+  it.x = p.x; it.y = p.y; it.w = p.w;
+  const el = document.querySelector('#pageHost .item[data-id="' + it.id + '"]');
+  if(!el) return;
+  el.style.left = it.x + '%'; el.style.top = it.y + '%'; el.style.width = it.w + '%';
+}
+/* THE ONE THING THAT LAYS AN ARRANGEMENT OUT: every card stuck to this one,
+   put where this one's frame says it goes. Move a card and call this and the
+   whole run follows; rescale a card and call this and the whole run rescales.
+   It is the same call either way, which is why there is no leader. */
+function ctryLayFrom(page, it){
+  const f = ctryFrame(it);
+  if(!f) return;
+  for(const o of ctryStuck(page, it)){
+    const p = ctryPlace(f, o);
+    if(p) ctrySet(o, p);
+  }
+}
+/* one pen for the whole run, and the span it is measured against is the
+   BIGGEST country in the arrangement rather than whichever card the hand
+   happens to be on — so the weight of every line on the paper does not depend
+   on what was dragged last. It changes only when the membership does, which is
+   why it is not part of laying an arrangement out: that runs every frame of a
+   drag, and this redraws pictures. */
+function ctryWeigh(page, it){
+  const run = [it, ...ctryStuck(page, it)].filter(ctryGeom);
+  const gu = run.length > 1 ? Math.max(...run.map(x => ctryGeom(x).u)) : 0;
+  for(const x of run){
+    const was = x.gu || 0;
+    if(gu) x.gu = gu; else delete x.gu;
+    if((x.gu || 0) === was) continue;
+    const el = document.querySelector('#pageHost .item[data-id="' + x.id + '"]');
+    if(el) ctryRedraw(el, x, page);
+  }
+}
+/* ---- the hand ----
+   core/drag.js calls these two and knows nothing else about any of it. */
+function ctryChain(page, it){
+  if(it.type !== 'country' || !ctryStuck(page, it).length) return null;
+  return { carry: () => ctryLayFrom(page, it) };
+}
+/* while the card is under the hand: the run comes along, and the nearest click
+   is shown by putting whichever card moves where it would land. A preview that
+   is the answer itself is the only one that cannot lie about it. */
+function ctryDragMove(page, it, chain){
+  if(chain) chain.carry();
+  if(it.type !== 'country') return null;
+  const snap = ctrySnap(page, it);
+  if(!snap) return null;
+  const to = document.querySelector('#pageHost .item[data-id="' + snap.on.id + '"]');
+  return to ? { el: to, it: snap.on, page, snap } : null;
+}
+/* let go: the click itself. Both ends are written — `glue` on the card that
+   moved — and then the run is laid out from it, so a card arriving with three
+   already stuck to it brings all three into the new frame at once. */
+function ctryDragDrop(page, it, drop){
+  const s = drop && drop.snap;
+  if(!s) return null;
+  const was = { x: s.move.x, y: s.move.y, w: s.move.w };
+  ctrySet(s.move, s.at);
+  /* whichever of the two moved is the one that names the other: the card that
+     stood still keeps whatever it was already stuck to */
+  (s.move === it ? it : s.on).glue = (s.move === it ? s.on : it).id;
+  ctryLayFrom(page, s.move);
+  if(s.move !== it) ctryLayFrom(page, it);
+  ctryWeigh(page, s.move);
+  ctryUnglueBtns();
+  queueSave(page.id);
+  SND.pop();
+  return was;
+}
+/* ---- and pulling them apart ----
+   One card leaves the run: what named it lets go, and what it named lets go of
+   it. Nothing moves — a card that has just been unstuck is exactly where the
+   reader was looking at it, and the next drag takes it away on its own. */
+function ctryUnglue(page, it){
+  const others = ctryStuck(page, it);
+  if(!others.length && it.glue == null) return false;
+  delete it.glue;
+  for(const o of ctryCards(page)) if(o.glue === it.id) delete o.glue;
+  /* the card that left, and whatever is left of what it left — a run that has
+     lost its biggest country is drawn with a finer pen, and says so at once */
+  ctryWeigh(page, it);
+  for(const o of others) ctryWeigh(page, o);
+  ctryUnglueBtns();
+  queueSave(page.id);
+  SND.unpop();                                     /* the click, played backwards */
+  return true;
+}
+/* the button knows whether it is lit, and the arrangement changes under it —
+   so every card's button is asked again whenever any of them does */
+function ctryUnglueBtns(){
+  for(const el of document.querySelectorAll('#pageHost .item[data-type="country"]')){
+    const b = el.__ctryglue;
+    if(b) b.classList.toggle('on', !!(b.__it && (b.__it.glue != null ||
+      ctryCards(b.__page).some(o => o.glue === b.__it.id))));
+  }
+}
+/* ---- the card's switches, and what a missing one means ----
+   The name and the capital are ON unless they were turned off: they were on
+   the card before there was a field to say so, and an old card must not lose
+   them. The neighbours, the height, the lakes and the rivers are OFF unless
+   they were turned on, for the mirror of the same reason — a card made before
+   they existed, or dragged off a map that was not showing them, must not come
+   back from this change wearing something nobody asked it for.
+
+   One table, read by the picture, by the switch and by the button's own face,
+   so there is exactly one answer to the question. */
+const CTRY_DEF = { lbl: 1, cp: 1, ctx: 0, rel: 0, lak: 0, riv: 0 };
+const ctryOn = (it, k) => it[k] == null ? !!CTRY_DEF[k] : !!it[k];
 function ctryFlip(el, it, page, key, b, label){
-  it[key] = (it[key] == null || it[key]) ? 0 : 1;
+  it[key] = ctryOn(it, key) ? 0 : 1;
   b.title = label + ': ' + (it[key] ? 'on' : 'off');
   b.classList.toggle('on', !!it[key]);
   queueSave(page.id); ctryRedraw(el, it, page); SND.tick();
@@ -1306,56 +1968,134 @@ function ctryGlyph(it){
   return svgIcon(sheet +
     '<g transform="translate(48 50) scale(' + (Math.round(k * 1e4) / 1e4) + ') translate(' +
     rd1(-(g.b.x0 + g.b.x1) / 2) + ' ' + rd1(-(g.b.y0 + g.b.y1) / 2) + ')">' +
-    '<path class="fplate" d="' + geoCoPath(g.proj, 'crisp', g.i, 1) + '"/></g>' +
+    '<path class="fplate" d="' + geoRegPath(g.proj, 'crisp', g.key, 1) + '"/></g>' +
     extBand('LAND'));
 }
 
+/* One maker for both entries in the menu. A card is a REGION — one country, or
+   a whole continent — and which one is either what came off the map or the one
+   the entry starts you with. The type stays `country` whichever it is: it is
+   what every card ever saved calls itself, and a second type would be this
+   whole half of the file again for the sake of a word. */
+function ctryNew(base, def, w){
+  const n = ATL_NEXT; ATL_NEXT = null;
+  return { ...base, type:'country', w, rot:0, cap:'',
+           co: (n && n.co) || def, proj: (n && n.proj) || 'mercator',
+           look: (n && n.look) || 'smooth', lbl:1, cp:1, ctx:0,
+           rel: (n && n.rel) || 0, lak: (n && n.lak) || 0, riv: (n && n.riv) || 0 };
+}
+/* is this card a whole continent? — which changes what two of its buttons say
+   and nothing else at all */
+const ctryCont = it => geoRegKind(geoRegKeyOf(it.co)) === 'ct';
+
 defineItem('country', {
-  add: { country: base => {
-    const n = ATL_NEXT; ATL_NEXT = null;
-    return { ...base, type:'country', w:26, rot:0, cap:'',
-             co: (n && n.co) || 'France', proj: (n && n.proj) || 'mercator',
-             look: (n && n.look) || 'smooth', lbl:1, cp:1, ctx:0 };
-  } },
+  add: { country: base => ctryNew(base, 'France', 26),
+         continent: base => ctryNew(base, 'Africa', 40) },
   sound: 'plop',
+  /* it goes into a folder, but two cards dropped on each other never make one:
+     on the paper they are shapes being pushed about, and touching is how they
+     click together. See foldPair() in items/media/folder.js. */
   fileable: true,
+  filedOnly: true,
   html: it => '<figure class="body ctry">' + ctrySVG(it) + '<figcaption></figcaption></figure>',
   tools(mk, it, el, page){
-    mk('⌕', 'Which country', b => atlAsk(b, it, el, page));
+    mk('⌕', 'Which country — or which continent', b => atlAsk(b, it, el, page));
     const sw = (g, k, t) => { const b = mk(g, t, x => ctryFlip(el, it, page, k, x, t));
-                              b.classList.toggle('on', it[k] == null || !!it[k]); return b; };
+                              b.classList.toggle('on', ctryOn(it, k)); return b; };
     sw('A', 'lbl', 'Its name across it');
-    sw('★', 'cp', 'Its capital marked');
+    sw('★', 'cp', ctryCont(it) ? 'The capitals in it, as many as will fit' : 'Its capital marked');
     sw('◌', 'ctx', 'The countries round it, faintly');
+    sw('▲', 'rel', 'The height of its land');
+    sw('◉', 'lak', 'Its lakes');
+    sw('≈', 'riv', 'Its rivers');
     mk('◈', 'Outlines — drawn round, or straight off the data', b => {
       it.look = it.look === 'crisp' ? 'smooth' : 'crisp';
       b.title = 'Outlines: ' + (it.look === 'crisp' ? 'straight' : 'round');
       queueSave(page.id); ctryRedraw(el, it, page);
     });
+    /* THE PROJECTION IS THE ARRANGEMENT'S, not one card's. Two cards clicked
+       together are in register because their boxes are in one frame, and a
+       card reprojected on its own would be in a frame of its own — the same
+       border in two places. So it carries the run with it, and the run is laid
+       out again from it. */
     mk('◎', 'Projection — flat or Mercator', b => {
       it.proj = atlProj(it) === 'mercator' ? 'equirect' : 'mercator';
       b.title = 'Projection: ' + geoProj(it.proj).label;
-      queueSave(page.id); ctryRedraw(el, it, page);
+      for(const o of ctryStuck(page, it)){
+        o.proj = it.proj;
+        const oe = document.querySelector('#pageHost .item[data-id="' + o.id + '"]');
+        if(oe) ctryRedraw(oe, o, page);
+      }
+      queueSave(page.id); ctryRedraw(el, it, page); ctryLayFrom(page, it);
     });
+    /* the run comes apart here, and only here: a drag never breaks one, so a
+       card cannot be shaken loose by accident */
+    const ug = mk('⊗', 'Unstick it from its neighbours', () => {
+      if(!ctryUnglue(page, it)) SND.nope();
+    });
+    ug.__it = it; ug.__page = page; el.__ctryglue = ug;
+    ug.classList.toggle('on', !!(it.glue != null || ctryCards(page).some(o => o.glue === it.id)));
   },
   icon: it => ctryGlyph(it),
   label: it => it.co || 'Country',
   meta: it => {
-    const i = geoCoIndexOf(it.co), c = i < 0 ? null : geoCoCapitals(i)[0];
-    return (c ? c.name + ' · ' : '') + geoProj(atlProj(it)).label;
+    const k = geoRegKeyOf(it.co), cont = geoRegKind(k) === 'ct';
+    const c = !k || cont ? null : geoCoCapitals(geoRegNum(k))[0];
+    const n = cont ? geoContinents()[geoRegNum(k)].cos.length + ' countries' : c ? c.name : '';
+    return (n ? n + ' · ' : '') + geoProj(atlProj(it)).label;
   },
   css: `
-/* ---------- one country ---------- */
-.ctry{display:block}
+/* ---------- one country ----------
+   THE CARD IS THE COUNTRY AND NOT A CARD. No paper behind it, no padding round
+   it and no rectangle of shadow under it: what lifts off the page is the shape
+   itself, through a drop-shadow that follows the alpha the SVG actually paints.
+   The same three lines .solid, .mol and .fey use, for the same reason — the
+   thing on the paper is the drawing, and a box round it is furniture.
+
+   The caption keeps its place under the shape but stops announcing itself: a
+   grey word "caption" floating under Chile with no card to sit on reads as a
+   mistake, so it is offered while the card is selected and silent otherwise. */
+.ctry{display:block;background:none;padding:0;box-shadow:none}
+.ctry figcaption{padding-top:calc(var(--scale)*4px)}
+.ctry figcaption:empty::before{content:none}
+.item.sel .ctry figcaption:empty::before{content:"caption";opacity:.35}
+.item.sel .ctry figcaption:empty{min-height:1em}
 /* the picture CLIPS, and it has to: the neighbours are the whole world's path
    drawn in the world's own units, and it is the edge of the card that crops it
    to the country. The name that goes under a shape too small to carry one is
    inside the viewBox rather than outside it — see ctrySVG */
 svg.ctrysvg{display:block;width:100%;height:auto;background:none;overflow:hidden;
-  shape-rendering:geometricPrecision}
+  shape-rendering:geometricPrecision;
+  filter:drop-shadow(0 calc(var(--scale)*3px) calc(var(--scale)*5px) rgba(0,0,0,.28))}
+/* …and not while it is being carried: core owns the shadow under a moving item
+   and its is the honest one, so the shape's own comes off rather than being
+   rasterised a second time under the hand */
+.item.dragging svg.ctrysvg{filter:none}
+/* one country about to click onto another. core/drag.js marks it the way it
+   marks a folder about to swallow something; this says the opposite thing —
+   not "in here" but "up against me" — so it is a line along the shape rather
+   than a box round the card. */
+.item[data-type="country"].dropinto .body{box-shadow:none}
+.item[data-type="country"].dropinto svg.ctrysvg{
+  filter:drop-shadow(0 0 calc(var(--scale)*2px) var(--accent))
+         drop-shadow(0 0 calc(var(--scale)*7px) color-mix(in srgb,var(--accent) 55%,transparent))}
 svg.ctrysvg *{stroke-linejoin:round;stroke-linecap:round}
 .ctrysvg path.ctryland{fill:color-mix(in srgb,var(--accent2) 26%,var(--paper));fill-rule:evenodd;
   stroke:var(--ink)}
+/* the height, the lakes and the rivers, in the map's own colours so the card
+   and the map it came off read as one picture. The bands carry their fill as
+   an attribute — they are nine different colours and no rule could name them —
+   so no rule here may set a fill on them. The outline is drawn a second time
+   over the top of all of it; see ctrySVG. */
+.ctrysvg path.ctrylake{fill:color-mix(in srgb,var(--accent2) 34%,var(--paper));fill-opacity:.92;
+  fill-rule:evenodd;stroke:color-mix(in srgb,var(--accent2) 62%,var(--ink));stroke-opacity:.92}
+.ctrysvg path.ctryriver{fill:none;stroke:color-mix(in srgb,var(--accent2) 72%,var(--ink));stroke-opacity:.75}
+.ctrysvg path.ctryedge{fill:none;stroke:var(--ink)}
+/* a continent's fill carries no outline of its own — the ink is the two pens
+   below, and stroking the fill would draw every border in it as a coast */
+.ctrysvg path.ctryflat{stroke:none}
+.ctrysvg path.ctrycoast{fill:none;stroke:var(--ink)}
+.ctrysvg path.ctrybord{fill:none;stroke:var(--ink);stroke-opacity:.34}
 .ctrysvg .ctxall{fill:none}
 .ctrysvg path.ctxland{fill:color-mix(in srgb,var(--paper) 93%,var(--ink));fill-rule:evenodd;stroke:none}
 .ctrysvg path.ctxbord{fill:none;stroke:var(--ink);opacity:.22}
@@ -1366,5 +2106,9 @@ svg.ctrysvg *{stroke-linejoin:round;stroke-linecap:round}
 `
 });
 defineIcon('country', '<path d="M4.6 8.2 8 5l3.4 2 3.6-1.4 4.4 3.1-1.1 4.6 1 3.5-3.7 2.6-4.2-.6-3.4 2-3.8-2.6.6-3.9-2-2.9z"/>');
+defineIcon('continent', '<path d="M3.3 8.6 7.2 4.1l4.7 1.6 5.1-1.9 3.7 3.5-1.6 5.5 1.2 4-5 3.5-5.1-1.1-4.3 2.3-3.6-3.4 1.1-4.7z"/>' +
+  '<path d="M7.2 4.1 9.9 11l-3.8 3.7"/><path d="M9.9 11l6.6 1.5"/>');
 defineTool({ kind:'country', cat:'science', label:'Country', icon:'country', order:65,
   hint:'One country on its own — its shape, its name and its capital. Or drag one straight out of the World map' });
+defineTool({ kind:'continent', cat:'science', label:'Continent', icon:'continent', order:66,
+  hint:'A whole continent, drawn in one piece with its countries inside it. Or set the World map to pick continents and drag one out' });

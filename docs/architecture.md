@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 2146 assertions, driven in headless Firefox
+tools/verify/       the harness: 2355 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -136,7 +136,7 @@ right up until it loses the session.
 
 | File | Lines | What it does |
 |---|---:|---|
-| `registry.js` | 188 | `defineItem()`, `defineTool()`, `defineSelectionAction()`, `defineMathBox()`, `defineCodePen()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
+| `registry.js` | 189 | `defineItem()`, `defineTool()`, `defineSelectionAction()`, `defineMathBox()`, `defineCodePen()`, `addCSS()`, `onNoteOpen()` — the seam every feature plugs into |
 | `store.js` | 68 | IndexedDB for the note, its sheet and its blobs, with an in-memory fallback |
 | `util.js` | 95 | `uid` `$` `clamp` `esc` `copyText`, sheet sizes and page units, the theme palettes, the stored-HTML sanitiser |
 | `state.js` | 39 | the open note, its sheet, the selection, the zoom — and `sheet()`, the only way to ask for the paper |
@@ -147,7 +147,7 @@ right up until it loses the session.
 | `richtext.js` | 34 | editing text in place, and wrapping a selection in `$$…$$` — the compiling itself is `richify()`/`plainify()` in `lib/ticks.js` |
 | `media.js` | 21 | handing stored blobs to the page as object URLs |
 | `item.js` | 292 | **`buildItem()`** — builds any item from its spec; also what an item owns and deleting one or a selection |
-| `drag.js` | 188 | rotate, drag and resize — the throw for one item and rigid movement for a selected group |
+| `drag.js` | 205 | rotate, drag and resize — the throw for one item, rigid movement for a selected group, and three lines that ask a feature whether the thing being dragged is part of an arrangement that travels and resizes as one (`ctryChain`), and whether it has found something to click onto (`ctryDragMove` / `ctryDragDrop`). Whether the thing it is over may be filed with it is asked of the pair (`foldPair`), not of either one, so a feature can go into a folder without ever starting one. Core knows no more about what an arrangement is than that |
 | `select.js` | 319 | the toolbar's one-shot marquee, the selected-id set, bulk deletion and feature-owned group actions |
 | `page.js` | 101 | **`buildPage()`** — the paper, its items and its ink, live or static |
 | `sheet.js` | 207 | **`growSheet()`** — the rails, and every stored fraction remapped so nothing moves when the paper does |
@@ -170,7 +170,7 @@ right up until it loses the session.
 | `icons.js` | 72 | the line-icon set — `icn('table')` — and `defineIcon()` for a feature's own. Loads ahead of the items so they can register icons while loading |
 | `glass.js` | 69 | the glass material and the warp that every floating panel shares |
 | `palette.js` | 224 | the palette — shelves, labelled groups, tiles and search, drawn from the registry |
-| `props.js` | 328 | the properties popover — glass sliders, steppers, the sweep dial, a deed button and a row of colour swatches with a wheel; `openProps()` for any feature with measurements, and `placePanel()`, the above-then-beside-then-below rule every panel an item opens off its toolbar follows |
+| `props.js` | 362 | the properties popover — glass sliders, steppers, the sweep dial, a deed button, a row of colour swatches with a wheel and a row of named chips (`pick`, each in its own colours — the deck's looks are chosen from one); `openProps()` for any feature with measurements, and `placePanel()`, the above-then-beside-then-below rule every panel an item opens off its toolbar follows |
 | `mathpad.js` | 549 | writing maths: the `$` that pairs itself and opens out into a display block (and the `` ` `` that pairs itself by `lib/ticks.js`'s rules), the completion list built from the compiler's own tables, and the formula typeset under the caret as it is written. It serves contenteditable canvas writing and plain Markdown textareas through one selection/text seam. The rules are plain functions over (text, offset), so the harness can drive them without a caret |
 | `tickpad.js` | 45 | typing inside a ```fence``` in any writing box: ⇥ and ⇧⇥, ⏎ keeping the indent, brackets and quotes closing themselves. None of the rules are here — they are the code cell's, reached through the registry's code pen |
 | `markpad.js` | 91 | what the keyboard does to the marks in a writing box. A list: ⏎ making the next bullet and ending the list on an empty one, ⇥ and ⇧⇥ moving one in and out. None of the rules are here either — they are `lib/marks.js`'s, and inside a fence they stand aside for `tickpad.js`. A key another handler has already taken is read off `defaultPrevented`, and an indent is written into the box by hand rather than through the editor's `insertText`, which is free to turn a tab it is handed into a space. Then ⌃B and ⌃I, shared with Markdown through the same plain-text seam, which put the stars round what is picked out or take them off — the shortcut writes the mark rather than markup, so the browser's own bold never gets the key |
@@ -198,7 +198,7 @@ shelf** — a new file under `items/science/` had better call
 | `write/note.js` | 32 | `note` |
 | `write/check.js` | 96 | `check` |
 | `write/code.js` | 865 | `code` — the terminal-style code cell: one hand-rolled scanner driven by a table per language (12 of them), the editor schemes as CSS variables plus a Theme scheme mixed from the note's colours, the copy button, typing that recolours under the caret with brackets that close themselves, the band a long one clips to, and the folder glyph and viewer. `cdKey()` is that keyboard as a plain function over (writing, selection, key), and the code pen it registers is the same cell built into a ```fence``` in a sentence — bar, picker, colours and all, less the traffic lights |
-| `write/deck.js` | 1317 | `deck` — flip cards, the scope, the scoreboard |
+| `write/deck.js` | 1934 | `deck` — flip cards: the eight looks (a set of CSS variables each), widgets off the palette on a card (the feature's own html/mount/wire/tools through the registry, --scale from the card's width), the scope with the throw and its stamps, the scoreboard over a pure score model with the record of runs, and the deck taken to the desk — the same standalone document parked in the store under `desk:<id>` for `desk.html` to become, or saved as a file; the scoreboard's own renderer travels with it |
 | `math/table.js` | 1659 | `table` — the grid, the formula compiler, rows and columns, the band a long one shows, folding it to an icon, reading a workbook in, and handing two columns to a plot |
 | `math/plot.js` | 1572 | `plot` — the coordinate system: the window and its log axes, the lattice (square or polar), ticks that turn into powers of ten and never overlap, one sampler for every kind of curve (explicit, polar, parametric, complex), the marching-squares equations and shaded regions through `lib/contour.js`, the vectors, a table's points, and the axis names you click to edit |
 | `math/plotpanel.js` | 565 | the expressions panel beside a plot — one row per thing drawn, the colour dot that is also the switch, the typeset preview, the keyboard, the polar/log/name footer. Live-only: print and export never build it |
@@ -213,13 +213,13 @@ shelf** — a new file under `items/science/` had better call
 | `science/fits.js` | 617 | `fits` — an astronomy file as a shortcut, and the reader behind it: `hdu.info()`, the header in three aligned columns with a search over all of them, COMMENT and HISTORY runs folded in place, every data unit given as a shape and a type rather than as numbers, and columns you pick and drag off the window onto the sheet, where they land as an ordinary table |
 | `science/molecule.js` | 2606 | `molecule` — the 2D editor with its glass rail and ChemDraw gestures: the ghost the pointer casts ahead of every click and the valence check that refuses the ones that could not exist, the chain and the row of fused rings dragged out under a running count, the ⟮CH₂⟯ₙ repeat bracket that folds a long chain short without touching the molecule, the lasso and its turn/chirality/move/copy menu, the hydrogen bond kept in a list of its own so chem.js never sees it but respected by tidy, the hotkeys, the three drawing styles, the ⌕ name-or-SMILES box, flat transparent 2D/3D SVG and PNG exports plus clipboard-only ChemFig LaTeX with shifted skeletal double bonds, direct whole-widget corner resizing, and the quiet >/< disclosure for a simultaneous live 3D companion, additive correspondence highlighting with a neutral ghost-free pointer and a screen-space aura above the three 3D looks, momentum orbit, and separately coloured measurement picks |
 | `science/feynman.js` | 734 | `feynman` — lattice-aligned particle diagrams, Standard Model vertex validation and transparent SVG, PNG and TikZ-Feynman exports |
-| `science/atlas.js` | 1370 | `atlas` and `country` — a map of the world and one country off it: the layer registry every extra thing drawn on a map goes through (`defineMapLayer`), the view as a longitude, a latitude and a zoom, spring-driven pan with momentum and rubber-banded edges, wheel and pinch zoom about the pointer, eleven layers including the hypsometric height field and the water, the capitals and then the cities that come up to meet you as you go in, a tap that picks the country under it and writes its name across it at whatever size fits inside its own borders, a ring on every country the pen is bigger than, the ⌕ box that walks the map to a country and lights it, a country dragged out of the picture that comes off it as a card of its own, the detail step and the window a frame is built for, and the glass panel of layers built out of the registry |
+| `science/atlas.js` | 2114 | `atlas` and `country` — a map of the world and one region off it, a country or a whole continent: the layer registry every extra thing drawn on a map goes through (`defineMapLayer`), the view as a longitude, a latitude and a zoom, spring-driven pan with momentum and rubber-banded edges, wheel and pinch zoom about the pointer, eleven layers including the hypsometric height field and the water, the capitals and then the cities that come up to meet you as you go in, a tap that picks the country under it — or, with `▣` on, the whole continent it is in — and writes its name across it as an atlas sets one, tracked capitals at a fraction of the room the shape has rather than the biggest that fits; a ring on every country the pen is bigger than, the ⌕ box that walks the map to a country or a continent and lights it, a region pressed and held — or simply dragged, if it is the one already picked — that comes up off the map as a card of its own, shaped like the country rather than boxed in a card, carrying the height, the lakes and the rivers the map was wearing, clipped to its own border — and a plate of a continent drawn the same way, filled in one piece with its borders as hairlines inside it, its coast in the heavier pen and as many of its capitals as the greedy layout can set — and clicking together with its neighbours into an arrangement that is in register with the world and travels, resizes and reprojects as one until `⊗` pulls a card back out of it — the sticky detail step and the window a frame is built for, the heavy layer that waits for the map to stand still and then fades in over the one it replaces, and the glass panel of layers built out of the registry |
 | `media/image.js` | 78 | `image` |
 | `media/video.js` | 87 | `video` |
 | `media/model.js` | 614 | `model` — the `.obj` parser and the shared WebGL canvas |
 | `media/slides.js` | 927 | `slides` — the deck on the sheet, and the reader: the spring-driven reel, the grid of every slide, the filmstrip, the zoom, the notes, and a slide taken out as a picture |
 | `media/file.js` | 448 | `file` — attachments, the icons everything wears in a folder, and the reader |
-| `media/folder.js` | 368 | `folder` |
+| `media/folder.js` | 376 | `folder` |
 | `shapes/solid.js` | 806 | `solid` — five wireframe guides to draw over, each carrying its own measurements |
 | `decor/washi.js` | 33 | `washi` |
 | `decor/sticker.js` | 41 | `sticker` |
@@ -250,7 +250,7 @@ on a task.
 | `pptx.js` | 1907 | `.pptx` → slides that draw themselves as SVG. The same zip, then DrawingML: the colour engine, the preset and freehand geometry, fills and lines, the inheritance chain a slide hangs off, and the text laid out by hand |
 | `chem.js` | 1147 | the chemistry: the molecular graph, implicit hydrogens and lone pairs, Hill formulas and masses, rings and aromaticity, the indexed offline name catalog, a graph hash that names what you draw, SMILES in and out, the 2D layout with exact regular-polygon arcs for constrained rings and rigid-branch untangling for large structures, the 3D embedding and VSEPR |
 | `nuclide.js` | 264 | the physics of the nuclide chart: reading NUBASE in, every decay mode as a step in (protons, neutrons), Q values and separation energies subtracted from the masses, binding energy per nucleon, and the chain down to whatever a nuclide ends on |
-| `atlas.js` | 1110 | the world as numbers: the packed arcs unpacked, the projections (flat and Mercator, each declaring its period), the seam down the back of the world unrolled so a country on both sides of the 180th meridian is drawn on both sides, rings and arcs to path strings — smoothed through their midpoints so a 110m outline stands up to being magnified — memoised per projection and look, and the greedy box layout that decides which city names fit. Then the countries as shapes: every one pulled into a single coordinate frame so an even-odd insideness test means something, which country a point is in (with a reach, for the ones smaller than a finger), the pole of inaccessibility, the largest name that fits wholly inside a country's own outline, the part of a country anyone means by its name, name search over aliases, rivers and lakes, and the height field unpacked and contoured into filled bands by marching squares. Everything it builds is memoised per projection, look, **detail step and window** — the last two being what stops a map drawing the whole planet at full detail to show one country |
+| `atlas.js` | 1421 | the world as numbers: the packed arcs unpacked, the projections (flat and Mercator, each declaring its period), the seam down the back of the world unrolled so a country on both sides of the 180th meridian is drawn on both sides, rings and arcs to path strings — smoothed through their midpoints so a 110m outline stands up to being magnified — memoised per projection and look, and the greedy box layout that decides which city names fit. Then the countries as shapes: every one pulled into a single coordinate frame so an even-odd insideness test means something, which country a point is in (with a reach, for the ones smaller than a finger), the pole of inaccessibility, the size a country's own name is set at — the largest that fits wholly inside its outline, less the air an atlas leaves round one — the part of a country anyone means by its name, name search over aliases, and then **regions**: a country and a continent answer the same five questions through one key, `co:12` or `ct:2`, with a continent's outline split into its own coast and the borders inside it by counting how many of its countries drew each segment. Then rivers and lakes, and the height field unpacked and contoured into filled bands by marching squares. Everything it builds is memoised per projection, look, **detail step and window** — the last two being what stops a map drawing the whole planet at full detail to show one country |
 
 ### `js/data/` — tables, not code
 
@@ -299,6 +299,7 @@ defineItem('note', {
   takes:   (files, at, page) => false,  // claim files dropped on the sheet
   takesRank: 1,              // how keenly, when two features could both want them
   fileable: true,            // may be dropped into a folder (bring icon/label/open)
+  filedOnly: true,           // …into one already there, but never starting a new one
 
   icon:    it => '…',        // how it looks as an icon — in a folder, or folded down
   label:   it => 'name',     // …what it is called under that icon
@@ -428,15 +429,50 @@ at its finest detail whatever it was showing: twenty-seven thousand points into
 a thousand pixels at arm's length, and ninety-nine hundredths of the world
 tessellated off the picture at an inch above Switzerland.
 
-- `atlLod(z)` picks one of four simplification steps, each the size of a pixel
+- `atlStepOf(z, prev)` is the one number the other two come off: the zoom in
+  **whole octaves**, and **sticky** — it takes six tenths of an octave past the
+  step you are on to leave it. The zoom is a spring, and a spring crosses a
+  boundary on the way out, again on the way back and once more settling on it.
+  Read the step off the live zoom and each of those crossings is a rebuild.
+- `atlLod(n)` picks one of four simplification steps, each the size of a pixel
   in degrees at that zoom, so a step never throws away anything the screen could
   have shown. The coarse copies are made in the browser with Douglas-Peucker,
   which keeps the ends of every arc — and an arc's ends are the junctions
   countries meet at, so a coarse world is still in register with itself.
 - `atlWin(it, v)` is the rectangle worth building, **snapped** to half a view,
   so a pan crosses a boundary about four times in the time it takes to drag the
-  picture past itself rather than sixty times a second. Crossing one costs
-  about a millisecond; between crossings nothing is rebuilt at all.
+  picture past itself rather than sixty times a second. It is measured **at the
+  step, not at the zoom**: `k` moves every frame of a zoom, and a window that
+  followed `k` was a new window — a new clip, a new set of contours — sixty
+  times a second. A fifth of an octave of headroom is enough for the window to
+  cover every zoom its step covers, because a window already carries half a
+  view of slack. Crossing a boundary costs about a millisecond; between
+  crossings nothing is rebuilt at all.
+- Two and a half octaves of zoom is **four rebuilds over 241 frames**, and the
+  harness holds it there. It used to be a rebuild on every frame there was.
+
+**And one layer is too expensive even once a step.** The height field is
+contoured with marching squares — tens of milliseconds, where a frame is
+sixteen — so `relief` declares `heavy`, and a heavy layer is not rebuilt while
+a hand or a spring is still moving. What is already drawn is vector: the zoom
+rides on it, and the field is contoured once when the map stands still. The one
+exception is coverage. A refinement can wait; a hole cannot, so if what is in
+the DOM no longer reaches the edge of the picture the rebuild happens on the
+spot whatever is moving.
+
+Two more things keep a step change from being seen at all:
+
+- **The bands are nested.** `GEO_BAND_SET` draws five levels at arm's length
+  and nine close in, and every level a coarse set draws is in every finer one.
+  Refining therefore *adds* a contour between two already on the map and never
+  moves ground to a different tint — which is the difference between detail
+  arriving and the map changing colour under the reader.
+- **A rebuilt layer arrives rather than appears.** A layer may declare `fade`,
+  and `atlSwap` then puts the new markup in *underneath* the old, moves the old
+  nodes into a group over the top of it and fades that group off. The old nodes
+  are moved, not built again — setting `innerHTML` detaches them, it does not
+  destroy them — so the fade costs one empty `<g>` and no parsing. The picture
+  is the old one, then both, then the new one, and at no point is it nothing.
 
 Culling by box is enough for a coast or a border, which are one arc each and
 there are two thousand of them. It is worth **nothing** for the land, which is
@@ -464,7 +500,7 @@ back over the map if that left its middle off the edge. Everything after it —
 which country a click is in, the pole of inaccessibility, the largest name that
 fits inside the outline, the box a map flies to — lives in that frame.
 
-Three of those are worth knowing about before changing anything near them:
+Four of those are worth knowing about before changing anything near them:
 
 - **A name that fits.** `geoCoLabel` grows the box the name would occupy until
   an edge of the country cuts it, over one, two or three lines, and takes
@@ -477,6 +513,20 @@ Three of those are worth knowing about before changing anything near them:
   so Japan keeps its islands and Indonesia keeps Papua while Guiana and Réunion
   are left where they are. The full box is still what a click is tested
   against; `geoCoMain` is what a map flies to and a card is framed on.
+- **A continent is a set of them, and the set is a shape.** `geoReg(proj, key)`
+  builds one record for `co:12` or `ct:2` and everything above works off it, so
+  the label, the spot, the path, the box and the capitals never learn which kind
+  they have. The only real work is the outline of a *set*, and it is not a
+  polygon union and does not need to be: the arcs are shared, so two countries
+  of the set that touch draw the border between them twice from the same points,
+  and a piece of outline drawn once is on the edge of the union. One pass over
+  the segments gives the continent's coast and its inland borders together, and
+  it is exact. The set is built from each country's `geoCoMain`, so a plate of
+  Europe is Europe and not Europe drawn across the Atlantic to hold Guiana. The
+  membership itself is not in the outlines and cannot be got from them — it is a
+  table of seven lists at the bottom of the country section, and the two places
+  it is a judgement rather than a fact (Russia with Asia, Turkey with Asia) say
+  so where they are written.
 - **The countries the pen is bigger than.** They are all in the table now —
   the base map is the 50m tier simplified per arc, so Nauru, Monaco and the
   Vatican are ordinary countries sharing ordinary arcs. What they still need is
@@ -885,7 +935,7 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**2146 assertions**, and they are the real specification of this app. Among them:
+**2355 assertions**, and they are the real specification of this app. Among them:
 that all 90 script files load without throwing; that library normalization
 recovers orphaned entries and breaks folder cycles; that a `[[link]]` finds its
 file whatever its case or extension, ignores one written inside code, survives
@@ -921,7 +971,12 @@ and holds the point you aimed at; that every item type builds both live and
 through `buildPage(page, false)` — the path print and exports take; that a code
 cell colours a python line the way the editor would and reparses it as rust;
 that a table works out its formulas, reads a real `.xlsx` built in the harness,
-and hands two columns to a plot; that the expression compiler reads `x^2+y^2=1`
+and hands two columns to a plot; that every country on Earth is in exactly one
+continent, that a continent's coast and the borders inside it are its countries'
+own outlines counted once each, that its name is set inside that coast and
+across those borders, and that a card of France brought up against a card of
+Europe clicks into it at Europe's own scale with one point of the world at one
+point on the paper in both; that the expression compiler reads `x^2+y^2=1`
 as an equation, `y<x^2` as a strict region and `r=cos(2θ)` as polar, writes
 every one of them back out as LaTeX the typesetter accepts, and refuses `xy` with
 advice; that the unit circle comes out one closed curve two units across and a

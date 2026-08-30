@@ -10,6 +10,14 @@ const CAN_FILE = { file:1, image:1, video:1, model:1, folder:1, deck:1 };
 const kidsOf = it => (it && it.kids) || [];
 /* …and a feature can say `fileable: true` in its spec instead of being named here */
 const canFile = it => !!(it && (CAN_FILE[it.type] || specOf(it).fileable));
+/* Filing is two things, and a feature may want only the first. Something can be
+   willing to go into a folder without being willing to start one: a country card
+   is a shape you push around among other shapes, and two of them brought together
+   mean each other, not a new tray. Such a feature says `filedOnly: true`, and then
+   only a folder already on the page will take it — in either hand. */
+const foldPair = (drag, target) => canFile(drag) && canFile(target) &&
+  (drag.type === 'folder' || target.type === 'folder' ||
+   !(specOf(drag).filedOnly || specOf(target).filedOnly));
 function entryName(it){
   const own = specOf(it).label;                    // a feature may name itself
   if(own) return own(it);

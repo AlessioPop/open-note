@@ -12,6 +12,7 @@ python3 "$HERE/scripts.py" "$SRC" || exit 1
 
 rm -rf "$RUN"; mkdir -p "$RUN"
 cp -r "$SRC"/index.html "$RUN"/ 2>/dev/null
+cp "$SRC"/desk.html "$RUN"/ 2>/dev/null     # the desk card's loader page
 [ -d "$SRC/js" ]  && cp -r "$SRC/js"  "$RUN"/
 [ -d "$SRC/css" ] && cp -r "$SRC/css" "$RUN"/
 # the type is local now — without this the run 404s fonts/fonts.css and sets the
@@ -24,7 +25,7 @@ python3 - "$RUN/index.html" <<'PY'
 import sys, io
 p = sys.argv[1]
 s = io.open(p, encoding='utf-8').read()
-inject = ('<img src="/slow?ms=45000" alt="" style="position:fixed;left:-9999px;width:1px;height:1px">\n'
+inject = ('<img src="/slow?ms=60000" alt="" style="position:fixed;left:-9999px;width:1px;height:1px">\n'
           '<script src="probe.js"></script>\n')
 assert '</body>' in s, 'no </body> in index.html'
 s = s.replace('</body>', inject + '</body>')
@@ -44,7 +45,7 @@ SRV=$!
 sleep 1
 
 PROF="$HERE/prof"; rm -rf "$PROF"; mkdir -p "$PROF"
-timeout 120 firefox --headless --profile "$PROF" --no-remote \
+timeout 100 firefox --headless --profile "$PROF" --no-remote \
   --window-size=1400,1000 --screenshot "$RUN/shot.png" \
   "http://127.0.0.1:$PORT/index.html" >/dev/null 2>&1
 
