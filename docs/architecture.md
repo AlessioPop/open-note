@@ -250,7 +250,7 @@ on a task.
 | `pptx.js` | 1907 | `.pptx` → slides that draw themselves as SVG. The same zip, then DrawingML: the colour engine, the preset and freehand geometry, fills and lines, the inheritance chain a slide hangs off, and the text laid out by hand |
 | `chem.js` | 1147 | the chemistry: the molecular graph, implicit hydrogens and lone pairs, Hill formulas and masses, rings and aromaticity, the indexed offline name catalog, a graph hash that names what you draw, SMILES in and out, the 2D layout with exact regular-polygon arcs for constrained rings and rigid-branch untangling for large structures, the 3D embedding and VSEPR |
 | `nuclide.js` | 264 | the physics of the nuclide chart: reading NUBASE in, every decay mode as a step in (protons, neutrons), Q values and separation energies subtracted from the masses, binding energy per nucleon, and the chain down to whatever a nuclide ends on |
-| `atlas.js` | 1421 | the world as numbers: the packed arcs unpacked, the projections (flat and Mercator, each declaring its period), the seam down the back of the world unrolled so a country on both sides of the 180th meridian is drawn on both sides, rings and arcs to path strings — smoothed through their midpoints so a 110m outline stands up to being magnified — memoised per projection and look, and the greedy box layout that decides which city names fit. Then the countries as shapes: every one pulled into a single coordinate frame so an even-odd insideness test means something, which country a point is in (with a reach, for the ones smaller than a finger), the pole of inaccessibility, the size a country's own name is set at — the largest that fits wholly inside its outline, less the air an atlas leaves round one — the part of a country anyone means by its name, name search over aliases, and then **regions**: a country and a continent answer the same five questions through one key, `co:12` or `ct:2`, with a continent's outline split into its own coast and the borders inside it by counting how many of its countries drew each segment. Then rivers and lakes, and the height field unpacked and contoured into filled bands by marching squares. Everything it builds is memoised per projection, look, **detail step and window** — the last two being what stops a map drawing the whole planet at full detail to show one country |
+| `atlas.js` | 1421 | the world as numbers: the packed arcs unpacked, the flat, Mercator and rotatable orthographic-globe projections, the seam down the back of a wrapping world unrolled so a country on both sides of the 180th meridian is drawn on both sides, rings and arcs to path strings — smoothed through their midpoints so a 110m outline stands up to being magnified — memoised per projection and look, and the greedy box layout that decides which city names fit. Then the countries as shapes: every one pulled into a single coordinate frame so an even-odd insideness test means something, which country a point is in (with a reach, for the ones smaller than a finger), the pole of inaccessibility, the size a country's own name is set at — the largest that fits wholly inside its outline, less the air an atlas leaves round one — the part of a country anyone means by its name, name search over aliases, and then **regions**: a country and a continent answer the same five questions through one key, `co:12` or `ct:2`, with a continent's outline split into its own coast and the borders inside it by counting how many of its countries drew each segment. Then rivers and lakes, and the height field unpacked and contoured into filled bands by marching squares. Everything it builds is memoised per projection, look, **detail step and window** — the last two being what stops a map drawing the whole planet at full detail to show one country |
 
 ### `js/data/` — tables, not code
 
@@ -569,7 +569,13 @@ there needs a clip either.
 
 Projections are the same kind of list: an entry in `GEO_PROJ` with `fwd`, `inv`,
 its height and the period it wraps at. A projection that does not wrap says
-nothing, and the antimeridian handling stands down for it.
+nothing, and the antimeridian handling stands down for it. The globe is that
+case: its front hemisphere is orthographic and its far hemisphere continues
+outside the circular horizon for static clipping. Print and export keep those
+resolution-free SVG paths; the live globe projects cached geographic vectors
+into one canvas instead. Lines are clipped at the horizon before they are
+issued, and land, height, lakes, rivers, borders and coastline are painted in
+the same frame, so turning never replaces markup or drops an expensive layer.
 
 ## Circuits, and the graph seam under them## Circuits, and the graph seam under them
 

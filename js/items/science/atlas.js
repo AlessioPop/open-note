@@ -2,12 +2,12 @@
    a map of the world on the page */
 
 /* ================= the atlas =================
-   Natural Earth's 110m outlines, drawn as one picture and then MOVED. The
-   world is built once per projection and look (js/lib/atlas.js keeps the
-   strings), and panning or zooming a map sets one transform on one group —
-   no path is rebuilt, no string is joined, nothing is measured. That is the
-   whole reason it stays smooth under the hand, and it is worth protecting:
-   anything here that starts rebuilding geometry per frame has broken it.
+   Natural Earth's outlines, drawn as one picture and then MOVED. A flat world
+   is built once per projection and look (js/lib/atlas.js keeps the strings),
+   and panning or zooming it sets one transform on one group — no path is
+   rebuilt, no string is joined, nothing is measured. A turning globe projects
+   the same source geometry into one canvas instead: no SVG markup is replaced
+   during a gesture, and all visible layers stay attached to the sphere.
 
    The hand's own motion is js/lib/spring.js — the drag tracks one to one, the
    release keeps the velocity and glides, and the edges of the world push back
@@ -49,6 +49,11 @@ let ATL_NEXT = null;                               // the country the next `coun
    feature that never thought about the question, gets the projection every map
    on a screen is drawn in. */
 const atlProj = it => it.proj || 'mercator';
+const atlGlobe = it => atlProj(it) === 'globe';
+/* A flat projection is a property of the item. The globe's projection is also
+   a property of the live view because its centre moves under the hand. */
+const atlVProj = (it, v) => (v && v.proj) || atlProj(it);
+const atlPointOn = (v, p) => !v.globe || v.P.visible(p.lon, p.lat);
 
 /* ---- what a tap picks ----
    A country, or the whole continent it is in. `it.tap` is 'cont' for the second
@@ -128,8 +133,8 @@ defineMapLayer('relief', {
      comes, from arriving as a blink. Both are read in atlReworld. */
   heavy: 1, fade: 1,
   world(ctx){
-    const it = ctx.it, v = ctx.view, proj = atlProj(it), look = it.look || 'smooth';
-    const w = atlWin(it, v), lod = atlLod(atlN(v));
+    const it = ctx.it, v = ctx.view, proj = atlVProj(it, v), look = it.look || 'smooth';
+    const w = atlWin(it, v), lod = atlLodV(it, v);
     const bands = geoReliefBands(proj, look, lod, w);
     if(!bands.length) return '';
     const P = geoProj(proj);
@@ -154,14 +159,14 @@ defineMapLayer('relief', {
 defineMapLayer('lakes', {
   label: 'Lakes', order: 34, on: 1, sw: 1.2,
   world: ctx => '<path class="atlake" d="' +
-    geoDetailPaths(atlProj(ctx.it), ctx.it.look || 'smooth', atlLod(atlN(ctx.view)), atlWin(ctx.it, ctx.view)).lak + '"/>'
+    geoDetailPaths(atlVProj(ctx.it, ctx.view), ctx.it.look || 'smooth', atlLodV(ctx.it, ctx.view), atlWin(ctx.it, ctx.view)).lak + '"/>'
 });
 /* a finer step is a river with tributaries it did not have — which is a change
    worth fading in rather than cutting to, for the same reason the bands are */
 defineMapLayer('rivers', {
   label: 'Rivers', order: 36, on: 0, sw: 1.6, fade: 1,
   world: ctx => '<path class="atriver" d="' +
-    geoDetailPaths(atlProj(ctx.it), ctx.it.look || 'smooth', atlLod(atlN(ctx.view)), atlWin(ctx.it, ctx.view)).riv + '"/>'
+    geoDetailPaths(atlVProj(ctx.it, ctx.view), ctx.it.look || 'smooth', atlLodV(ctx.it, ctx.view), atlWin(ctx.it, ctx.view)).riv + '"/>'
 });
 /* the coast is inked separately from the land it fills — see the note over
    geoPaths: a filled ring has to close, and Antarctica's closes across the
@@ -184,11 +189,11 @@ const ATL_DOT = 5;
    reproject 199 cities on every frame of both */
 const ATL_CAPXY = new Map();
 function atlCapXY(proj){
-  let hit = ATL_CAPXY.get(proj);
-  if(hit) return hit;
   const P = geoProj(proj);
+  let hit = P.globe ? null : ATL_CAPXY.get(proj);
+  if(hit) return hit;
   hit = geoCapitals().map(c => P.fwd(c.lon, c.lat));
-  ATL_CAPXY.set(proj, hit);
+  if(!P.globe) ATL_CAPXY.set(proj, hit);
   return hit;
 }
 /* how many are OFFERED at this zoom. It only has to be mean at arm's length,
@@ -206,9 +211,10 @@ defineMapLayer('caps', {
       esc(c.name) + '</text></g>').join('');
   },
   frame(g, ctx){
-    const v = ctx.view, xy = atlCapXY(atlProj(ctx.it)), caps = geoCapitals();
+    const v = ctx.view, xy = atlCapXY(atlVProj(ctx.it, v)), caps = geoCapitals();
     const n = atlCapCount(v.z), cands = [], pad = ATL_FS;
     for(let i = 0; i < n; i++){
+      if(!atlPointOn(v, caps[i])) continue;
       const x = (xy[i][0] - v.cx) * v.k + ATL_W / 2;
       if(x < -pad || x > ATL_W + pad) continue;     /* nowhere near: not worth a box */
       const y = (xy[i][1] - v.cy) * v.k + v.H / 2;
@@ -269,11 +275,11 @@ const ATL_CFS = ATL_FS * 0.78;
 const ATL_CDOT = 3.4;
 const ATL_CITYXY = new Map();
 function atlCityXY(proj){
-  let hit = ATL_CITYXY.get(proj);
-  if(hit) return hit;
   const P = geoProj(proj);
+  let hit = P.globe ? null : ATL_CITYXY.get(proj);
+  if(hit) return hit;
   hit = geoCities().map(c => P.fwd(c.lon, c.lat));
-  ATL_CITYXY.set(proj, hit);
+  if(!P.globe) ATL_CITYXY.set(proj, hit);
   return hit;
 }
 /* nothing at all until the map is a step and a bit in — a world map with five
@@ -294,8 +300,9 @@ defineMapLayer('cities', {
     const n = atlCityCount(v.z);
     const on = new Set();
     if(n){
-      const xy = atlCityXY(atlProj(ctx.it)), cands = [], pad = ATL_CFS;
+      const xy = atlCityXY(atlVProj(ctx.it, v)), cands = [], pad = ATL_CFS;
       for(let i = 0; i < n; i++){
+        if(!atlPointOn(v, cs[i])) continue;
         const x = (xy[i][0] - v.cx) * v.k + ATL_W / 2;
         if(x < -pad || x > ATL_W + pad) continue;
         const y = (xy[i][1] - v.cy) * v.k + v.H / 2;
@@ -336,6 +343,19 @@ defineMapLayer('cities', {
    country is big enough to stand on its own. geoCoAt's `near` is the other
    half — the ring you can see is the ring you can hit. */
 const ATL_TINY = 6.5;                              // when a country is smaller than this, ring it
+/* A globe keeps a stable set of marker nodes while it turns. Their geographic
+   anchors come from the flat projection and are projected afresh each frame;
+   otherwise the near-horizon foreshortening would change the list itself and
+   make one country's node become another country's marker mid-gesture. */
+function atlTinyList(it, v){
+  const proj = atlVProj(it, v);
+  if(!v.globe) return geoTinyCountries(proj);
+  const E = geoProj('equirect');
+  return geoTinyCountries('equirect').map(t => {
+    const ll = E.inv(t.x, t.y), q = v.P.fwd(ll[0], ll[1]);
+    return { i:t.i, span:t.span * 1.5, x:q[0], y:q[1], on:v.P.visible(ll[0], ll[1]) };
+  });
+}
 /* THE RING YOU CAN SEE IS THE RING YOU CAN HIT. A country smaller than the
    marker standing for it cannot be found by testing polygons — there is no
    pixel of San Marino to land on at any zoom — so the marker is hit-tested
@@ -344,9 +364,10 @@ const ATL_TINY = 6.5;                              // when a country is smaller 
    overrule them: clicking the ring means the ring, even though Italy is under
    it, and clicking ten pixels away means Italy. */
 function atlRingAt(it, v, q){
-  const list = geoTinyCountries(atlProj(it));
+  const list = atlTinyList(it, v);
   let best = -1, bd = ATL_TINY * ATL_TINY;
   for(const t of list){
+    if(t.on === false) continue;
     if(t.span * v.k > ATL_TINY * 2) continue;      /* big enough now: not a ring */
     const dx = (t.x - v.cx) * v.k + ATL_W / 2 - q[0];
     const dy = (t.y - v.cy) * v.k + v.H / 2 - q[1];
@@ -358,14 +379,15 @@ function atlRingAt(it, v, q){
 defineMapLayer('tiny', {
   label: 'Small countries', order: 66, on: 1,
   build(ctx){
-    return geoTinyCountries(atlProj(ctx.it))
+    return atlTinyList(ctx.it, ctx.view)
       .map(() => '<g class="attiny"><circle r="' + ATL_TINY + '"/></g>').join('');
   },
   frame(g, ctx){
-    const v = ctx.view, list = geoTinyCountries(atlProj(ctx.it)), pad = ATL_TINY * 2;
+    const v = ctx.view, list = atlTinyList(ctx.it, v), pad = ATL_TINY * 2;
     const on = new Set();
     for(let k = 0; k < list.length; k++){
       const t = list[k];
+      if(t.on === false) continue;
       if(t.span * v.k > ATL_TINY * 2) continue;     /* big enough now: it speaks for itself */
       const x = (t.x - v.cx) * v.k + ATL_W / 2;
       if(x < -pad || x > ATL_W + pad) continue;
@@ -401,12 +423,29 @@ defineMapLayer('tiny', {
    reader's pin from Chad to Kenya without a word. */
 const atlSel = it => (it.sel ? geoRegKeyOf(it.sel) : '');
 const atlPickLayer = () => ATL_LAYERS.find(L => L.id === 'pick');
+function atlGlobeLabel(v, key){
+  if(!v.globe || !key) return null;
+  const E = geoProj('equirect'), lb = geoRegLabel('equirect', key);
+  if(!lb) return null;
+  const ll = E.inv(lb.x, lb.y);
+  if(!v.P.visible(ll[0], ll[1])) return null;
+  const q = v.P.fwd(ll[0], ll[1]);
+  return { x:q[0], y:q[1] };
+}
 /* the label the capitals have to keep off, in picture units — nothing at all
    unless a country really is picked and the layer that draws it is on */
 function atlNameBox(it, v){
   if(!it.sel || !atlOn(it, atlPickLayer())) return null;
   const k = atlSel(it);
   if(!k) return null;
+  if(v.globe){
+    const a = atlGlobeLabel(v, k);
+    if(!a) return null;
+    const name = geoRegName(k), w = name.length * ATL_FS * .5 + ATL_TINY + 12;
+    return [{ x:(a.x - v.cx) * v.k + ATL_W / 2 - ATL_TINY,
+              y:(a.y - v.cy) * v.k + v.H / 2 - ATL_FS * .62,
+              w, h:ATL_FS * 1.2 }];
+  }
   const lb = geoRegLabel(atlProj(it), k);
   if(!(lb.fs > 0)) return null;
   const w = lb.w * v.k, h = lb.h * v.k;
@@ -451,11 +490,11 @@ const atlOnShape = lb => !!lb && lb.fs >= ATL_LBL_MIN;
 defineMapLayer('pick', {
   label: 'Picked place', order: 70, on: 1, sw: 2.6,
   world(ctx){
-    const it = ctx.it, k = atlSel(it);
+    const it = ctx.it, v = ctx.view, k = atlSel(it), proj = atlVProj(it, v);
     if(!k) return '';
-    const lb = geoRegLabel(atlProj(it), k);
-    return '<path class="atpick" d="' + geoRegPath(atlProj(it), it.look || 'smooth', k) + '"/>' +
-      (atlOnShape(lb) ? atlNameSVG(lb) : '');
+    const lb = v.globe ? null : geoRegLabel(proj, k);
+    return '<path class="atpick" d="' + geoRegPath(proj, it.look || 'smooth', k) + '"/>' +
+      (lb && atlOnShape(lb) ? atlNameSVG(lb) : '');
   },
   build: () => '<g class="atcap atpickn"><text class="atname" x="' + (ATL_TINY + 6) +
     '" y="' + (ATL_FS * 0.36) + '"></text></g>',
@@ -463,12 +502,14 @@ defineMapLayer('pick', {
     const el = g.firstElementChild;
     if(!el) return;
     const it = ctx.it, v = ctx.view, k = atlSel(it);
-    const lb = k ? geoRegLabel(atlProj(it), k) : null;
-    if(!lb || atlOnShape(lb)){                     /* the country writes its own name */
+    const anchor = atlGlobeLabel(v, k);
+    const lb = !v.globe && k ? geoRegLabel(atlVProj(it, v), k) : null;
+    if((v.globe && !anchor) || (!v.globe && (!lb || atlOnShape(lb)))){
       if(el.classList.contains('on')){ el.classList.remove('on'); el.firstElementChild.textContent = ''; }
       return;
     }
-    const x = (lb.x - v.cx) * v.k + ATL_W / 2, y = (lb.y - v.cy) * v.k + v.H / 2;
+    const x = ((anchor || lb).x - v.cx) * v.k + ATL_W / 2;
+    const y = ((anchor || lb).y - v.cy) * v.k + v.H / 2;
     const name = geoRegName(k);
     if(el.firstElementChild.textContent !== name) el.firstElementChild.textContent = name;
     const flip = x + name.length * ATL_FS * 0.46 + ATL_TINY + 12 > ATL_W;
@@ -495,6 +536,14 @@ defineMapLayer('pick', {
    the promise at the top of this file is intact. When one is crossed, the
    world layers' markup is replaced, which is a few milliseconds once. */
 const atlLod = z => Math.max(0, Math.min(GEO_LOD_MAX, Math.round(z)));
+/* Static SVG globes still choose a lighter step while a spring is moving. The
+   live globe never asks this function during rotation: its canvas consumes the
+   cached raw tables directly. */
+function atlLodV(it, v){
+  const L = v.globe && ATL_LIVE.get(it.id);
+  const moving = L && (L.hand || L.sx.active || L.sy.active);
+  return atlLod(moving ? 1 : atlN(v));
+}
 /* ---- the zoom in whole octaves, and STICKY ----
    THE ONE NUMBER BOTH OF THEM COME FROM, and the reason it exists. The detail
    step and the window used to be read off the live zoom, and the live zoom is
@@ -518,6 +567,7 @@ const atlStepOf = (z, prev) => {
    for a view somebody put together by hand */
 const atlN = v => v.n == null ? Math.max(0, Math.min(ATL_NMAX, Math.round(v.z))) : v.n;
 function atlWin(it, v){
+  if(v.globe) return null;                         /* the circular horizon is its window */
   /* THE WINDOW IS MEASURED AT THE STEP, NOT AT THE ZOOM. k moves every frame of
      a zoom, and a window that followed k would be a new window — a new clip, a
      new field, a new set of contours — sixty times a second. So it is measured
@@ -527,7 +577,7 @@ function atlWin(it, v){
      of headroom is all it takes for the window to cover every zoom the step
      covers, and never be asked again inside one. Any more than that is world
      nobody is looking at, built and clipped and contoured for nothing. */
-  const kq = ATL_W / GEO_W * Math.pow(2, atlN(v) - 0.2);
+  const kq = atlK(it, atlN(v) - 0.2, v);
   const hw = ATL_W / (2 * kq), hh = v.H / (2 * kq);
   /* the whole world fits: no window at all, and no key that changes with the
      pan — which is what keeps a map at arm's length from ever rebuilding */
@@ -548,28 +598,38 @@ const atlWinOf = k => {
 };
 /* what a picture was built for: one string, and the only thing that decides
    whether any geometry is made again */
-const atlBuilt = (it, v) => atlLod(atlN(v)) + '|' + atlWinKey(atlWin(it, v));
+const atlBuilt = (it, v) => atlLodV(it, v) + '|' + atlWinKey(atlWin(it, v)) +
+  (v.globe ? '|' + v.P.lon + ',' + v.P.lat : '');
 /* is what is already drawn still reaching the edges of the picture? */
 function atlCovers(w, v){
   if(!w) return true;                              /* the whole world is in the DOM */
   const hw = ATL_W / (2 * v.k), hh = v.H / (2 * v.k);
   return v.cx - hw >= w.x0 && v.cx + hw <= w.x1 && v.cy - hh >= w.y0 && v.cy + hh <= w.y1;
 }
-const atlPathsFor = (it, v) => geoPaths(atlProj(it), it.look || 'smooth', atlLod(atlN(v)), atlWin(it, v));
+const atlPathsFor = (it, v) => geoPaths(atlVProj(it, v), it.look || 'smooth', atlLodV(it, v), atlWin(it, v));
 
 /* ---- the view ----
    `k` takes world units to picture units: at z = 0 the world is exactly as
    wide as the picture, and every step of z doubles it. The centre is kept as
    a longitude and a latitude in the record — which is what makes it readable,
    and what lets the projection change under it without the map jumping. */
-function atlGeom(it){
+function atlGeom(it, L){
   const ar = clamp(nz(it.ar, 0.5), 0.3, 1.1);
-  return { ar, H: rd1(ATL_W * ar), P: geoProj(atlProj(it)), W: ATL_W };
+  const globe = atlGlobe(it);
+  const lon = globe ? (L ? L.cx : nz(it.lon, 8)) : nz(it.lon, 8);
+  const lat = globe ? (L ? L.cy : nz(it.lat, 16)) : nz(it.lat, 16);
+  const P = globe ? geoGlobeAt(lon, lat) : geoProj(atlProj(it));
+  /* The projection carries its quantised centre, so a built picture can name
+     exactly which orientation it contains. */
+  return { ar, H: rd1(ATL_W * ar), P, W: ATL_W, globe, lon, lat,
+           proj:globe ? 'globe' : atlProj(it) };
 }
+const atlK = (it, z, g) => ((atlGlobe(it) ? Math.min(ATL_W, (g || atlGeom(it)).H) : ATL_W) / GEO_W) * Math.pow(2, z);
 /* as far out as the world may go: never smaller than the picture, in either
    direction — so there is no letterbox to pan into, ever */
 function atlZMin(it){
   const g = atlGeom(it);
+  if(g.globe) return 0;
   return Math.max(0, Math.log2(g.H / g.P.h * GEO_W / ATL_W));
 }
 /* where the centre may stand at this zoom: pinned to the middle on an axis the
@@ -581,11 +641,12 @@ function atlLimits(it, k){
            y0: tall ? g.P.h / 2 : hh, y1: tall ? g.P.h / 2 : g.P.h - hh };
 }
 function atlView(it, L){
-  const g = atlGeom(it);
+  const g = atlGeom(it, L);
   const z = L ? L.z : clamp(nz(it.zm, 0), atlZMin(it), ATL_ZMAX);
-  const k = ATL_W / GEO_W * Math.pow(2, z);
+  const k = atlK(it, z, g);
   let cx, cy;
-  if(L){ cx = L.cx; cy = L.cy; }
+  if(g.globe){ cx = cy = GEO_W / 2; }
+  else if(L){ cx = L.cx; cy = L.cy; }
   else {
     const c = g.P.fwd(nz(it.lon, 8), nz(it.lat, 16)), lim = atlLimits(it, k);
     cx = clamp(c[0], lim.x0, lim.x1); cy = clamp(c[1], lim.y0, lim.y1);
@@ -594,33 +655,306 @@ function atlView(it, L){
      and a map that is not being handled has nothing to remember */
   const n = atlStepOf(z, L ? L.n : null);
   if(L) L.n = n;
-  return { ar: g.ar, H: g.H, P: g.P, W: ATL_W, z, k, cx, cy, n };
+  return { ar: g.ar, H: g.H, P: g.P, W: ATL_W, z, k, cx, cy, n,
+           globe:g.globe, lon:g.lon, lat:g.lat, proj:g.proj };
+}
+
+/* ---- the live globe canvas ----
+   A flat map is one SVG transform. A turning globe cannot be: every point's
+   projection changes with its orientation. Rewriting hundreds of kilobytes of
+   SVG path data per frame made the hand wait for parsing and let hidden runs
+   flash across the horizon. The live globe therefore draws the SAME geographic
+   tables into one canvas. It projects points directly, clips at z=0 before a
+   line is issued, and never removes a layer while motion is in progress.
+
+   Print and export still use atlSVG below, so they remain resolution-free. */
+const ATL_GREG = new Map();
+const ATL_GXYZ = new WeakMap();
+let ATL_GGRAT = null;
+function atlGlobeRegion(key){
+  let hit = ATL_GREG.get(key);
+  if(hit) return hit;
+  const E = geoProj('equirect');
+  hit = geoReg('equirect', key).rings.map(r => r.map(p => E.inv(p[0], p[1])));
+  ATL_GREG.set(key, hit);
+  return hit;
+}
+function atlGlobeGraticule(){
+  if(ATL_GGRAT) return ATL_GGRAT;
+  const out = [];
+  for(let lon = -180; lon < 180; lon += 30){
+    const a = []; for(let lat = -90; lat <= 90; lat += 2) a.push([lon, lat]);
+    out.push(a);
+  }
+  for(let lat = -60; lat <= 60; lat += 30){
+    const a = []; for(let lon = -180; lon <= 180; lon += 2) a.push([lon, lat]);
+    out.push(a);
+  }
+  return (ATL_GGRAT = out);
+}
+const atlGScreen = (v, q) => [ATL_W / 2 + GEO_GR * v.k * q.x,
+                               v.H / 2 - GEO_GR * v.k * q.y];
+const atlGReject = (a, b, v) => (a[0] < 0 && b[0] < 0) || (a[0] > ATL_W && b[0] > ATL_W) ||
+  (a[1] < 0 && b[1] < 0) || (a[1] > v.H && b[1] > v.H);
+/* At deep zoom most of the sphere is beyond the widget. Clip filled polygons
+   to its screen box before giving them to Canvas, so its tessellator never has
+   to process a continent thousands of pixels off-screen. */
+function atlGClipPoly(poly, v){
+  if(GEO_GR * v.k <= Math.max(ATL_W, v.H) || poly.length < 3) return poly;
+  const cut = (src, inside, cross) => {
+    const out = [];
+    for(let i = 0, j = src.length - 1; i < src.length; j = i++){
+      const a = src[j], b = src[i], ai = inside(a), bi = inside(b);
+      if(ai !== bi) out.push(cross(a, b));
+      if(bi) out.push(b);
+    }
+    return out;
+  };
+  const ix = (x, a, b) => [x, a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0])];
+  const iy = (y, a, b) => [a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]), y];
+  poly = cut(poly, p => p[0] >= -2, (a, b) => ix(-2, a, b));
+  poly = cut(poly, p => p[0] <= ATL_W + 2, (a, b) => ix(ATL_W + 2, a, b));
+  poly = cut(poly, p => p[1] >= -2, (a, b) => iy(-2, a, b));
+  return cut(poly, p => p[1] <= v.H + 2, (a, b) => iy(v.H + 2, a, b));
+}
+function atlGPutRing(path, poly, v){
+  poly = atlGClipPoly(poly, v);
+  if(poly.length < 3) return;
+  path.moveTo(poly[0][0], poly[0][1]);
+  for(let i = 1; i < poly.length; i++) path.lineTo(poly[i][0], poly[i][1]);
+  path.closePath();
+}
+/* Longitude/latitude never changes, so pay its trigonometry once. A frame then
+   rotates each cached unit vector with multiplications only; avoiding tens of
+   thousands of sin/cos calls is what leaves enough of the frame for terrain. */
+function atlGUnits(pts){
+  let hit = ATL_GXYZ.get(pts);
+  if(hit) return hit;
+  hit = pts.map(p => {
+    const lon = p[0] * Math.PI / 180, lat = p[1] * Math.PI / 180, c = Math.cos(lat);
+    return { x:c * Math.cos(lon), y:c * Math.sin(lon), z:Math.sin(lat) };
+  });
+  ATL_GXYZ.set(pts, hit);
+  return hit;
+}
+function atlGRotate(v, q){
+  const G = v.G, f = q.x * G.co + q.y * G.so;
+  return { x:q.y * G.co - q.x * G.so,
+           y:G.cl * q.z - G.sl * f,
+           z:G.sl * q.z + G.cl * f };
+}
+function atlGHorizon(a, b){
+  const t = a.z / (a.z - b.z), x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+  const d = Math.hypot(x, y) || 1;
+  return { x:x / d, y:y / d, z:0 };
+}
+function atlGlobeLine(path, v, pts){
+  if(!pts || pts.length < 2) return;
+  const u = atlGUnits(pts);
+  let a = atlGRotate(v, u[0]), pen = false;
+  for(let i = 1; i < pts.length; i++){
+    const b = atlGRotate(v, u[i]), av = a.z >= 0, bv = b.z >= 0;
+    let s = null, e = null;
+    if(av && bv){ s = a; e = b; }
+    else if(av && !bv){ s = a; e = atlGHorizon(a, b); }
+    else if(!av && bv){ s = atlGHorizon(a, b); e = b; }
+    if(s){
+      const p = atlGScreen(v, s), q = atlGScreen(v, e);
+      if(atlGReject(p, q, v)) pen = false;
+      else {
+        if(!pen) path.moveTo(p[0], p[1]);
+        path.lineTo(q[0], q[1]); pen = bv;
+      }
+    }else pen = false;
+    a = b;
+  }
+}
+function atlGlobeLines(v, runs){
+  const p = new Path2D();
+  for(const a of runs) atlGlobeLine(p, v, a);
+  return p;
+}
+/* Add one clipped spherical ring to a CanvasPath. Every visible run closes
+   along the circular horizon, never along a chord through the globe. */
+function atlGlobeRing(path, v, pts){
+  const n = pts && pts.length;
+  if(n < 3) return;
+  const q = atlGUnits(pts).map(p => atlGRotate(v, p));
+  let visible = 0, hidden = -1;
+  for(let i = 0; i < n; i++) if(q[i].z >= 0) visible++; else if(hidden < 0) hidden = i;
+  if(!visible) return;
+  if(visible === n){
+    atlGPutRing(path, q.map(p => atlGScreen(v, p)), v); return;
+  }
+  let run = null;
+  const emit = a => {
+    if(!a || a.length < 2) return;
+    const poly = a.map(p => atlGScreen(v, p));
+    const last = a[a.length - 1], first = a[0];
+    let x = Math.atan2(-last.y, last.x), end = Math.atan2(-first.y, first.x);
+    let d = end - x;
+    while(d > Math.PI) d -= Math.PI * 2;
+    while(d < -Math.PI) d += Math.PI * 2;
+    const steps = Math.max(1, Math.ceil(Math.abs(d) / (Math.PI / 45)));
+    const r = GEO_GR * v.k;
+    for(let k = 1; k <= steps; k++){
+      const t = x + d * k / steps;
+      poly.push([ATL_W / 2 + Math.cos(t) * r, v.H / 2 + Math.sin(t) * r]);
+    }
+    atlGPutRing(path, poly, v);
+  };
+  for(let k = 0; k < n; k++){
+    const i = (hidden + k) % n, j = (i + 1) % n, a = q[i], b = q[j];
+    const av = a.z >= 0, bv = b.z >= 0;
+    if(!av && bv) run = [atlGHorizon(a, b), b];
+    else if(av && bv){ if(!run) run = [a]; run.push(b); }
+    else if(av && !bv){ if(!run) run = [a]; run.push(atlGHorizon(a, b)); emit(run); run = null; }
+  }
+  emit(run);
+}
+function atlGlobePath(v, rings){
+  const p = new Path2D();
+  for(const r of rings) atlGlobeRing(p, v, r);
+  return p;
+}
+function atlResolveColor(host, value){
+  const p = document.createElement('i');
+  p.style.cssText = 'position:absolute;visibility:hidden;color:' + value;
+  host.appendChild(p);
+  const c = getComputedStyle(p).color;
+  p.remove(); return c;
+}
+function atlGlobePalette(canvas){
+  const s = getComputedStyle(canvas), get = k => s.getPropertyValue(k).trim();
+  const paper = get('--paper'), ink = get('--ink'), accent = get('--accent'), accent2 = get('--accent2'), line = get('--line');
+  const sig = [paper, ink, accent, accent2, line].join('|');
+  if(canvas.__palette && canvas.__palette.sig === sig) return canvas.__palette;
+  const mix = (a, n, b) => atlResolveColor(canvas.parentElement,
+    'color-mix(in srgb,' + a + ' ' + n + '%,' + b + ')');
+  return (canvas.__palette = { sig, paper, ink, accent, accent2, line,
+    land:mix(paper, 88, ink), sea0:mix(accent2, 15, paper), sea1:mix(accent2, 10, paper),
+    sea2:mix(accent2, 30, paper), lake:mix(accent2, 34, paper), lakeLine:mix(accent2, 70, ink),
+    river:mix(accent2, 72, ink), pick:mix(accent, 30, 'transparent'), edge:mix(ink, 58, accent2) });
+}
+function atlGlobePaint(canvas, it, v){
+  const box = canvas.getBoundingClientRect();
+  if(!(box.width > 0 && box.height > 0)) return;
+  const dpr = Math.min(2, devicePixelRatio || 1), pw = Math.max(1, Math.round(box.width * dpr)),
+        ph = Math.max(1, Math.round(box.height * dpr));
+  if(canvas.width !== pw || canvas.height !== ph){ canvas.width = pw; canvas.height = ph; }
+  const ctx = canvas.getContext('2d'), sx = pw / ATL_W, sy = ph / v.H, C = atlGlobePalette(canvas);
+  const lon = v.P.lon * Math.PI / 180, lat = v.P.lat * Math.PI / 180;
+  v.G = { so:Math.sin(lon), co:Math.cos(lon), sl:Math.sin(lat), cl:Math.cos(lat) };
+  ctx.setTransform(sx, 0, 0, sy, 0, 0); ctx.clearRect(0, 0, ATL_W, v.H);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  const r = GEO_GR * v.k, cx = ATL_W / 2, cy = v.H / 2;
+  ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+  const sea = ctx.createRadialGradient(cx - r * .26, cy - r * .28, r * .04, cx, cy, r * 1.06);
+  sea.addColorStop(0, C.sea0); sea.addColorStop(.7, C.sea1); sea.addColorStop(1, C.sea2);
+  ctx.fillStyle = sea; ctx.fillRect(0, 0, ATL_W, v.H);
+
+  /* Tier two already resolves below a pixel across this canvas. Going to the
+     source table at deeper zoom only projects off-screen points; keeping this
+     cap fixed also means no detail swap when the hand is released. */
+  const lod = Math.min(2, atlLod(atlN(v))), raw = geoGlobeRaw(lod), land = atlGlobePath(v, raw.land);
+  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'grat'))){
+    ctx.strokeStyle = C.line; ctx.globalAlpha = .55; ctx.lineWidth = 1.1;
+    ctx.stroke(atlGlobeLines(v, atlGlobeGraticule()));
+  }
+  ctx.globalAlpha = 1;
+  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'land'))){ ctx.fillStyle = C.land; ctx.fill(land, 'evenodd'); }
+  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'relief'))){
+    ctx.save(); ctx.clip(land, 'evenodd'); ctx.globalAlpha = .92;
+    const rl = Math.min(2, lod);
+    for(const b of geoGlobeRelief(rl)){
+      ctx.fillStyle = b.fill; ctx.fill(atlGlobePath(v, b.rings));
+    }
+    ctx.restore();
+  }
+  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'lakes'))){
+    ctx.fillStyle = C.lake; ctx.strokeStyle = C.lakeLine; ctx.globalAlpha = .95; ctx.lineWidth = 1.2;
+    const p = atlGlobePath(v, raw.lakes);
+    ctx.fill(p, 'evenodd'); ctx.stroke(p);
+  }
+  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'rivers'))){
+    ctx.strokeStyle = C.river; ctx.globalAlpha = .75; ctx.lineWidth = 1.6;
+    ctx.stroke(atlGlobeLines(v, raw.rivers));
+  }
+  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'bord'))){
+    ctx.strokeStyle = C.ink; ctx.globalAlpha = .3; ctx.lineWidth = 1.5;
+    ctx.stroke(atlGlobeLines(v, raw.bord));
+  }
+  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'coast'))){
+    ctx.strokeStyle = C.ink; ctx.globalAlpha = .9; ctx.lineWidth = 2.4;
+    ctx.stroke(atlGlobeLines(v, raw.coast));
+  }
+  const key = atlSel(it);
+  if(key && atlOn(it, atlPickLayer())){
+    const p = atlGlobePath(v, atlGlobeRegion(key));
+    ctx.fillStyle = C.pick; ctx.strokeStyle = C.accent; ctx.globalAlpha = 1; ctx.lineWidth = 2.6;
+    ctx.fill(p, 'evenodd'); ctx.stroke(p);
+  }
+  const shade = ctx.createRadialGradient(cx - r * .28, cy - r * .3, r * .18, cx, cy, r);
+  shade.addColorStop(.58, 'rgba(0,0,0,0)'); shade.addColorStop(1, 'rgba(0,0,0,.19)');
+  ctx.fillStyle = shade; ctx.globalAlpha = 1; ctx.fillRect(0, 0, ATL_W, v.H);
+  ctx.restore();
+  ctx.strokeStyle = C.edge;
+  ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, Math.max(0, r - 1), 0, Math.PI * 2); ctx.stroke();
 }
 
 /* ---- the picture ----
    The static half: everything print, an export and the overview ever see. The
    pins group is left empty here and filled in mount(), which runs for those
    too — so an exported map carries exactly the labels that fitted. */
-function atlSVG(it, view){
+function atlSVG(it, view, liveGlobe){
   const v = view || atlView(it, null);
-  const paths = atlPathsFor(it, v);
+  liveGlobe = !!liveGlobe && v.globe;
+  /* Only static SVG uses orientation-keyless globe path caches. Clear them
+     here, once per static picture; a live turn never scans or invalidates the
+     flat maps' caches. */
+  if(v.globe && !liveGlobe) geoClearGlobeCaches();
+  const paths = liveGlobe ? {} : atlPathsFor(it, v);
   const ctx = { it, view: v, paths };
   const id = esc(String(it.id));
   let world = '', pins = '';
   for(const L of ATL_LAYERS){
     if(!atlOn(it, L)) continue;
-    if(L.world) world += '<g class="atlay" data-l="' + L.id + '" data-sw="' + (L.sw || 2) + '">' + L.world(ctx) + '</g>';
+    if(L.world) world += '<g class="atlay" data-l="' + L.id + '" data-sw="' + (L.sw || 2) + '">' +
+      (liveGlobe ? '' : L.world(ctx)) + '</g>';
     if(L.build) pins += '<g class="atlay" data-l="' + L.id + '"></g>';
   }
+  const globe = v.globe;
+  const seaDef = globe
+    ? '<radialGradient id="atlsea-' + id + '" cx="34%" cy="27%" r="72%">' +
+      '<stop offset="0" class="atsea0"/><stop offset=".72" class="atsea1"/><stop offset="1" class="atsea2"/></radialGradient>' +
+      '<radialGradient id="atlshade-' + id + '" cx="32%" cy="25%" r="76%">' +
+      '<stop offset=".58" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".19"/></radialGradient>'
+    : '<linearGradient id="atlsea-' + id + '" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" class="atsea0"/><stop offset="1" class="atsea1"/></linearGradient>';
+  const globeClip = globe ? '<clipPath id="atlglobe-' + id + '"><circle cx="' + GEO_GR + '" cy="' + GEO_GR +
+    '" r="' + GEO_GR + '"/></clipPath>' : '';
+  const moving = globe
+    ? '<g class="atworld" clip-path="url(#atlglobe-' + id + ')">' +
+      '<circle class="atsea" cx="' + GEO_GR + '" cy="' + GEO_GR + '" r="' + GEO_GR +
+      '" fill="url(#atlsea-' + id + ')"/>' + world +
+      '<circle class="atglobeshade" cx="' + GEO_GR + '" cy="' + GEO_GR + '" r="' + GEO_GR +
+      '" fill="url(#atlshade-' + id + ')"/>' +
+      '<circle class="atglobeedge" cx="' + GEO_GR + '" cy="' + GEO_GR + '" r="' + (GEO_GR - 2) + '"/></g>'
+    : '<rect class="atsea" x="0" y="0" width="' + ATL_W + '" height="' + v.H +
+      '" fill="url(#atlsea-' + id + ')"/><g class="atworld">' + world + '</g>';
   return '<svg class="atmap" viewBox="0 0 ' + ATL_W + ' ' + v.H + '" xmlns="http://www.w3.org/2000/svg"' +
+    (globe ? ' data-projection="globe"' : '') +
     ' data-built="' + esc(atlBuilt(it, v)) + '"' +
     ' style="aspect-ratio:' + ATL_W + '/' + v.H + '">' +
     '<defs><clipPath id="atl-' + id + '"><rect x="0" y="0" width="' + ATL_W + '" height="' + v.H + '" rx="14"/></clipPath>' +
-    '<linearGradient id="atlsea-' + id + '" x1="0" y1="0" x2="0" y2="1">' +
-    '<stop offset="0" class="atsea0"/><stop offset="1" class="atsea1"/></linearGradient></defs>' +
+    globeClip + seaDef + '</defs>' +
     '<g clip-path="url(#atl-' + id + ')">' +
-    '<rect class="atsea" x="0" y="0" width="' + ATL_W + '" height="' + v.H + '" fill="url(#atlsea-' + id + ')"/>' +
-    '<g class="atworld">' + world + '</g><g class="atpins">' + pins + '</g></g>' +
+    /* The live globe's picture is a pointerless canvas beneath this SVG. Keep
+       a hit plane in the SVG so a drag that crosses ocean never loses its
+       target; `pointer-events:all` also makes transparent water start a turn. */
+    '<rect class="athit" x="0" y="0" width="' + ATL_W + '" height="' + v.H +
+      '" fill="#000" fill-opacity=".001" pointer-events="all"/>' +
+    moving + '<g class="atpins">' + pins + '</g></g>' +
     '<rect class="atedge" x="1" y="1" width="' + (ATL_W - 2) + '" height="' + rd1(v.H - 2) + '" rx="13"/>' +
     '</svg>';
 }
@@ -695,27 +1029,34 @@ function atlPaint(el, it, v, force){
   const svg = el.querySelector('svg.atmap');
   if(!svg) return;
   const p = atlPlan(svg, it);
-  const built = atlBuilt(it, v);
-  if(p.built !== built || (p.slow && p.heavy !== built)){
-    const L = ATL_LIVE.get(it.id);
-    const busy = !!L && !!(L.hand || L.sx.active || L.sy.active || L.sz.active);
-    /* a rebuild the hand is owed is put off until the hand stops — unless what
-       is drawn no longer reaches the edge of the picture, and then it is not a
-       refinement any more but a hole, and holes are not deferred */
-    if(p.built !== built || !busy) atlReworld(svg, it, v, p, !busy || !atlCovers(p.hwin, v));
+  const canvas = el.querySelector('canvas.atglobeview'), liveGlobe = !!canvas && v.globe;
+  if(canvas) canvas.classList.toggle('on', liveGlobe);
+  if(p.world) p.world.style.visibility = liveGlobe ? 'hidden' : '';
+  if(!liveGlobe){
+    const built = atlBuilt(it, v);
+    if(p.built !== built || (p.slow && p.heavy !== built)){
+      const L = ATL_LIVE.get(it.id);
+      const busy = !!L && !!(L.hand || L.sx.active || L.sy.active || L.sz.active);
+      /* a rebuild the hand is owed is put off until the hand stops — unless what
+         is drawn no longer reaches the edge of the picture, and then it is not a
+         refinement any more but a hole, and holes are not deferred */
+      if(p.built !== built || !busy) atlReworld(svg, it, v, p, !busy || !atlCovers(p.hwin, v));
+    }
   }
   /* a settling spring's last frames move the picture by a fraction of a pixel.
      Nothing on screen can show that, so nothing on screen is touched for it */
   const was = p.was;
-  if(!force && was && v.z === was.z &&
+  if(!force && was && v.z === was.z && v.proj === was.proj &&
+     (!v.globe || (v.P.lon === was.lon && v.P.lat === was.lat)) &&
      Math.abs((v.cx - was.cx) * v.k) < .05 && Math.abs((v.cy - was.cy) * v.k) < .05) return;
-  p.was = { cx: v.cx, cy: v.cy, z: v.z };
-  if(p.world) p.world.setAttribute('transform',
+  p.was = { cx: v.cx, cy: v.cy, z: v.z, proj:v.proj, lon:v.P.lon, lat:v.P.lat };
+  if(liveGlobe) atlGlobePaint(canvas, it, v);
+  else if(p.world) p.world.setAttribute('transform',
     'translate(' + rd1(ATL_W / 2 - v.cx * v.k) + ' ' + rd1(v.H / 2 - v.cy * v.k) + ') scale(' + v.k + ')');
   /* the stroke goes on the group as an ATTRIBUTE and the paths inherit it —
      which is why no rule in the stylesheet may set stroke-width on them: CSS
      beats a presentation attribute and every line would freeze at one width */
-  for(const L of p.lay){
+  for(const L of liveGlobe ? [] : p.lay){
     const w = Math.round(L.sw / v.k * 100) / 100;
     if(L.w !== w){ L.w = w; L.g.setAttribute('stroke-width', w); }
   }
@@ -732,7 +1073,7 @@ function atlLive(el, it, page){
   const old = ATL_LIVE.get(it.id);
   if(old){ old.sx.stopAt(); old.sy.stopAt(); old.sz.stopAt(); if(old.raf) cancelAnimationFrame(old.raf); }
   const v = atlView(it, null);
-  const L = { el, page, cx: v.cx, cy: v.cy, z: v.z, raf: 0 };
+  const L = { el, page, cx: v.globe ? v.lon : v.cx, cy: v.globe ? v.lat : v.cy, z: v.z, raf: 0 };
   const bump = () => {
     if(L.raf) return;
     L.raf = requestAnimationFrame(() => { L.raf = 0; atlPaint(L.el, it, atlView(it, L)); });
@@ -744,8 +1085,8 @@ function atlLive(el, it, page){
     atlSettle(it, L);
     atlPaint(L.el, it, atlView(it, L));
   };
-  L.sx = spring({ from: v.cx, damping: 1, response: .3, rest: .5, onUpdate: x => { L.cx = x; bump(); }, onRest: rest });
-  L.sy = spring({ from: v.cy, damping: 1, response: .3, rest: .5, onUpdate: y => { L.cy = y; bump(); }, onRest: rest });
+  L.sx = spring({ from: L.cx, damping: 1, response: .3, rest: .05, onUpdate: x => { L.cx = x; bump(); }, onRest: rest });
+  L.sy = spring({ from: L.cy, damping: 1, response: .3, rest: .05, onUpdate: y => { L.cy = y; bump(); }, onRest: rest });
   L.sz = spring({ from: v.z, damping: 1, response: .22, rest: .0015, restSpeed: .02,
                   onUpdate: z => { L.z = z; bump(); }, onRest: rest });
   ATL_LIVE.set(it.id, L);
@@ -753,7 +1094,7 @@ function atlLive(el, it, page){
 }
 /* the view, back into the record, as a place rather than as world units */
 function atlSettle(it, L){
-  const P = geoProj(atlProj(it)), ll = P.inv(L.cx, L.cy);
+  const ll = atlGlobe(it) ? [geoLon(L.cx), L.cy] : geoProj(atlProj(it)).inv(L.cx, L.cy);
   it.lon = Math.round(ll[0] * 1e4) / 1e4;
   it.lat = Math.round(ll[1] * 1e4) / 1e4;
   it.zm = Math.round(L.z * 1e3) / 1e3;
@@ -785,8 +1126,10 @@ function atlPointers(svg, el, it, page, L){
        hangs off it, and asking again per move would be asking 177 countries a
        question whose answer cannot have changed. */
     const ring = atlRingAt(it, v, q);
-    st = { k: v.k, px: q[0], py: q[1], cx: L.cx, cy: L.cy, lim: atlLimits(it, v.k),
-           co: ring >= 0 ? ring : geoCoAt(atlProj(it), w[0], w[1], ATL_TINY / v.k) };
+    st = { k: v.k, px: q[0], py: q[1], cx: L.cx, cy: L.cy,
+           lim: v.globe ? null : atlLimits(it, v.k), globe:v.globe,
+           co: ring >= 0 ? ring : (isFinite(w[0]) && isFinite(w[1])
+             ? geoCoAt(atlVProj(it, v), w[0], w[1], ATL_TINY / v.k) : -1) };
     const reg = atlRegOf(it, st.co);
     grab = reg && reg === atlSel(it) && atlOn(it, atlPickLayer()) ? 1 : 0;
     mode = 1;
@@ -828,6 +1171,12 @@ function atlPointers(svg, el, it, page, L){
   };
   const movePan = e => {
     const q = svgAt(svg, e);
+    if(st.globe){
+      const deg = GEO_R2D / (GEO_GR * st.k);
+      atlJump(L, st.cx - (q[0] - st.px) * deg,
+                 clamp(st.cy + (q[1] - st.py) * deg, -89.5, 89.5));
+      return;
+    }
     atlJump(L, atlBand(st.cx - (q[0] - st.px) / st.k, st.lim.x0, st.lim.x1),
                atlBand(st.cy - (q[1] - st.py) / st.k, st.lim.y0, st.lim.y1));
   };
@@ -836,17 +1185,27 @@ function atlPointers(svg, el, it, page, L){
     if(a.length < 2) return;
     const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1;
     const z = clamp(st.z + Math.log2(d / st.d), atlZMin(it), ATL_ZMAX);
-    const k = ATL_W / GEO_W * Math.pow(2, z), lim = atlLimits(it, k);
+    if(atlGlobe(it)){ atlJump(L, L.cx, L.cy, z); return; }
+    const k = atlK(it, z), lim = atlLimits(it, k);
     atlJump(L, clamp(st.wx - (st.mx - ATL_W / 2) / k, lim.x0, lim.x1),
                clamp(st.wy - (st.my - st.H / 2) / k, lim.y0, lim.y1), z);
   };
   /* let go: whatever was pulled past the edge comes back, and whatever was
      thrown carries on and slows down the way a sheet of paper would */
   const release = () => {
-    const v = atlView(it, L), lim = atlLimits(it, v.k);
+    const v = atlView(it, L);
     const box = svg.getBoundingClientRect();
     const s2p = box.width ? ATL_W / box.width : 1;
     const vel = mode === 1 ? fl.vel() : { vx: 0, vy: 0 };
+    if(v.globe){
+      const deg = s2p * GEO_R2D / (GEO_GR * v.k);
+      const vlx = -vel.vx * deg, vly = vel.vy * deg;
+      L.sx.set({ response:.55 }).to(L.cx + projectFling(vlx, .992), vlx);
+      L.sy.set({ response:.55 }).to(clamp(L.cy + projectFling(vly, .992), -89.5, 89.5), vly);
+      mode = 0; st = null;
+      return;
+    }
+    const lim = atlLimits(it, v.k);
     const vcx = -vel.vx * s2p / v.k, vcy = -vel.vy * s2p / v.k;
     L.sx.set({ response: .55 }).to(clamp(L.cx + projectFling(vcx, .992), lim.x0, lim.x1), vcx);
     L.sy.set({ response: .55 }).to(clamp(L.cy + projectFling(vcy, .992), lim.y0, lim.y1), vcy);
@@ -952,6 +1311,10 @@ function atlDrawPick(el, it, blink){
   if(!g) return;
   const L = atlPickLayer();
   const v = atlView(it, ATL_LIVE.get(it.id) || null);
+  if(v.globe && el.querySelector('canvas.atglobeview')){
+    atlPaint(el, it, v, true);
+    return;
+  }
   g.innerHTML = L.world({ it, view: v, paths: atlPathsFor(it, v) });
   clearTimeout(g.__blink);
   g.classList.toggle('blink', !!blink);
@@ -963,11 +1326,22 @@ function atlDrawPick(el, it, blink){
 function atlFlyTo(it, key){
   const L = ATL_LIVE.get(it.id);
   if(!L || !key) return;
+  if(atlGlobe(it)){
+    const E = geoProj('equirect'), b = geoRegMain('equirect', key);
+    const ll = E.inv((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
+    const span = Math.max(b.x1 - b.x0, b.y1 - b.y0, 24);
+    const z = clamp(Math.log2(GEO_W / (span * 1.8)), 0, ATL_ZMAX);
+    const lon = ll[0] + Math.round((L.cx - ll[0]) / 360) * 360;
+    L.sz.set({ response:.8 }).to(z);
+    L.sx.set({ response:.8 }).to(lon);
+    L.sy.set({ response:.8 }).to(clamp(ll[1], -89.5, 89.5));
+    return;
+  }
   const b = geoRegMain(atlProj(it), key), g = atlGeom(it);
   const bw = Math.max(b.x1 - b.x0, 8), bh = Math.max(b.y1 - b.y0, 8);
   const k = Math.min(ATL_W / (bw * 1.35), g.H / (bh * 1.35));   /* fit it, with air round it */
   const z = clamp(Math.log2(k * GEO_W / ATL_W), atlZMin(it), ATL_ZMAX);
-  const kk = ATL_W / GEO_W * Math.pow(2, z), lim = atlLimits(it, kk);
+  const kk = atlK(it, z, g), lim = atlLimits(it, kk);
   L.sz.set({ response: .8 }).to(z);
   L.sx.set({ response: .8 }).to(clamp((b.x0 + b.x1) / 2, lim.x0, lim.x1));
   L.sy.set({ response: .8 }).to(clamp((b.y0 + b.y1) / 2, lim.y0, lim.y1));
@@ -979,7 +1353,10 @@ function atlFlyTo(it, key){
    happen. On the way down it becomes an ordinary `country` card at the point
    it was let go of; brought back over the map, nothing happened at all. */
 function atlCarry(it, key){
-  const proj = atlProj(it), b = geoRegMain(proj, key);
+  /* A detached country is a flat card, even when it came from the sphere; a
+     live orthographic projection is meaningful only with the globe and its
+     horizon around it. */
+  const proj = atlGlobe(it) ? 'mercator' : atlProj(it), b = geoRegMain(proj, key);
   const w = Math.max(b.x1 - b.x0, 1), h = Math.max(b.y1 - b.y0, 1), m = Math.max(w, h) * .07;
   const d = document.createElement('div');
   d.className = 'atcarry';
@@ -1007,7 +1384,7 @@ function atlSpawn(name, it, page, at){
   /* the card is the same picture at the country's own distance, so it leaves
      the map wearing what the map was wearing: the projection, the outlines, and
      whichever of height, lakes and rivers were on when it came off */
-  ATL_NEXT = { co: name, proj: atlProj(it), look: it.look || 'smooth',
+  ATL_NEXT = { co: name, proj: atlGlobe(it) ? 'mercator' : atlProj(it), look: it.look || 'smooth',
                rel: atlOn(it, ATL_LAYERS.find(L => L.id === 'relief')) ? 1 : 0,
                lak: atlOn(it, ATL_LAYERS.find(L => L.id === 'lakes')) ? 1 : 0,
                riv: atlOn(it, ATL_LAYERS.find(L => L.id === 'rivers')) ? 1 : 0 };
@@ -1114,17 +1491,26 @@ window.addEventListener('pointerdown', e => {
 function atlZoom(el, it, L, svg, ev, dz){
   const v = atlView(it, L);
   const q = svgAt(svg, ev);
-  const wx = v.cx + (q[0] - ATL_W / 2) / v.k, wy = v.cy + (q[1] - v.H / 2) / v.k;
   const z = clamp(L.sz.target + dz, atlZMin(it), ATL_ZMAX);
   if(Math.abs(z - L.sz.target) < 1e-6) return;
-  const k = ATL_W / GEO_W * Math.pow(2, z), lim = atlLimits(it, k);
+  if(v.globe){ L.sz.to(z); return; }
+  const wx = v.cx + (q[0] - ATL_W / 2) / v.k, wy = v.cy + (q[1] - v.H / 2) / v.k;
+  const k = atlK(it, z, v), lim = atlLimits(it, k);
   L.sz.to(z);
   L.sx.set({ response: .22 }).to(clamp(wx - (q[0] - ATL_W / 2) / k, lim.x0, lim.x1));
   L.sy.set({ response: .22 }).to(clamp(wy - (q[1] - v.H / 2) / k, lim.y0, lim.y1));
 }
 /* …and the home button walks it back rather than cutting to it */
 function atlHome(el, it, L){
-  const P = geoProj(atlProj(it)), c = P.fwd(8, 16), z = atlZMin(it), k = ATL_W / GEO_W * Math.pow(2, z);
+  const z = atlZMin(it);
+  if(atlGlobe(it)){
+    const lon = 8 + Math.round((L.cx - 8) / 360) * 360;
+    L.sz.to(z);
+    L.sx.set({ response:.45 }).to(lon);
+    L.sy.set({ response:.45 }).to(16);
+    return;
+  }
+  const P = geoProj(atlProj(it)), c = P.fwd(8, 16), k = atlK(it, z);
   const lim = atlLimits(it, k);
   L.sz.to(z);
   L.sx.set({ response: .45 }).to(clamp(c[0], lim.x0, lim.x1));
@@ -1156,7 +1542,7 @@ function atlRebuild(el, it, page){
   if(!old) return;
   /* built for where the map is NOW, not for where the record last settled —
      a rebuild while zoomed in must not go through the whole world on the way */
-  old.outerHTML = atlSVG(it, atlView(it, ATL_LIVE.get(it.id) || null));
+  old.outerHTML = atlSVG(it, atlView(it, ATL_LIVE.get(it.id) || null), !!el.querySelector('canvas.atglobeview'));
   atlPanel(el, it, page);
   const L = ATL_LIVE.get(it.id) || atlLive(el, it, page);
   L.el = el;
@@ -1167,7 +1553,7 @@ function atlRebuild(el, it, page){
 }
 function atlBuildPins(el, it){
   const v = atlView(it, ATL_LIVE.get(it.id) || null);
-  const ctx = { it, view: v, paths: atlPathsFor(it, v) };
+  const ctx = { it, view: v, paths:v.globe && el.querySelector('canvas.atglobeview') ? {} : atlPathsFor(it, v) };
   for(const L of ATL_LAYERS){
     if(!L.build || !atlOn(it, L)) continue;
     const g = el.querySelector('.atpins .atlay[data-l="' + L.id + '"]');
@@ -1240,7 +1626,9 @@ defineItem('atlas', {
                            proj:'mercator', look:'smooth', ar:0.5,
                            lon:8, lat:16, zm:0, on:{} }) },
   sound: 'plop',
-  html: (it, c) => '<figure class="body atlas"><div class="atbox">' + atlSVG(it) +
+  html: (it, c) => '<figure class="body atlas"><div class="atbox">' +
+    (c.live ? '<canvas class="atglobeview" aria-hidden="true"></canvas>' : '') +
+    atlSVG(it, null, c.live) +
     (c.live ? '<div class="atpanel"></div>' : '') + '</div><figcaption></figcaption></figure>',
   /* print, the overview and an export come through here too, which is how a
      map that was never on screen still gets its labels put in the right place */
@@ -1285,17 +1673,25 @@ defineItem('atlas', {
     mk('⇱', 'Take what is picked off onto the page — or drag it out of the map',
       () => { const k = atlSel(it);
               if(k) atlSpawn(geoRegName(k), it, page, { x: it.x + pctW(40), y: it.y + pctH(40) }); });
-    mk('◎', 'Projection — flat or Mercator', b => {
-      it.proj = atlProj(it) === 'mercator' ? 'equirect' : 'mercator';
-      b.title = 'Projection: ' + geoProj(it.proj).label;
-      const L = ATL_LIVE.get(it.id);
+    const projection = mk('◎', 'Projection — flat, Mercator or globe', b => {
+      const old = atlProj(it), L = ATL_LIVE.get(it.id);
+      let ll = [nz(it.lon, 8), nz(it.lat, 16)];
+      if(L) ll = old === 'globe' ? [geoLon(L.cx), L.cy] : geoProj(old).inv(L.cx, L.cy);
+      const modes = ['equirect', 'mercator', 'globe'];
+      it.proj = modes[(modes.indexOf(old) + 1) % modes.length];
+      it.lon = ll[0]; it.lat = ll[1];
+      b.title = 'Projection: ' + geoProj(it.proj).label + ' — switch between flat, Mercator and globe';
       if(L){                                        /* the same place, on the new sheet */
-        const c = geoProj(atlProj(it)).fwd(nz(it.lon, 8), nz(it.lat, 16));
         L.z = clamp(L.z, atlZMin(it), ATL_ZMAX);
-        atlJump(L, c[0], c[1], L.z);
+        if(it.proj === 'globe') atlJump(L, ll[0], clamp(ll[1], -89.5, 89.5), L.z);
+        else {
+          const c = geoProj(it.proj).fwd(ll[0], ll[1]);
+          atlJump(L, c[0], c[1], L.z);
+        }
       }
       queueSave(page.id); atlRebuild(el, it, page);
     });
+    projection.title = 'Projection: ' + geoProj(atlProj(it)).label + ' — switch between flat, Mercator and globe';
     mk('◈', 'Outlines — drawn round, or straight off the data', b => {
       it.look = it.look === 'crisp' ? 'smooth' : 'crisp';
       b.title = 'Outlines: ' + (it.look === 'crisp' ? 'straight' : 'round');
@@ -1332,11 +1728,18 @@ addCSS('atlas', `
 /* ---------- the atlas ---------- */
 .atlas{display:block}
 .atbox{position:relative}
-svg.atmap{display:block;width:100%;height:auto;background:none;touch-action:none;
+.atglobeview{display:none;position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.atglobeview.on{display:block}
+svg.atmap{position:relative;z-index:1;display:block;width:100%;height:auto;background:none;touch-action:none;
   shape-rendering:geometricPrecision}
 .atmap .atsea0{stop-color:color-mix(in srgb,var(--accent2) 15%,var(--paper));stop-opacity:1}
 .atmap .atsea1{stop-color:color-mix(in srgb,var(--accent2) 10%,var(--paper));stop-opacity:1}
+.atmap .atsea2{stop-color:color-mix(in srgb,var(--accent2) 30%,var(--paper));stop-opacity:1}
 .atmap .atedge{fill:none;stroke:var(--line);stroke-width:2;opacity:.8}
+.atmap[data-projection="globe"] .atedge{opacity:.34}
+.atmap .atglobeshade{pointer-events:none}
+.atmap .atglobeedge{fill:none;stroke:color-mix(in srgb,var(--ink) 58%,var(--accent2));
+  stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:none}
 .atmap .atlay{fill:none;stroke-linejoin:round;stroke-linecap:round}
 /* a layer that has just been rebuilt at a finer step: the old picture, on top
    of the new one, on its way out. See atlSwap — nothing else ever has this */

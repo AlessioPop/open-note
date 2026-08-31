@@ -181,8 +181,55 @@ function geoCapitals(){
 /* ---- projections ----
    Each flattens the globe onto a square GEO_W across, `h` tall. Add one here
    and it is offered everywhere a projection is chosen; nothing else knows the
-   list exists. Both of these are separable — x from longitude alone, y from
-   latitude alone — but nothing downstream assumes that. */
+   list exists. The first two are separable — x from longitude alone, y from
+   latitude alone — but nothing downstream assumes that.
+
+   THE GLOBE IS ORTHOGRAPHIC ON ITS FRONT HALF. Points on the far half are
+   carried monotonically OUTSIDE its rim instead of folded back over the face;
+   the atlas clips the resulting picture to the rim. That small continuation
+   is what lets the exact same paths, rivers, lakes and borders draw a sphere:
+   front-side geometry has real spherical foreshortening, while back-side
+   geometry has nowhere inside the visible circle to paint. */
+const GEO_D2R = Math.PI / 180, GEO_R2D = 180 / Math.PI, GEO_GR = GEO_W / 2;
+let GEO_GLOBE = { lon: 8, lat: 16, sl: Math.sin(16 * GEO_D2R), cl: Math.cos(16 * GEO_D2R) };
+const geoLon = lon => ((lon + 540) % 360) - 180;
+function geoGlobeFwd(lon, lat){
+  const dl = geoLon(lon - GEO_GLOBE.lon) * GEO_D2R, p = lat * GEO_D2R;
+  const sp = Math.sin(p), cp = Math.cos(p), sd = Math.sin(dl), cd = Math.cos(dl);
+  const east = cp * sd;
+  const north = GEO_GLOBE.cl * sp - GEO_GLOBE.sl * cp * cd;
+  const front = GEO_GLOBE.sl * sp + GEO_GLOBE.cl * cp * cd;
+  if(front >= 0) return [GEO_GR + GEO_GR * east, GEO_GR - GEO_GR * north];
+  /* On the back, preserve the bearing and move from one radius at the horizon
+     to two at the antipode. A clipped SVG therefore never sees the far side,
+     and a short arc never jumps across the face on its way behind it. */
+  const s = Math.hypot(east, north) || 1;
+  const c = Math.acos(Math.max(-1, Math.min(1, front)));
+  const r = GEO_GR * (1 + (c - Math.PI / 2) / (Math.PI / 2));
+  return [GEO_GR + r * east / s, GEO_GR - r * north / s];
+}
+/* The same rotation without flattening the far side. The live globe's canvas
+   consumes this directly so it can clip every line at z=0 before drawing it;
+   no hidden segment can ever cut across the face. */
+function geoGlobeXYZ(lon, lat){
+  const dl = geoLon(lon - GEO_GLOBE.lon) * GEO_D2R, p = lat * GEO_D2R;
+  const sp = Math.sin(p), cp = Math.cos(p), cd = Math.cos(dl);
+  return { x:cp * Math.sin(dl),
+           y:GEO_GLOBE.cl * sp - GEO_GLOBE.sl * cp * cd,
+           z:GEO_GLOBE.sl * sp + GEO_GLOBE.cl * cp * cd };
+}
+function geoGlobeInv(x, y){
+  const ex = (x - GEO_GR) / GEO_GR, no = (GEO_GR - y) / GEO_GR;
+  const rho = Math.hypot(ex, no);
+  if(rho > 1 + 1e-7) return [NaN, NaN];
+  if(rho < 1e-9) return [GEO_GLOBE.lon, GEO_GLOBE.lat];
+  const c = Math.asin(Math.min(1, rho)), sc = Math.sin(c), cc = Math.cos(c);
+  const p0 = GEO_GLOBE.lat * GEO_D2R;
+  const lat = Math.asin(cc * Math.sin(p0) + no * sc * Math.cos(p0) / rho);
+  const lon = GEO_GLOBE.lon * GEO_D2R + Math.atan2(ex * sc,
+    rho * Math.cos(p0) * cc - no * Math.sin(p0) * sc);
+  return [geoLon(lon * GEO_R2D), lat * GEO_R2D];
+}
 const GEO_PROJ = {
   equirect: {
     label: 'Flat', h: GEO_W / 2, wrap: GEO_W,
@@ -198,9 +245,29 @@ const GEO_PROJ = {
     },
     inv: (x, y) => [x / GEO_W * 360 - 180,
                     (2 * Math.atan(Math.exp(Math.PI - y / GEO_W * 2 * Math.PI)) - Math.PI / 2) * 180 / Math.PI]
+  },
+  globe: {
+    label: 'Globe', h: GEO_W, globe: 1, lon: 8, lat: 16,
+    fwd: geoGlobeFwd, inv: geoGlobeInv, xyz:geoGlobeXYZ,
+    visible(lon, lat){
+      const dl = geoLon(lon - GEO_GLOBE.lon) * GEO_D2R, p = lat * GEO_D2R;
+      return GEO_GLOBE.sl * Math.sin(p) + GEO_GLOBE.cl * Math.cos(p) * Math.cos(dl) >= -1e-8;
+    }
   }
 };
 const geoProj = name => GEO_PROJ[name] || GEO_PROJ.equirect;
+
+/* The globe's orientation is live. Static SVG callers clear the `globe` cache
+   immediately before asking for paths; the live canvas never touches those
+   strings, so changing orientation here stays constant-time during a turn. */
+function geoGlobeAt(lon, lat){
+  lon = geoLon(lon);
+  lat = Math.max(-89.5, Math.min(89.5, lat));
+  if(lon === GEO_GLOBE.lon && lat === GEO_GLOBE.lat) return GEO_PROJ.globe;
+  GEO_GLOBE = { lon, lat, sl: Math.sin(lat * GEO_D2R), cl: Math.cos(lat * GEO_D2R) };
+  GEO_PROJ.globe.lon = lon; GEO_PROJ.globe.lat = lat;
+  return GEO_PROJ.globe;
+}
 
 /* ---- points to a path ----
    `smooth` runs a quadratic through the midpoints of the run, the way a coarse
@@ -285,6 +352,47 @@ function geoRingPts(ring, P, lod){
   const n = out.length;
   if(n > 1 && out[0][0] === out[n - 1][0] && out[0][1] === out[n - 1][1]) out.pop();
   return out;
+}
+
+/* Raw longitude/latitude runs for the live globe. They are simplified at the
+   same steps as every SVG map, but never projected or rewritten during a
+   gesture. One immutable table per step is all a rotating canvas needs. */
+const GEO_GLOBE_RAW = new Map();
+function geoGlobeRaw(lod){
+  lod = lod == null ? GEO_LOD_MAX : Math.max(0, Math.min(GEO_LOD_MAX, lod));
+  let hit = GEO_GLOBE_RAW.get(lod);
+  if(hit) return hit;
+  const arcs = geoArcsAt(lod);
+  const arc = i => {
+    const back = i < 0, a = arcs[back ? ~i : i];
+    return back ? a.slice().reverse() : a;
+  };
+  const ring = rs => {
+    const out = [];
+    for(const i of rs){
+      const a = arc(i);
+      for(let k = out.length ? 1 : 0; k < a.length; k++) out.push(a[k]);
+    }
+    if(out.length > 1 && out[0][0] === out[out.length - 1][0] &&
+       out[0][1] === out[out.length - 1][1]) out.pop();
+    return out;
+  };
+  const tol = lod >= GEO_LOD_MAX ? 0 : GEO_LOD[lod];
+  const detail = (list, close) => {
+    const out = [];
+    for(const f of list) for(const r of f.runs){
+      const a = tol ? geoDP(r, tol) : r;
+      if(a.length < (close ? 3 : 2) || (tol && geoSpanOf(a) < tol)) continue;
+      out.push(a);
+    }
+    return out;
+  };
+  hit = { land:geoRings(GEO_WORLD.land).map(ring),
+          coast:geoIdx(GEO_WORLD.coast).map(arc),
+          bord:geoIdx(GEO_WORLD.bord).map(arc),
+          rivers:detail(geoRivers(), false), lakes:detail(geoLakes(), true) };
+  GEO_GLOBE_RAW.set(lod, hit);
+  return hit;
 }
 
 /* ---- the three pictures ----
@@ -1374,6 +1482,33 @@ function geoContours(S, W, H, t){
 }
 
 const GEO_BAND_MEMO = new Map();
+const GEO_GLOBE_BAND = new Map();
+/* Relief as geographic loops, once per detail step. The SVG path projects
+   these into its fixed map; the live globe projects the points straight into
+   its canvas, so terrain remains attached to the land throughout a turn. */
+function geoGlobeRelief(lod){
+  const R = geoRelief();
+  if(!R.w) return [];
+  lod = Math.max(0, Math.min(GEO_LOD_MAX, lod == null ? GEO_LOD_MAX : lod));
+  let hit = GEO_GLOBE_BAND.get(lod);
+  if(hit) return hit;
+  const step = GEO_STEP[Math.max(0, Math.min(GEO_STEP.length - 1, lod))];
+  const W = Math.max(1, Math.ceil(R.w / step)), H = Math.max(1, Math.ceil(R.h / step));
+  const S = new Float32Array((W + 2) * (H + 2));
+  for(let j = 0; j < H; j++){
+    const sy = Math.min(R.h - 1, j * step) * R.w;
+    for(let i = 0; i < W; i++)
+      S[(j + 1) * (W + 2) + i + 1] = R.g[sy + Math.min(R.w - 1, i * step)];
+  }
+  const lonOf = i => -180 + ((i - 1) * step + .5) * 360 / R.w;
+  const latOf = j => 90 - ((j - 1) * step + .5) * 180 / R.h;
+  hit = geoBandsAt(lod).map(t => ({
+    fill:geoTintHex((t - 1) / (R.lv - 1)),
+    rings:geoContours(S, W, H, t).map(r => r.map(p => [lonOf(p[0]), latOf(p[1])]))
+  })).filter(b => b.rings.length);
+  GEO_GLOBE_BAND.set(lod, hit);
+  return hit;
+}
 /* the bands as {d, fill}, lowest first — paint them in order and each covers
    the one below it, which is what makes nine closed lines into a filled map */
 function geoReliefBands(proj, look, lod, win){
@@ -1419,3 +1554,19 @@ function geoReliefBands(proj, look, lod, win){
 }
 const geoHex = v => ('0' + Math.max(0, Math.min(255, Math.round(v))).toString(16)).slice(-2);
 const geoTintHex = t => { const c = geoTint(t); return '#' + geoHex(c[0]) + geoHex(c[1]) + geoHex(c[2]); };
+
+/* Only the mutable orthographic slot is cleared. Flat and Mercator maps keep
+   every one of their long-lived memoised paths, including when several globe
+   widgets are being rotated independently on the same page. */
+function geoClearGlobeCaches(){
+  const clear = m => {
+    for(const k of [...m.keys()]){
+      const s = String(k);
+      if(s === 'globe' || s.startsWith('globe|')) m.delete(k);
+    }
+  };
+  [GEO_RUN_MEMO, GEO_MEMO, GEO_CO_GEOM, GEO_CO_MAIN, GEO_TINY, GEO_CO_PATH,
+   GEO_REG_SPOT, GEO_REG_LBL, GEO_REG, GEO_REG_PATH, GEO_DET_MEMO, GEO_DET_WIN,
+   GEO_BAND_MEMO].forEach(clear);
+  if(GEO_CO_ORDER && GEO_CO_ORDER.proj === 'globe') GEO_CO_ORDER = null;
+}

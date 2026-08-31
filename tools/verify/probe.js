@@ -8747,7 +8747,7 @@
         geoCapitals()[0].name);
       ok('atlas: a name with an apostrophe survived the packing',
         geoCountries().some(function (c) { return c.name === "Côte d'Ivoire"; }));
-      var E = GEO_PROJ.equirect, M = GEO_PROJ.mercator;
+      var E = GEO_PROJ.equirect, M = GEO_PROJ.mercator, G = geoGlobeAt(8, 16);
       var f = E.fwd(-0.1276, 51.5072), rt = E.inv(f[0], f[1]);
       ok('atlas: London lands where London is', Math.round(f[0]) === 2047 && Math.round(f[1]) === 438,
         f.map(Math.round).join(','));
@@ -8761,6 +8761,15 @@
       ok('atlas: Mercator is cut where everyone cuts it',
         Math.abs(M.fwd(0, 85.0511287798066)[1]) < 1e-6 &&
         Math.abs(M.fwd(0, -85.0511287798066)[1] - GEO_W) < 1e-6);
+      var gf = G.fwd(23, 40), grt = G.inv(gf[0], gf[1]), gb = G.fwd(-172, -16);
+      ok('atlas: the globe puts its live centre in the middle of the sphere',
+        G.fwd(8, 16).every(function (x) { return Math.abs(x - GEO_W / 2) < 1e-6; }));
+      ok('atlas: the globe and its inverse are each other on the visible hemisphere',
+        Math.abs(grt[0] - 23) < 1e-8 && Math.abs(grt[1] - 40) < 1e-8,
+        grt.join(','));
+      ok('atlas: the far hemisphere is carried outside the circular horizon',
+        Math.hypot(gb[0] - GEO_W / 2, gb[1] - GEO_W / 2) > GEO_W / 2 &&
+        !G.visible(-172, -16));
       /* the same world twice is the same string: a second map on a page, and
          every repaint of the first, must cost nothing at all */
       ok('atlas: the world is built once and kept',
@@ -9003,6 +9012,29 @@
         els[0].querySelector('path.atland').getAttribute('d') ===
           atlPathsFor(a, atlView(a, ATL_LIVE.get(a.id))).land);
       btn('◎').click(); await sleep(40);
+      ok('atlas: ◎ offers the globe in the same World widget',
+        a.proj === 'globe' && els[0].querySelector('svg.atmap').dataset.projection === 'globe' &&
+        !!els[0].querySelector('.atglobeedge') && !!els[0].querySelector('clipPath[id^="atlglobe-"]') &&
+        !!els[0].querySelector('canvas.atglobeview.on'));
+      var hit = els[0].querySelector('.athit');
+      ok('atlas: the live globe keeps one uninterrupted drag surface over land and ocean',
+        !!hit && hit.getAttribute('pointer-events') === 'all' && +hit.getAttribute('fill-opacity') > 0);
+      var height = els[0].querySelector('.atpanel button[data-l="relief"]');
+      height.click(); await sleep(80);
+      var globeCanvas = els[0].querySelector('canvas.atglobeview');
+      var green = function (c) {
+        var d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, n = 0;
+        for(var i = 0; i < d.length; i += 4)
+          if(d[i + 3] && d[i + 1] > d[i] + 15 && d[i + 1] > d[i + 2] + 10) n++;
+        return n;
+      };
+      var live = ATL_LIVE.get(a.id);
+      live.hand = 1; live.sx.jump(live.cx + 35); await sleep(40);
+      ok('atlas: height stays painted while the globe is being turned',
+        globeCanvas === els[0].querySelector('canvas.atglobeview') &&
+        globeCanvas.classList.contains('on') && green(globeCanvas) > 100,
+        green(globeCanvas) + ' terrain pixels');
+      live.hand = 0;
 
       /* ---- print, and an export ---- */
       var json = JSON.stringify(page.items);
