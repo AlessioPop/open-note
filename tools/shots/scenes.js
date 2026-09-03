@@ -65,6 +65,69 @@
   /* ================= the scenes ================= */
   const SCENES = {
 
+    /* nine kinds of thinking map behind one tile — three of them here */
+    maps(page){
+      /* a map is a list of thoughts, each naming its parent: exactly what the
+         feature stores, so nothing here is a mock-up of one */
+      const map = (x, y, w, kind, pal, rows, extra) => {
+        const id = {}, nodes = rows.map(r => {
+          const n = { id: uid(), pid: null, text: r[1] };
+          id[r[0]] = n.id;
+          if(r[2]) n.side = r[2];
+          return n;
+        });
+        rows.forEach((r, i) => { if(r[3]) nodes[i].pid = id[r[3]]; });
+        return put(page, 'mindmap', x, y, Object.assign({ w, kind, nodes,
+          look: { pal } }, extra || {}));
+      };
+      map(2.5, 3, 50, 'mind', 'ocean', [
+        ['r', 'A star’s life'],
+        ['a', 'Main sequence', '', 'r'],
+        ['a1', 'Hydrogen to helium', '', 'a'],
+        ['a2', 'Radiation holds it up', '', 'a'],
+        ['b', 'Red giant', '', 'r'],
+        ['b1', 'The core contracts', '', 'b'],
+        ['b2', 'The envelope swells', '', 'b'],
+        ['c', 'What is left', '', 'r'],
+        ['c1', 'White dwarf', '', 'c'],
+        ['c2', 'Neutron star', '', 'c'],
+        ['c3', 'Black hole', '', 'c']
+      ], { cap: 'a mind map — branches left and right, each limb its own colour' });
+
+      map(56, 3, 41, 'flow', 'sunset', [
+        ['r', 'Core collapse'],
+        ['s1', 'Iron core grows', '', 'r'],
+        ['s2', 'Pressure fails', '', 'r'],
+        ['s3', 'Infall at 0.2c', '', 'r'],
+        ['s4', 'Bounce', '', 'r'],
+        ['s5', 'Shock breaks out', '', 'r']
+      ], { cap: 'a flow map — one thing after another' });
+
+      map(56, 30, 41, 'double', 'berry', [
+        ['l', 'Type Ia'],
+        ['r', 'Type II'],
+        ['s1', 'A supernova', 'c', 'l'],
+        ['s2', 'Makes heavy elements', 'c', 'l'],
+        ['l1', 'A white dwarf', 'l', 'l'],
+        ['l2', 'Standard candle', 'l', 'l'],
+        ['r1', 'A massive star', 'r', 'r'],
+        ['r2', 'Leaves a remnant', 'r', 'r']
+      ], { cap: 'a double bubble map — what two things share, and what they do not' });
+
+      map(2.5, 44, 50, 'brace', 'meadow', [
+        ['r', 'A reflecting telescope'],
+        ['p1', 'Optics', '', 'r'],
+        ['p2', 'Mount', '', 'r'],
+        ['p3', 'Detector', '', 'r'],
+        ['o1', 'Primary mirror', '', 'p1'],
+        ['o2', 'Secondary', '', 'p1'],
+        ['o3', 'Corrector', '', 'p1'],
+        ['m1', 'Equatorial drive', '', 'p2'],
+        ['d1', 'CCD', '', 'p3']
+      ], { cap: 'a brace map — a whole thing, and the parts it is made of' });
+      return null;
+    },
+
     /* the hero: one sheet with a bit of everything on it */
     canvas(page){
       put(page, 'title', 3, 2.5, { w: 40, fs: 32, html: 'Rocket, first stage' });
@@ -214,6 +277,7 @@
   };
 
   const SIZE = { canvas:    [1980, 1240],
+                 maps:      [1900, 1120],
                  molecules: [1520, 1020],
                  nuclides:  [1760, 1700],
                  data:      [1760, 1000],

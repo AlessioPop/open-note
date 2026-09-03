@@ -39,8 +39,7 @@ const ATL_HYST = 0.6;                              // how far past a boundary th
 const ATL_FADE = 260;                              // how long a rebuilt height layer takes to arrive, ms
 const ATL_MOVE = new Set();                        // maps picked up to be moved about the page
 const ATL_LIVE = new Map();                        // id → the springs and the view they drive. Never saved
-const ATL_PANEL = new Set();                       // …and whose layer panel is open
-const ATL_BLINK = 2600;                            // how long ⌕ keeps a country lit, ms
+const ATL_BLINK = 2600;                           // how long ⌕ keeps a country lit, ms
 const ATL_HOLD = 330;                              // how long a country is held before it comes off the map, ms
 let ATL_NEXT = null;                               // the country the next `country` item is of
 
@@ -50,6 +49,80 @@ let ATL_NEXT = null;                               // the country the next `coun
    on a screen is drawn in. */
 const atlProj = it => it.proj || 'mercator';
 const atlGlobe = it => atlProj(it) === 'globe';
+const ATL_PROJECTIONS = ['equirect', 'mercator', 'azimuthal', 'globe'];
+const CTRY_PROJECTIONS = ATL_PROJECTIONS.slice(0, -1);
+const atlNextProjection = (name, modes) => modes[(modes.indexOf(name) + 1) % modes.length];
+/* ---- the bar ----
+   core builds every item the same toolbar: one glyph per button, in the mono
+   face. A map's is dressed AFTER it is built — each glyph becomes a line icon
+   with a short label under it, the way a toolbar on a Mac names its tools —
+   and the glyph itself is kept on the button as `data-glyph`, so the harness
+   and anything else that finds a button by what it said still can.
+
+   IT IS DRESSED AGAIN WHENEVER CORE UNDRESSES IT. The page-layer button
+   rewrites its own text on every click ('▤2', '▤3'…), which would wipe the
+   icon out of it; a MutationObserver on the bar sees that and dresses the
+   button afresh, reading the new number out of the new glyph. Dressing is
+   idempotent — a button that already carries its icon is left alone — so the
+   observer cannot set itself off.
+
+   Three buttons say what they ARE rather than what they do: the projection
+   button carries the current projection's name, the grain button the current
+   grain, and the page layer its number. Destructive editing stays in the
+   shared page controls rather than being repeated in this map-specific bar. */
+const ATL_PROJ_SHORT = { equirect:'Flat', mercator:'Mercator', azimuthal:'Azimuthal', globe:'Globe' };
+const ATL_TOOLS = {
+  '◍': ['layers', 'Layers', 'layers', 0, 'menu'],
+  '◐': ['style', '', 'palette', 0, 'menu'],
+  '⌕': ['search', 'Search', 'search', 0, 'dialog'],
+  '▣': ['pick', '', 'target', 1],
+  '◎': ['projection', '', 'globe', 0, 'menu'],
+  '⌂': ['home', 'Reset', 'reset'],
+  '⤒': ['front', 'Forward', 'front', 1],
+  '⤓': ['back', 'Backward', 'back']
+};
+function atlToolLabel(b, text){
+  b.dataset.label = text;
+  const lb = b.querySelector('.lb');
+  if(lb && lb.textContent !== text) lb.textContent = text;
+}
+function atlToolbar(tb, it){
+  for(const b of [...tb.querySelectorAll(':scope > button')]){
+    if(b.querySelector('.ic')) continue;           /* already dressed */
+    const glyph = b.dataset.glyph && !b.textContent.trim() ? b.dataset.glyph : b.textContent.trim();
+    if(glyph === '✕'){ b.remove(); continue; }
+    const m = glyph.indexOf('▤') === 0
+      ? ['page-layer', 'Layer ' + glyph.slice(1), 'stack', 1] : ATL_TOOLS[glyph];
+    if(!m) continue;
+    const label = m[1] || (m[0] === 'pick' ? (atlTapCont(it) ? 'Continent' : 'Country')
+                         : m[0] === 'style' ? atlStyleName(it)
+                         : ATL_PROJ_SHORT[atlProj(it)] || 'Projection');
+    b.dataset.glyph = glyph; b.dataset.tool = m[0];
+    b.innerHTML = icn(m[2]) + '<span class="lb"></span>';
+    atlToolLabel(b, label);
+    b.setAttribute('aria-label', b.title || label);
+    if(m[4]){ b.setAttribute('aria-haspopup', m[4]); b.setAttribute('aria-expanded', 'false'); }
+    if(m[3] && !(b.previousElementSibling && b.previousElementSibling.classList.contains('atltoolsep'))){
+      const s = document.createElement('i');
+      s.className = 'atltoolsep'; s.setAttribute('aria-hidden', 'true');
+      tb.insertBefore(s, b);
+    }
+  }
+  if(!tb.__atlmo){
+    tb.__atlmo = new MutationObserver(() => atlToolbar(tb, it));
+    tb.__atlmo.observe(tb, { childList:true, subtree:true, characterData:true });
+  }
+}
+defineIcon('layers', '<path d="M12 4.6l8 4.1-8 4.1-8-4.1z"/><path d="M4 12.9l8 4.1 8-4.1"/><path d="M4 16.4l8 4.1 8-4.1"/>');
+defineIcon('palette', '<circle cx="12" cy="12" r="8.2"/><path d="M12 3.8v16.4A8.2 8.2 0 0 0 12 3.8z" fill="currentColor" stroke="none"/>');
+defineIcon('target', '<circle cx="12" cy="12" r="6.4"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/>' +
+  '<path d="M12 3.2v3M12 17.8v3M3.2 12h3M17.8 12h3"/>');
+defineIcon('reset', '<path d="M5.6 12.6A6.6 6.6 0 1 0 7.4 7.3"/><path d="M4.9 4.6v3.6h3.6"/>');
+defineIcon('front', '<path d="M9.2 14.8H6.4a1.6 1.6 0 0 1-1.6-1.6V6.4a1.6 1.6 0 0 1 1.6-1.6h6.8a1.6 1.6 0 0 1 1.6 1.6v2.8"/>' +
+  '<rect x="9.2" y="9.2" width="10" height="10" rx="1.6" fill="currentColor" stroke="none"/>');
+defineIcon('back', '<rect x="4.8" y="4.8" width="10" height="10" rx="1.6" fill="currentColor" stroke="none"/>' +
+  '<rect x="9.2" y="9.2" width="10" height="10" rx="1.6" fill="var(--atlbar,#1b2128)"/>');
+defineIcon('stack', '<rect x="4.5" y="4.5" width="15" height="15" rx="2"/><path d="M4.5 10h15M4.5 14.5h15"/>');
 /* A flat projection is a property of the item. The globe's projection is also
    a property of the live view because its centre moves under the hand. */
 const atlVProj = (it, v) => (v && v.proj) || atlProj(it);
@@ -92,23 +165,144 @@ function atlRegOf(it, i){
 
    ctx is { it, view, paths } — the record, the geometry of the current view,
    and the built world paths. Order sorts them; `on` is whether a new map has
-   it. Nothing in this file knows what a graticule is beyond this list. */
+   it; `group` is the heading it is listed under in the Layers menu. Nothing
+   in this file knows what a river is beyond this list.
+
+   `sw` may also be answered per view as `swAt(view)`, for a layer whose ink
+   is only worth its cost from some zoom in — see the lakes. */
 const ATL_LAYERS = [];
+const ATL_GROUPS = ['Land', 'Water', 'Places', 'Reference'];
 function defineMapLayer(id, spec){
-  ATL_LAYERS.push(Object.assign({ id, order: 50, on: 1 }, spec));
+  ATL_LAYERS.push(Object.assign({ id, order: 50, on: 1, group: 'Land' }, spec));
   ATL_LAYERS.sort((a, b) => a.order - b.order);
 }
 /* absent means the layer's own default, so an old note gains a new layer and
    a note that has been fiddled with keeps what it was told */
 const atlOn = (it, L) => { const o = it.on || {}; return o[L.id] == null ? !!L.on : !!o[L.id]; };
 
+/* ---- latitude and longitude ----
+   Meridians and parallels at a step that follows the zoom — 30° at the whole
+   world, down to half a degree thirty times in — with the degrees written
+   along the left and bottom edges of the picture. The step comes off the same
+   sticky detail step the world is built at (atlN), so the lines are rebuilt
+   exactly when the rest of the world is and never on a frame of their own.
+   Only the lines within the window are made; at one degree that is the
+   difference between a few hundred and thirty thousand points. */
+const ATL_GSTEP = [30, 15, 5, 2, 1, 0.5];
+const atlGStep = v => ATL_GSTEP[Math.min(ATL_GSTEP.length - 1, atlN(v))];
+const atlDeg = (d, pos, neg) => {
+  const a = Math.abs(d), t = Math.round(a * 10) / 10;
+  return (Number.isInteger(t) ? t : t.toFixed(1)) + '°' + (d > 0 ? pos : d < 0 ? neg : '');
+};
+/* the run of one line, in longitude and latitude — a meridian or a parallel,
+   sampled finely enough to bend through any projection here */
+const ATL_GRUNS = new Map();
+function atlGratRuns(step){
+  let hit = ATL_GRUNS.get(step);
+  if(hit) return hit;
+  hit = { mer: [], par: [] };
+  for(let lon = -180; lon < 180 - 1e-9; lon += step){
+    const a = []; for(let lat = -90; lat <= 90 + 1e-9; lat += 2) a.push([lon, Math.min(90, lat)]);
+    hit.mer.push(a);
+  }
+  for(let lat = -90 + step; lat < 90 - 1e-9; lat += step){
+    const a = []; for(let lon = -180; lon <= 180 + 1e-9; lon += 2) a.push([Math.min(180, lon), lat]);
+    hit.par.push(a);
+  }
+  ATL_GRUNS.set(step, hit);
+  return hit;
+}
+/* the lon/lat rectangle a flat window covers, or the whole world */
+function atlGratRange(P, w){
+  if(!w || P.round) return { lon0: -180, lon1: 180, lat0: -90, lat1: 90 };
+  const a = P.inv(w.x0, w.y1), b = P.inv(w.x1, w.y0);
+  return { lon0: a[0], lon1: b[0], lat0: Math.max(-90, a[1]), lat1: Math.min(90, b[1]) };
+}
 defineMapLayer('grat', {
-  label: 'Graticule', order: 20, on: 0, sw: 1.1,
-  world: ctx => '<path class="atgrat" d="' + ctx.paths.grat + '"/>'
+  label: 'Latitude & longitude', group: 'Reference', order: 20, on: 0, sw: 1.1,
+  world(ctx){
+    const it = ctx.it, v = ctx.view, P = v.P, W = P.wrap, sm = (it.look || 'smooth') !== 'crisp';
+    const step = P.round ? Math.max(10, atlGStep(v)) : atlGStep(v);
+    const w = atlWin(it, v), R = atlGratRange(P, w);
+    let d = '';
+    /* a window is in world units, and its longitudes may run past ±180 on a
+       wrapping projection — so a line is tried in its own place and one world
+       either side, exactly as a run is drawn by geoRuns */
+    const put = (pts) => { for(const q of geoRuns(pts.map(p => P.fwd(p[0], p[1])), W)){
+      if(w){ const b = geoRunBox(q); if(b.x1 < w.x0 || b.x0 > w.x1 || b.y1 < w.y0 || b.y0 > w.y1) continue; }
+      d += geoRun(q, sm, false); } };
+    const lo = Math.floor(R.lon0 / step) * step, hi = Math.ceil(R.lon1 / step) * step;
+    for(let lon = lo; lon <= hi + 1e-9; lon += step){
+      const L = geoLon(lon), a = [];
+      const s0 = w ? Math.max(-90, Math.floor(R.lat0 / step) * step - step) : -90;
+      const s1 = w ? Math.min(90, Math.ceil(R.lat1 / step) * step + step) : 90;
+      for(let lat = s0; lat <= s1 + 1e-9; lat += Math.min(2, step / 2)) a.push([L, Math.min(90, lat)]);
+      put(a);
+    }
+    const la0 = Math.max(-90 + step, Math.floor(R.lat0 / step) * step), la1 = Math.min(90 - step, Math.ceil(R.lat1 / step) * step);
+    for(let lat = la0; lat <= la1 + 1e-9; lat += step){
+      const a = [], x0 = w ? Math.floor(R.lon0 / step) * step - step : -180, x1 = w ? Math.ceil(R.lon1 / step) * step + step : 180;
+      for(let lon = x0; lon <= x1 + 1e-9; lon += Math.min(2, step / 2)) a.push([lon, lat]);
+      put(a);
+    }
+    return '<path class="atgrat" d="' + d + '"/>';
+  },
+  /* the degrees along the edges: a pool of text nodes the frame fills */
+  build: () => { let h = ''; for(let i = 0; i < 64; i++) h += '<text class="atgl"></text>'; return h; },
+  lay(ctx){
+    const v = ctx.view, P = v.P;
+    if(P.round || v.globe) return [];
+    const step = atlGStep(v), out = [], k = v.k;
+    const tl = P.inv(v.cx - ATL_W / (2 * k), v.cy - v.H / (2 * k));
+    const br = P.inv(v.cx + ATL_W / (2 * k), v.cy + v.H / (2 * k));
+    const lat0 = Math.ceil(Math.max(-90, br[1]) / step) * step, lat1 = Math.min(90, tl[1]);
+    for(let lat = lat0; lat <= lat1 + 1e-9 && out.length < 32; lat += step){
+      const y = (P.fwd(0, lat)[1] - v.cy) * k + v.H / 2;
+      if(y < 14 || y > v.H - 18) continue;
+      out.push({ text: atlDeg(lat, 'N', 'S'), x: 8, y: y - 4, anchor: 'start' });
+    }
+    const lon0 = Math.floor(tl[0] / step) * step - step, lon1 = Math.ceil(br[0] / step) * step + step;
+    const seen = new Set();
+    for(let lon = lon0; lon <= lon1 + 1e-9 && out.length < 64; lon += step){
+      const L = Math.round(geoLon(lon) * 100) / 100;
+      if(seen.has(L)) continue;
+      let x = (P.fwd(L, 0)[0] - v.cx) * k + ATL_W / 2;
+      if(P.wrap){ const w = P.wrap * k; while(x < -w / 2) x += w; while(x > ATL_W + w / 2) x -= w; }
+      if(x < 24 || x > ATL_W - 24) continue;
+      seen.add(L);
+      out.push({ text: atlDeg(L, 'E', 'W'), x, y: v.H - 8, anchor: 'middle' });
+    }
+    return out;
+  },
+  frame(g, ctx){
+    const set = this.lay(ctx), n = g.children.length;
+    for(let i = 0; i < n; i++){
+      const el = g.children[i], q = set[i];
+      if(!q){ if(el.classList.contains('on')){ el.classList.remove('on'); el.textContent = ''; } continue; }
+      if(el.textContent !== q.text) el.textContent = q.text;
+      el.setAttribute('x', rd1(q.x)); el.setAttribute('y', rd1(q.y));
+      if(el.getAttribute('text-anchor') !== q.anchor) el.setAttribute('text-anchor', q.anchor);
+      el.classList.add('on');
+    }
+  }
 });
 defineMapLayer('land', {
   label: 'Land', order: 30, on: 1, sw: 0,
   world: ctx => '<path class="atland" d="' + ctx.paths.land + '"/>'
+});
+/* ---- every country its own colour ----
+   The school-atlas convention: six tints and no two neighbours alike, decided
+   once in the lib (geoCoTints) from who shares a border with whom. WHICH six
+   is the style's business — a variable each, --atco0…5, so the same layer is
+   pastel on Political, slate on Night and five blues on Blueprint. Off unless
+   asked for; the Political style asks for it. */
+defineMapLayer('polit', {
+  label: 'Countries', order: 31, on: 0, sw: 0,
+  world(ctx){
+    const it = ctx.it, v = ctx.view, tint = geoCoTints();
+    return geoPolPaths(atlVProj(it, v), it.look || 'smooth', atlLodV(it, v), atlWin(it, v)).list
+      .map(p => '<path class="atco atco' + tint[p.i] + '" d="' + p.d + '"/>').join('');
+  }
 });
 defineMapLayer('bord', {
   label: 'Borders', order: 40, on: 1, sw: 1.5,
@@ -155,16 +349,24 @@ defineMapLayer('relief', {
    The bands earn that because nine filled contours all move at once; a lake at
    a finer step moves by less than a hairline, and the runs that come and go
    with the window come and go half a view outside the picture. There is
-   nothing there to fade. */
+   nothing there to fade.
+
+   AND IT IS NOT INKED UNTIL IT IS WORTH INKING. Stroking is the expensive
+   half of drawing a path — a closed run is walked once to fill and once more,
+   with joins, to outline — and at arm's length a lake is a few pixels of
+   sea-coloured fill whose hairline round it adds nothing the eye can see. So
+   the outline comes on a step and a half in, where a lake is a shape with a
+   shore, and until then four hundred lakes cost one fill of one path. */
 defineMapLayer('lakes', {
-  label: 'Lakes', order: 34, on: 1, sw: 1.2,
+  label: 'Lakes', group: 'Water', order: 34, on: 1, sw: 1.2,
+  swAt: v => v.z < 1.5 ? 0 : 1.2,
   world: ctx => '<path class="atlake" d="' +
     geoDetailPaths(atlVProj(ctx.it, ctx.view), ctx.it.look || 'smooth', atlLodV(ctx.it, ctx.view), atlWin(ctx.it, ctx.view)).lak + '"/>'
 });
 /* a finer step is a river with tributaries it did not have — which is a change
    worth fading in rather than cutting to, for the same reason the bands are */
 defineMapLayer('rivers', {
-  label: 'Rivers', order: 36, on: 0, sw: 1.6, fade: 1,
+  label: 'Rivers', group: 'Water', order: 36, on: 0, sw: 1.6, fade: 1,
   world: ctx => '<path class="atriver" d="' +
     geoDetailPaths(atlVProj(ctx.it, ctx.view), ctx.it.look || 'smooth', atlLodV(ctx.it, ctx.view), atlWin(ctx.it, ctx.view)).riv + '"/>'
 });
@@ -174,6 +376,101 @@ defineMapLayer('rivers', {
 defineMapLayer('coast', {
   label: 'Coastline', order: 50, on: 1, sw: 2.4,
   world: ctx => '<path class="atcoast" d="' + ctx.paths.coast + '"/>'
+});
+
+/* ---- the seas and the oceans ----
+   Names on the water, set the way an atlas sets them: the oceans in tracked
+   capitals at the whole world, the seas in a lighter hand from a step in, the
+   gulfs and straits from two. Each is a place and a zoom it earns its name at.
+   They lay out FIRST among the names — before the capitals — so a capital that
+   would land on "Mediterranean Sea" steps aside, and the water keeps its name. */
+const ATL_SEAS = [
+  ['Pacific Ocean', -155, -8, 0, 1], ['Pacific Ocean', 170, 30, 0.6, 1], ['Atlantic Ocean', -36, 26, 0, 1],
+  ['Atlantic Ocean', -22, -22, 0.6, 1], ['Indian Ocean', 78, -22, 0, 1], ['Arctic Ocean', -30, 84, 0.6, 1],
+  ['Southern Ocean', 70, -62, 0.4, 1],
+  ['Mediterranean Sea', 16, 35, 1, 0], ['Caribbean Sea', -75, 15, 1, 0], ['Gulf of Mexico', -90, 25, 1, 0],
+  ['Hudson Bay', -85, 60, 1, 0], ['North Sea', 3, 56.5, 1.4, 0], ['Baltic Sea', 19.5, 58, 1.4, 0],
+  ['Black Sea', 34, 43.5, 1.4, 0], ['Caspian Sea', 51, 42, 1.4, 0], ['Red Sea', 38, 20, 1.4, 0],
+  ['Arabian Sea', 63, 15, 1, 0], ['Bay of Bengal', 88, 14, 1, 0], ['South China Sea', 114, 13, 1, 0],
+  ['East China Sea', 125, 29, 1.4, 0], ['Sea of Japan', 135, 40, 1.2, 0], ['Sea of Okhotsk', 150, 54, 1.2, 0],
+  ['Bering Sea', -175, 58, 1, 0], ['Coral Sea', 152, -17, 1, 0], ['Tasman Sea', 160, -39, 1, 0],
+  ['Gulf of Guinea', 2, 1.5, 1.2, 0], ['Mozambique Channel', 41, -19, 1.6, 0], ['Norwegian Sea', 3, 68, 1.2, 0],
+  ['Barents Sea', 40, 74, 1.2, 0], ['Greenland Sea', -8, 76, 1.4, 0], ['Labrador Sea', -55, 58, 1.2, 0],
+  ['Philippine Sea', 131, 18, 1.2, 0], ['Andaman Sea', 96, 11, 1.6, 0], ['Persian Gulf', 52, 27, 2, 0],
+  ['Gulf of Aden', 48, 12.5, 2, 0], ['Adriatic Sea', 16.5, 43, 2, 0], ['Aegean Sea', 25, 38, 2, 0],
+  ['Bay of Biscay', -4.5, 45.5, 2, 0], ['Irish Sea', -5, 53.7, 2.4, 0], ['English Channel', -2.5, 50, 2.6, 0],
+  ['Gulf of Bothnia', 20, 62.5, 2, 0], ['Java Sea', 110, -5, 2, 0], ['Banda Sea', 127, -5.5, 2, 0],
+  ['Timor Sea', 128, -11, 2, 0], ['Arafura Sea', 136, -9, 2, 0], ['Gulf of Carpentaria', 139, -14, 2, 0],
+  ['Yellow Sea', 123.5, 36, 2, 0], ['Gulf of Thailand', 101.5, 10, 2, 0], ['Laccadive Sea', 73, 8, 2.2, 0],
+  ['Gulf of Alaska', -146, 57, 1.5, 0], ['Beaufort Sea', -140, 72, 1.5, 0], ['Chukchi Sea', -170, 70, 2, 0],
+  ['East Siberian Sea', 160, 73, 2, 0], ['Kara Sea', 70, 75, 2, 0], ['Laptev Sea', 125, 76, 2, 0],
+  ['Baffin Bay', -68, 73, 1.5, 0], ['Sargasso Sea', -60, 28, 2, 0], ['Scotia Sea', -45, -57, 2, 0],
+  ['Weddell Sea', -45, -73, 1.5, 0], ['Ross Sea', -175, -75, 1.5, 0], ['Gulf of California', -111, 27, 2, 0],
+  ['Sulu Sea', 120, 8, 2.5, 0], ['Celebes Sea', 122, 3, 2.5, 0], ['Solomon Sea', 153, -8, 2.5, 0],
+  ['Ligurian Sea', 9, 43.5, 3, 0], ['Tyrrhenian Sea', 12, 40, 2.5, 0], ['Ionian Sea', 19, 38, 2.5, 0],
+  ['Sea of Azov', 36, 46, 2.5, 0], ['White Sea', 37, 65.5, 2.5, 0], ['Gulf of St. Lawrence', -62, 48, 2.5, 0],
+  ['Bay of Fundy', -66, 45, 3, 0], ['Bristol Channel', -4.2, 51.4, 3.2, 0], ['Gulf of Finland', 26, 60, 2.6, 0],
+  ['Strait of Gibraltar', -5.6, 35.95, 3.4, 0], ['Bosporus', 29.05, 41.1, 4.2, 0], ['Strait of Hormuz', 56.5, 26.6, 3.4, 0],
+  ['Strait of Malacca', 100.5, 3.5, 2.8, 0], ['Bass Strait', 146, -39.7, 2.6, 0], ['Cook Strait', 174.5, -41.3, 3.4, 0],
+  ['Great Australian Bight', 131, -34, 1.8, 0], ['Bay of Plenty', 177, -37.5, 3.4, 0], ['Gulf of Oman', 58.5, 24.5, 2.6, 0]
+];
+const ATL_SEAFS = [17, 26];                        /* a sea, and an ocean */
+const ATL_SEAXY = new Map();
+function atlSeaXY(proj){
+  const P = geoProj(proj);
+  let hit = P.globe ? null : ATL_SEAXY.get(proj);
+  if(hit) return hit;
+  hit = ATL_SEAS.map(t => P.fwd(t[1], t[2]));
+  if(!P.globe) ATL_SEAXY.set(proj, hit);
+  return hit;
+}
+function atlSeasLay(ctx){
+  const v = ctx.view, xy = atlSeaXY(atlVProj(ctx.it, v)), cands = [];
+  for(let i = 0; i < ATL_SEAS.length; i++){
+    const t = ATL_SEAS[i];
+    if(v.z < t[3]) continue;
+    if(v.globe && !v.P.visible(t[1], t[2])) continue;
+    const fs = ATL_SEAFS[t[4]], pad = fs * 6;
+    const x = (xy[i][0] - v.cx) * v.k + ATL_W / 2;
+    if(x < -pad || x > ATL_W + pad) continue;
+    const y = (xy[i][1] - v.cy) * v.k + v.H / 2;
+    if(y < -pad || y > v.H + pad) continue;
+    const w = t[0].length * fs * (t[4] ? 0.72 : 0.5);
+    cands.push({ i, x, y, fs, ocean: t[4], box: { x: x - w / 2, y: y - fs * 0.7, w, h: fs * 1.25 } });
+  }
+  const set = geoLayout(cands, ATL_W, v.H, 6, ctx.taken || atlNameBox(ctx.it, v) || []);
+  ctx.taken = (ctx.taken || []).concat(set.map(c => c.box));
+  return set;
+}
+defineMapLayer('seas', {
+  label: 'Seas & oceans', group: 'Water', order: 58, on: 1,
+  build(){
+    return ATL_SEAS.map(t => '<text class="atsea' + (t[4] ? ' atocean' : '') + '">' + esc(t[0]) + '</text>').join('');
+  },
+  draw(c, ctx, C){
+    for(const q of atlSeasLay(ctx)){
+      const t = ATL_SEAS[q.i], text = q.ocean ? t[0].toUpperCase() : t[0];
+      c.font = (q.ocean ? '500 ' : '500 ') + q.fs + 'px ' + C.disp;
+      c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+      if('letterSpacing' in c) c.letterSpacing = (q.ocean ? .22 : .1) * q.fs + 'px';
+      c.globalAlpha = .85; c.lineJoin = 'round'; c.lineWidth = 2.5; c.strokeStyle = C.halo;
+      c.strokeText(text, q.x, q.y + q.fs * .36);
+      c.fillStyle = C.seaname; c.fillText(text, q.x, q.y + q.fs * .36);
+      if('letterSpacing' in c) c.letterSpacing = '0px';
+    }
+  },
+  frame(g, ctx){
+    const on = new Set();
+    for(const q of atlSeasLay(ctx)){
+      on.add(q.i);
+      const el = g.children[q.i];
+      if(!el) continue;
+      el.setAttribute('x', rd1(q.x)); el.setAttribute('y', rd1(q.y + q.fs * .36));
+      el.classList.add('on');
+    }
+    if(g.__lit) for(const i of g.__lit) if(!on.has(i)) g.children[i].classList.remove('on');
+    g.__lit = on;
+  }
 });
 
 /* ---- the capitals ----
@@ -202,15 +499,29 @@ function atlCapXY(proj){
    collision that decides, which is what makes a close-up of Europe fill up */
 const atlCapCount = z => Math.min(geoCapitals().length, Math.round(10 * Math.pow(3, z)));
 
-defineMapLayer('caps', {
-  label: 'Capitals', order: 60, on: 1,
-  build(){
-    return geoCapitals().map(c =>
-      '<g class="atcap"><circle class="atdot" r="' + ATL_DOT + '"/>' +
-      '<text class="atname" x="' + (ATL_DOT + 5) + '" y="' + (ATL_FS * 0.36) + '">' +
-      esc(c.name) + '</text></g>').join('');
-  },
-  frame(g, ctx){
+/* ---- two painters, one layout ----
+   Every screen-space layer here is written twice over: once as nodes in the
+   SVG, which is what a flat map, a print and an export are made of, and once
+   as ink on the live globe's canvas. THE ARITHMETIC IS SHARED AND THE PAINTING
+   IS NOT. `lay(ctx)` works out where the names go this frame and is the whole
+   of what the two have in common; `frame(g, ctx)` puts nodes there and
+   `draw(c, ctx, C)` writes them onto the canvas.
+
+   The canvas half exists because a turning globe with its names in the SVG
+   above it stuttered: every frame moved a few dozen text nodes over a picture
+   that was itself a fresh raster, and an SVG is rasterised on the processor
+   in Firefox — so each turn was one canvas paint and one repaint of a
+   megapixel of transparent SVG for twenty labels. On the canvas the same
+   twenty labels are twenty fillText calls on a frame already being painted,
+   and the SVG is not touched at all while the globe moves. */
+function atlInkName(c, C, text, x, y, fs, weight, flip, halo, alpha){
+  c.font = weight + ' ' + fs + 'px ' + C.disp;
+  c.textAlign = flip ? 'right' : 'left'; c.textBaseline = 'alphabetic';
+  c.globalAlpha = alpha; c.lineJoin = 'round'; c.lineWidth = halo; c.strokeStyle = C.halo;
+  c.strokeText(text, x, y);
+  c.fillStyle = C.lbl; c.fillText(text, x, y);
+}
+function atlCapsLay(ctx){
     const v = ctx.view, xy = atlCapXY(atlVProj(ctx.it, v)), caps = geoCapitals();
     const n = atlCapCount(v.z), cands = [], pad = ATL_FS;
     for(let i = 0; i < n; i++){
@@ -226,11 +537,10 @@ defineMapLayer('caps', {
       cands.push({ i, x, y, flip,
         box: { x: flip ? x - w : x - ATL_DOT, y: y - ATL_FS * 0.62, w: w + ATL_DOT, h: ATL_FS * 1.2 } });
     }
-    const on = new Set();
     /* the picked country's name is already down, and it is the one the reader
        asked for — so it is handed to the layout as a box that is taken, and a
        capital that would have landed on it steps aside instead */
-    const seed = atlNameBox(ctx.it, v) || [];
+    const seed = (ctx.taken || []).concat(atlNameBox(ctx.it, v) || []);
     const set = geoLayout(cands, ATL_W, v.H, 4, seed);
     /* WHAT THE CAPITALS TOOK IS LEFT ON ctx, and the cities read it. One ctx
        is made per frame and every screen-space layer is handed the same one,
@@ -238,6 +548,27 @@ defineMapLayer('caps', {
        where not to put any. It is the only thing they share, and it is why a
        city name never lands on a capital's. */
     ctx.taken = seed.concat(set.map(c => c.box));
+    return set;
+}
+defineMapLayer('caps', {
+  label: 'Capitals', group: 'Places', order: 60, on: 1,
+  build(){
+    return geoCapitals().map(c =>
+      '<g class="atcap"><circle class="atdot" r="' + ATL_DOT + '"/>' +
+      '<text class="atname" x="' + (ATL_DOT + 5) + '" y="' + (ATL_FS * 0.36) + '">' +
+      esc(c.name) + '</text></g>').join('');
+  },
+  draw(c, ctx, C){
+    const caps = geoCapitals();
+    for(const q of atlCapsLay(ctx)){
+      c.globalAlpha = 1; c.beginPath(); c.arc(q.x, q.y, ATL_DOT, 0, Math.PI * 2);
+      c.fillStyle = C.mark; c.fill(); c.lineWidth = 2; c.strokeStyle = C.halo; c.stroke();
+      atlInkName(c, C, caps[q.i].name, q.x + (q.flip ? -(ATL_DOT + 5) : ATL_DOT + 5),
+        q.y + ATL_FS * 0.36, ATL_FS, 600, q.flip, 5, 1);
+    }
+  },
+  frame(g, ctx){
+    const on = new Set(), set = atlCapsLay(ctx);
     for(const c of set){
       on.add(c.i);
       const el = g.children[c.i];
@@ -287,18 +618,10 @@ function atlCityXY(proj){
 const atlCityCount = z => z < 1.2 ? 0
   : Math.min(geoCities().length, Math.round(10 * Math.pow(3.1, z - 1.2)));
 
-defineMapLayer('cities', {
-  label: 'Cities', order: 65, on: 1,
-  build(){
-    return geoCities().map(c =>
-      '<g class="atcity"><circle class="atcdot" r="' + ATL_CDOT + '"/>' +
-      '<text class="atcname" x="' + (ATL_CDOT + 4) + '" y="' + rd1(ATL_CFS * 0.36) + '">' +
-      esc(c.name) + '</text></g>').join('');
-  },
-  frame(g, ctx){
+function atlCitiesLay(ctx){
     const v = ctx.view, cs = geoCities();
     const n = atlCityCount(v.z);
-    const on = new Set();
+    let set = [];
     if(n){
       const xy = atlCityXY(atlVProj(ctx.it, v)), cands = [], pad = ATL_CFS;
       for(let i = 0; i < n; i++){
@@ -312,22 +635,43 @@ defineMapLayer('cities', {
         cands.push({ i, x, y, flip,
           box: { x: flip ? x - w : x - ATL_CDOT, y: y - ATL_CFS * 0.62, w: w + ATL_CDOT, h: ATL_CFS * 1.2 } });
       }
-      const set = geoLayout(cands, ATL_W, v.H, 4, ctx.taken || atlNameBox(ctx.it, v) || []);
-      for(const c of set){
-        on.add(c.i);
-        const el = g.children[c.i];
-        if(!el) continue;
-        el.setAttribute('transform', 'translate(' + rd1(c.x) + ' ' + rd1(c.y) + ')');
-        const f = c.flip ? '1' : '0';
-        if(el.dataset.f !== f){
-          el.dataset.f = f;
-          const t = el.lastElementChild;
-          t.setAttribute('x', c.flip ? -(ATL_CDOT + 4) : (ATL_CDOT + 4));
-          t.setAttribute('text-anchor', c.flip ? 'end' : 'start');
-        }
-        el.classList.add('on');
-      }
+      set = geoLayout(cands, ATL_W, v.H, 4, ctx.taken || atlNameBox(ctx.it, v) || []);
       ctx.taken = (ctx.taken || []).concat(set.map(c => c.box));
+    }
+    return set;
+}
+defineMapLayer('cities', {
+  label: 'Cities', group: 'Places', order: 65, on: 1,
+  build(){
+    return geoCities().map(c =>
+      '<g class="atcity"><circle class="atcdot" r="' + ATL_CDOT + '"/>' +
+      '<text class="atcname" x="' + (ATL_CDOT + 4) + '" y="' + rd1(ATL_CFS * 0.36) + '">' +
+      esc(c.name) + '</text></g>').join('');
+  },
+  draw(c, ctx, C){
+    const cs = geoCities();
+    for(const q of atlCitiesLay(ctx)){
+      c.globalAlpha = .75; c.beginPath(); c.arc(q.x, q.y, ATL_CDOT, 0, Math.PI * 2);
+      c.lineWidth = 1.6; c.strokeStyle = C.lbl; c.stroke();
+      atlInkName(c, C, cs[q.i].name, q.x + (q.flip ? -(ATL_CDOT + 4) : ATL_CDOT + 4),
+        q.y + ATL_CFS * 0.36, ATL_CFS, 500, q.flip, 3.5, .82);
+    }
+  },
+  frame(g, ctx){
+    const on = new Set();
+    for(const c of atlCitiesLay(ctx)){
+      on.add(c.i);
+      const el = g.children[c.i];
+      if(!el) continue;
+      el.setAttribute('transform', 'translate(' + rd1(c.x) + ' ' + rd1(c.y) + ')');
+      const f = c.flip ? '1' : '0';
+      if(el.dataset.f !== f){
+        el.dataset.f = f;
+        const t = el.lastElementChild;
+        t.setAttribute('x', c.flip ? -(ATL_CDOT + 4) : (ATL_CDOT + 4));
+        t.setAttribute('text-anchor', c.flip ? 'end' : 'start');
+      }
+      el.classList.add('on');
     }
     if(g.__lit) for(const i of g.__lit) if(!on.has(i)) g.children[i].classList.remove('on');
     g.__lit = on;
@@ -376,28 +720,38 @@ function atlRingAt(it, v, q){
   }
   return best;
 }
+function atlTinyLay(ctx){
+  const v = ctx.view, list = atlTinyList(ctx.it, v), pad = ATL_TINY * 2, out = [];
+  for(let k = 0; k < list.length; k++){
+    const t = list[k];
+    if(t.on === false) continue;
+    if(t.span * v.k > ATL_TINY * 2) continue;       /* big enough now: it speaks for itself */
+    const x = (t.x - v.cx) * v.k + ATL_W / 2;
+    if(x < -pad || x > ATL_W + pad) continue;
+    const y = (t.y - v.cy) * v.k + v.H / 2;
+    if(y < -pad || y > v.H + pad) continue;
+    out.push({ k, x, y });
+  }
+  return out;
+}
 defineMapLayer('tiny', {
-  label: 'Small countries', order: 66, on: 1,
+  label: 'Small countries', group: 'Places', order: 66, on: 1,
   build(ctx){
     return atlTinyList(ctx.it, ctx.view)
       .map(() => '<g class="attiny"><circle r="' + ATL_TINY + '"/></g>').join('');
   },
+  draw(c, ctx, C){
+    c.globalAlpha = .55; c.lineWidth = 1.5; c.strokeStyle = C.mark;
+    for(const q of atlTinyLay(ctx)){ c.beginPath(); c.arc(q.x, q.y, ATL_TINY, 0, Math.PI * 2); c.stroke(); }
+  },
   frame(g, ctx){
-    const v = ctx.view, list = atlTinyList(ctx.it, v), pad = ATL_TINY * 2;
     const on = new Set();
-    for(let k = 0; k < list.length; k++){
-      const t = list[k];
-      if(t.on === false) continue;
-      if(t.span * v.k > ATL_TINY * 2) continue;     /* big enough now: it speaks for itself */
-      const x = (t.x - v.cx) * v.k + ATL_W / 2;
-      if(x < -pad || x > ATL_W + pad) continue;
-      const y = (t.y - v.cy) * v.k + v.H / 2;
-      if(y < -pad || y > v.H + pad) continue;
-      const el = g.children[k];
+    for(const q of atlTinyLay(ctx)){
+      const el = g.children[q.k];
       if(!el) continue;
-      el.setAttribute('transform', 'translate(' + rd1(x) + ' ' + rd1(y) + ')');
+      el.setAttribute('transform', 'translate(' + rd1(q.x) + ' ' + rd1(q.y) + ')');
       el.classList.add('on');
-      on.add(k);
+      on.add(q.k);
     }
     if(g.__lit) for(const k of g.__lit) if(!on.has(k)) g.children[k].classList.remove('on');
     g.__lit = on;
@@ -422,7 +776,9 @@ defineMapLayer('tiny', {
    renumber the table the day Natural Earth changes, and a number would move a
    reader's pin from Chad to Kenya without a word. */
 const atlSel = it => (it.sel ? geoRegKeyOf(it.sel) : '');
-const atlPickLayer = () => ATL_LAYERS.find(L => L.id === 'pick');
+let ATL_PICKL = null;
+const atlPickLayer = () => ATL_PICKL ||
+  (ATL_PICKL = ATL_LAYERS.find(L => L.id === 'pick'));
 function atlGlobeLabel(v, key){
   if(!v.globe || !key) return null;
   const E = geoProj('equirect'), lb = geoRegLabel('equirect', key);
@@ -488,7 +844,7 @@ const ATL_LBL_MIN = 9 / (ATL_W / GEO_W * Math.pow(2, ATL_ZMAX));
 const atlOnShape = lb => !!lb && lb.fs >= ATL_LBL_MIN;
 
 defineMapLayer('pick', {
-  label: 'Picked place', order: 70, on: 1, sw: 2.6,
+  label: 'Picked place', group: 'Places', order: 70, on: 1, sw: 2.6,
   world(ctx){
     const it = ctx.it, v = ctx.view, k = atlSel(it), proj = atlVProj(it, v);
     if(!k) return '';
@@ -498,21 +854,34 @@ defineMapLayer('pick', {
   },
   build: () => '<g class="atcap atpickn"><text class="atname" x="' + (ATL_TINY + 6) +
     '" y="' + (ATL_FS * 0.36) + '"></text></g>',
-  frame(g, ctx){
-    const el = g.firstElementChild;
-    if(!el) return;
+  /* the name beside the place, when it is not written on it — where it goes,
+     which way it reads, or nothing */
+  lay(ctx){
     const it = ctx.it, v = ctx.view, k = atlSel(it);
+    if(!k) return null;
     const anchor = atlGlobeLabel(v, k);
-    const lb = !v.globe && k ? geoRegLabel(atlVProj(it, v), k) : null;
-    if((v.globe && !anchor) || (!v.globe && (!lb || atlOnShape(lb)))){
-      if(el.classList.contains('on')){ el.classList.remove('on'); el.firstElementChild.textContent = ''; }
-      return;
-    }
+    const lb = !v.globe ? geoRegLabel(atlVProj(it, v), k) : null;
+    if((v.globe && !anchor) || (!v.globe && (!lb || atlOnShape(lb)))) return null;
     const x = ((anchor || lb).x - v.cx) * v.k + ATL_W / 2;
     const y = ((anchor || lb).y - v.cy) * v.k + v.H / 2;
     const name = geoRegName(k);
+    return { x, y, name, flip: x + name.length * ATL_FS * 0.46 + ATL_TINY + 12 > ATL_W };
+  },
+  draw(c, ctx, C){
+    const q = this.lay(ctx);
+    if(q) atlInkName(c, C, q.name, q.x + (q.flip ? -(ATL_TINY + 6) : ATL_TINY + 6),
+      q.y + ATL_FS * 0.36, ATL_FS, 600, q.flip, 5, 1);
+  },
+  frame(g, ctx){
+    const el = g.firstElementChild;
+    if(!el) return;
+    const q = this.lay(ctx);
+    if(!q){
+      if(el.classList.contains('on')){ el.classList.remove('on'); el.firstElementChild.textContent = ''; }
+      return;
+    }
+    const x = q.x, y = q.y, name = q.name, flip = q.flip;
     if(el.firstElementChild.textContent !== name) el.firstElementChild.textContent = name;
-    const flip = x + name.length * ATL_FS * 0.46 + ATL_TINY + 12 > ATL_W;
     const f = flip ? '1' : '0';
     if(el.dataset.f !== f){
       el.dataset.f = f;
@@ -614,8 +983,11 @@ const atlPathsFor = (it, v) => geoPaths(atlVProj(it, v), it.look || 'smooth', at
    a longitude and a latitude in the record — which is what makes it readable,
    and what lets the projection change under it without the map jumping. */
 function atlGeom(it, L){
-  const ar = clamp(nz(it.ar, 0.5), 0.3, 1.1);
   const globe = atlGlobe(it);
+  /* A ROUND WORLD HAS A SQUARE PICTURE: the disc fills it edge to edge and the
+     widget on the page is the disc itself — a sphere, or the polar map. The
+     record's own aspect is kept untouched for the day it is a flat map again. */
+  const ar = globe || geoProj(atlProj(it)).round ? 1 : clamp(nz(it.ar, 0.5), 0.3, 1.1);
   const lon = globe ? (L ? L.cx : nz(it.lon, 8)) : nz(it.lon, 8);
   const lat = globe ? (L ? L.cy : nz(it.lat, 16)) : nz(it.lat, 16);
   const P = globe ? geoGlobeAt(lon, lat) : geoProj(atlProj(it));
@@ -624,7 +996,10 @@ function atlGeom(it, L){
   return { ar, H: rd1(ATL_W * ar), P, W: ATL_W, globe, lon, lat,
            proj:globe ? 'globe' : atlProj(it) };
 }
-const atlK = (it, z, g) => ((atlGlobe(it) ? Math.min(ATL_W, (g || atlGeom(it)).H) : ATL_W) / GEO_W) * Math.pow(2, z);
+const atlK = (it, z, g) => {
+  g = g || atlGeom(it);
+  return ((g.P.round ? Math.min(ATL_W, g.H) : ATL_W) / GEO_W) * Math.pow(2, z);
+};
 /* as far out as the world may go: never smaller than the picture, in either
    direction — so there is no letterbox to pan into, ever */
 function atlZMin(it){
@@ -669,8 +1044,65 @@ function atlView(it, L){
 
    Print and export still use atlSVG below, so they remain resolution-free. */
 const ATL_GREG = new Map();
+/* ---- the sphere, per frame, without allocating ----
+   Everything under here used to speak in objects: a rotated point was a fresh
+   `{x,y,z}`, a screen point a fresh `[x,y]`, and a ring a fresh array of them
+   built by `.map`. At the detail the live globe runs at, that is about seventy
+   thousand points a frame — land, coast, borders, rivers, lakes and nine
+   bands of terrain — so the arithmetic was never the trouble and the
+   LITTER was: a hundred and forty thousand short-lived objects sixty times a
+   second is a minor collection every few frames, and a collection in the
+   middle of a turn is exactly the stutter a hand feels.
+
+   So nothing under here allocates. A run's unit vectors are worked out once
+   and kept in one Float32Array; a frame rotates them into scratch buffers that
+   are grown to the largest run the page has ever drawn and then reused for
+   ever; and a path is issued straight into Path2D as numbers. It is the same
+   geometry drawing the same picture through the same points — it has just
+   stopped making rubbish while it does it.
+
+   AND MOST OF IT IS NEVER READ. Half the sphere faces away at any moment, and
+   past the first zoom most of the rest is off the widget, but every run was
+   still rotated in full before anything found that out. Each run now carries a
+   CAP — the smallest circle on the sphere that contains it, kept as a centre
+   and the sine of its angular radius — and one dot product answers both
+   questions before a single point is touched: whether the whole of it is
+   behind the horizon, and whether the whole of it misses the picture. */
 const ATL_GXYZ = new WeakMap();
-let ATL_GGRAT = null;
+
+/* the unit vectors of one run, and the cap that bounds them. Longitude and
+   latitude never change, so this is paid once per run for the life of the
+   page and a frame is multiplications only. */
+function atlGPrep(pts){
+  let hit = ATL_GXYZ.get(pts);
+  if(hit) return hit;
+  const n = pts.length, u = new Float32Array(n * 3);
+  let mx = 0, my = 0, mz = 0;
+  for(let i = 0, k = 0; i < n; i++, k += 3){
+    const p = pts[i], lon = p[0] * GEO_D2R, lat = p[1] * GEO_D2R, c = Math.cos(lat);
+    const x = c * Math.cos(lon), y = c * Math.sin(lon), z = Math.sin(lat);
+    u[k] = x; u[k + 1] = y; u[k + 2] = z;
+    mx += x; my += y; mz += z;
+  }
+  const d = Math.hypot(mx, my, mz), ok = d > 1e-12;
+  const cx = ok ? mx / d : 1, cy = ok ? my / d : 0, cz = ok ? mz / d : 0;
+  let cmin = 1;
+  for(let i = 0, k = 0; i < n; i++, k += 3){
+    const dot = u[k] * cx + u[k + 1] * cy + u[k + 2] * cz;
+    if(dot < cmin) cmin = dot;
+  }
+  /* BOTH TESTS NEED A CAP OF A HEMISPHERE OR LESS. Past that the sine stops
+     being monotonic in the angle and the horizon test would throw away a run
+     that is half in shot — so a wide cap is switched off rather than
+     approximated, by giving it a radius no test can ever be inside. Only a
+     run round more than half the world could hit this, and none does. */
+  const wide = !(cmin > 1e-9);
+  hit = { n, u, cx, cy, cz,
+          st: wide ? 2 : Math.sqrt(1 - cmin * cmin),        /* sine of the radius */
+          ch: wide ? 4 : Math.sqrt(2 * (1 - cmin)) };       /* …and its chord */
+  ATL_GXYZ.set(pts, hit);
+  return hit;
+}
 function atlGlobeRegion(key){
   let hit = ATL_GREG.get(key);
   if(hit) return hit;
@@ -679,142 +1111,248 @@ function atlGlobeRegion(key){
   ATL_GREG.set(key, hit);
   return hit;
 }
-function atlGlobeGraticule(){
-  if(ATL_GGRAT) return ATL_GGRAT;
-  const out = [];
-  for(let lon = -180; lon < 180; lon += 30){
-    const a = []; for(let lat = -90; lat <= 90; lat += 2) a.push([lon, lat]);
-    out.push(a);
+/* ---- the scratch ----
+   One buffer for the rotated run and two for the clipper to work between. The
+   two clipper buffers are always the SAME length, because clipping swaps them
+   four times and a swap between arrays of different sizes is a bug waiting for
+   a coastline. Nothing here is re-entrant and nothing here needs to be: one
+   canvas is painted at a time, on one thread, to the end. */
+let ATL_GR3 = new Float64Array(0);       /* rotated x,y,z per point */
+let ATL_GPA = new Float64Array(0);       /* screen x,y — the clipper's two ends */
+let ATL_GPB = new Float64Array(0);
+function atlGRoom(n){
+  /* the slack is the rim arc a ring closes along — 45 points at most — plus
+     what Sutherland-Hodgman adds at the corners of the picture */
+  const need = (n + 128) * 2;
+  if(ATL_GPA.length < need){
+    const cap = need + (need >> 1);
+    ATL_GPA = new Float64Array(cap); ATL_GPB = new Float64Array(cap);
   }
-  for(let lat = -60; lat <= 60; lat += 30){
-    const a = []; for(let lon = -180; lon <= 180; lon += 2) a.push([lon, lat]);
-    out.push(a);
-  }
-  return (ATL_GGRAT = out);
+  return ATL_GPA;
 }
-const atlGScreen = (v, q) => [ATL_W / 2 + GEO_GR * v.k * q.x,
-                               v.H / 2 - GEO_GR * v.k * q.y];
-const atlGReject = (a, b, v) => (a[0] < 0 && b[0] < 0) || (a[0] > ATL_W && b[0] > ATL_W) ||
-  (a[1] < 0 && b[1] < 0) || (a[1] > v.H && b[1] > v.H);
-/* At deep zoom most of the sphere is beyond the widget. Clip filled polygons
-   to its screen box before giving them to Canvas, so its tessellator never has
-   to process a continent thousands of pixels off-screen. */
-function atlGClipPoly(poly, v){
-  if(GEO_GR * v.k <= Math.max(ATL_W, v.H) || poly.length < 3) return poly;
-  const cut = (src, inside, cross) => {
-    const out = [];
-    for(let i = 0, j = src.length - 1; i < src.length; j = i++){
-      const a = src[j], b = src[i], ai = inside(a), bi = inside(b);
-      if(ai !== bi) out.push(cross(a, b));
-      if(bi) out.push(b);
+
+/* ---- one frame's rotation, as three axes ----
+   atlGlobePaint works these out once and every run reads them. `z` is the
+   direction the reader is looking down, which is what a cap is tested against;
+   `x` and `y` are where east and north come out on the screen. It is the same
+   rotation the old three-line helper did, written as the matrix it always was. */
+function atlGAxes(lon, lat){
+  const so = Math.sin(lon), co = Math.cos(lon), sl = Math.sin(lat), cl = Math.cos(lat);
+  return { xx:-so,      xy:co,       xz:0,
+           yx:-sl * co, yy:-sl * so, yz:cl,
+           zx:cl * co,  zy:cl * so,  zz:sl };
+}
+/* how a run stands against this frame: -1 not worth a single point of work,
+   1 wholly in front of the horizon, 0 across it. The screen half of the test
+   is the cap's own chord, which bounds how far any point of it can project
+   from the centre whichever side of the sphere that point is on. */
+function atlGCull(G, v){
+  const A = v.A, d = G.cx * A.zx + G.cy * A.zy + G.cz * A.zz;
+  if(d < -G.st) return -1;
+  const R = GEO_GR * v.k;
+  const sx = ATL_W / 2 + R * (G.cx * A.xx + G.cy * A.xy + G.cz * A.xz);
+  const sy = v.H / 2 - R * (G.cx * A.yx + G.cy * A.yy + G.cz * A.yz);
+  const rad = R * G.ch + 2;
+  if(sx + rad < 0 || sx - rad > ATL_W || sy + rad < 0 || sy - rad > v.H) return -1;
+  return d > G.st ? 1 : 0;
+}
+/* the whole run into the scratch buffer. Only ever called once the cap has
+   said the run is worth reading. */
+function atlGSpin(G, v){
+  const A = v.A, u = G.u, n = G.n;
+  if(ATL_GR3.length < n * 3) ATL_GR3 = new Float64Array(n * 3 + (n >> 1) * 3);
+  const r = ATL_GR3;
+  for(let i = 0, k = 0; i < n; i++, k += 3){
+    const x = u[k], y = u[k + 1], z = u[k + 2];
+    r[k]     = x * A.xx + y * A.xy;
+    r[k + 1] = x * A.yx + y * A.yy + z * A.yz;
+    r[k + 2] = x * A.zx + y * A.zy + z * A.zz;
+  }
+  return r;
+}
+
+/* ---- Sutherland-Hodgman, in place ----
+   At deep zoom most of the sphere is beyond the widget, and clipping a filled
+   ring to the screen box before Canvas sees it stops its tessellator working
+   through a continent thousands of pixels off the picture. Four edges, two
+   buffers, and the answer left in whichever one the last pass wrote.
+
+   It returns -1 rather than overrunning. A very ragged ring can gain two
+   vertices per edge instead of the one a convex ring gains, and rather than
+   size every buffer for a worst case nothing ever meets, an overrun stops the
+   clipping there. That is not a fallback with a different answer in it:
+   clipping to a half-plane the picture is entirely inside of cannot change
+   what is on the picture, so ANY prefix of the four passes draws the same
+   pixels — the ring just costs what it used to cost. */
+function atlGClipEdge(src, n, dst, cap, side, val){
+  if(n < 3) return 0;
+  let m = 0;
+  let ax = src[(n - 1) * 2], ay = src[(n - 1) * 2 + 1];
+  let ai = side === 0 ? ax >= val : side === 1 ? ax <= val
+         : side === 2 ? ay >= val : ay <= val;
+  for(let i = 0; i < n; i++){
+    const bx = src[i * 2], by = src[i * 2 + 1];
+    const bi = side === 0 ? bx >= val : side === 1 ? bx <= val
+             : side === 2 ? by >= val : by <= val;
+    if(ai !== bi){
+      if(m >= cap) return -1;
+      if(side < 2){
+        const t = (val - ax) / (bx - ax);
+        dst[m * 2] = val; dst[m * 2 + 1] = ay + (by - ay) * t;
+      }else{
+        const t = (val - ay) / (by - ay);
+        dst[m * 2] = ax + (bx - ax) * t; dst[m * 2 + 1] = val;
+      }
+      m++;
     }
-    return out;
-  };
-  const ix = (x, a, b) => [x, a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0])];
-  const iy = (y, a, b) => [a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]), y];
-  poly = cut(poly, p => p[0] >= -2, (a, b) => ix(-2, a, b));
-  poly = cut(poly, p => p[0] <= ATL_W + 2, (a, b) => ix(ATL_W + 2, a, b));
-  poly = cut(poly, p => p[1] >= -2, (a, b) => iy(-2, a, b));
-  return cut(poly, p => p[1] <= v.H + 2, (a, b) => iy(v.H + 2, a, b));
+    if(bi){
+      if(m >= cap) return -1;
+      dst[m * 2] = bx; dst[m * 2 + 1] = by; m++;
+    }
+    ax = bx; ay = by; ai = bi;
+  }
+  return m;
 }
-function atlGPutRing(path, poly, v){
-  poly = atlGClipPoly(poly, v);
-  if(poly.length < 3) return;
-  path.moveTo(poly[0][0], poly[0][1]);
-  for(let i = 1; i < poly.length; i++) path.lineTo(poly[i][0], poly[i][1]);
+/* a screen-space ring, sitting in ATL_GPA, into the path — clipped first if
+   the sphere is bigger than the picture it is being drawn into */
+function atlGEmit(path, n, v, clip){
+  let src = ATL_GPA;
+  if(clip && n >= 3){
+    const cap = ATL_GPA.length >> 1;
+    let dst = ATL_GPB, t, m;
+    const EDGE = [0, -2, 1, ATL_W + 2, 2, -2, 3, v.H + 2];
+    for(let e = 0; e < 8; e += 2){
+      m = atlGClipEdge(src, n, dst, cap, EDGE[e], EDGE[e + 1]);
+      if(m < 0) break;                     /* the ring keeps whatever it had */
+      n = m; t = src; src = dst; dst = t;
+      if(n < 3) return;
+    }
+  }
+  if(n < 3) return;
+  path.moveTo(src[0], src[1]);
+  for(let i = 1; i < n; i++) path.lineTo(src[i * 2], src[i * 2 + 1]);
   path.closePath();
 }
-/* Longitude/latitude never changes, so pay its trigonometry once. A frame then
-   rotates each cached unit vector with multiplications only; avoiding tens of
-   thousands of sin/cos calls is what leaves enough of the frame for terrain. */
-function atlGUnits(pts){
-  let hit = ATL_GXYZ.get(pts);
-  if(hit) return hit;
-  hit = pts.map(p => {
-    const lon = p[0] * Math.PI / 180, lat = p[1] * Math.PI / 180, c = Math.cos(lat);
-    return { x:c * Math.cos(lon), y:c * Math.sin(lon), z:Math.sin(lat) };
-  });
-  ATL_GXYZ.set(pts, hit);
-  return hit;
+
+/* ---- one filled ring on the sphere ----
+   Every visible piece closes along the circular horizon and never along a
+   chord through the globe, which is what stops the far side of a country
+   flashing across its own face as it turns. */
+function atlGlobeRing(path, v, pts){
+  const G = atlGPrep(pts), n = G.n;
+  if(n < 3) return;
+  const side = atlGCull(G, v);
+  if(side < 0) return;
+  const R = GEO_GR * v.k, cx = ATL_W / 2, cy = v.H / 2;
+  const clip = R > Math.max(ATL_W, v.H);
+  const r = atlGSpin(G, v), P = atlGRoom(n);
+
+  /* the whole of it in front: no horizon to walk, so it is one pass */
+  if(side > 0){
+    for(let i = 0, k = 0; i < n; i++, k += 3){
+      P[i * 2] = cx + R * r[k]; P[i * 2 + 1] = cy - R * r[k + 1];
+    }
+    atlGEmit(path, n, v, clip);
+    return;
+  }
+  /* across the horizon. Start at a HIDDEN vertex, so a visible piece is never
+     split in two by the end of the array and then closed twice. */
+  let hidden = -1, seen = 0;
+  for(let i = 0; i < n; i++){ if(r[i * 3 + 2] >= 0) seen++; else if(hidden < 0) hidden = i; }
+  if(!seen) return;
+  if(hidden < 0){                        /* the cap said 'across' and it is not */
+    for(let i = 0, k = 0; i < n; i++, k += 3){
+      P[i * 2] = cx + R * r[k]; P[i * 2 + 1] = cy - R * r[k + 1];
+    }
+    atlGEmit(path, n, v, clip);
+    return;
+  }
+  let m = 0, fx = 0, fy = 0, lx = 0, ly = 0, open = 0;
+  /* the piece is written in screen units and its two ends are remembered in
+     the sphere's own, because the rim arc that closes it is an angle */
+  const put = (x, y) => {
+    if(!m){ fx = x; fy = y; }
+    lx = x; ly = y;
+    P[m * 2] = cx + R * x; P[m * 2 + 1] = cy - R * y; m++;
+  };
+  const rim = (i, j) => {
+    const az = r[i * 3 + 2], t = az / (az - r[j * 3 + 2]);
+    const x = r[i * 3] + (r[j * 3] - r[i * 3]) * t;
+    const y = r[i * 3 + 1] + (r[j * 3 + 1] - r[i * 3 + 1]) * t;
+    const d = Math.hypot(x, y) || 1;
+    put(x / d, y / d);
+  };
+  const close = () => {
+    if(m < 2){ m = 0; return; }
+    let a = Math.atan2(-ly, lx);
+    let d = Math.atan2(-fy, fx) - a;
+    while(d > Math.PI) d -= Math.PI * 2;
+    while(d < -Math.PI) d += Math.PI * 2;
+    const steps = Math.max(1, Math.ceil(Math.abs(d) / (Math.PI / 45)));
+    for(let k = 1; k <= steps; k++){
+      const t = a + d * k / steps;
+      P[m * 2] = cx + Math.cos(t) * R; P[m * 2 + 1] = cy + Math.sin(t) * R; m++;
+    }
+    atlGEmit(path, m, v, clip);
+    m = 0;
+  };
+  for(let s = 0; s < n; s++){
+    const i = (hidden + s) % n, j = (i + 1) % n;
+    const av = r[i * 3 + 2] >= 0, bv = r[j * 3 + 2] >= 0;
+    if(!av && bv){ m = 0; rim(i, j); put(r[j * 3], r[j * 3 + 1]); open = 1; }
+    else if(av && bv){
+      if(!open){ m = 0; put(r[i * 3], r[i * 3 + 1]); open = 1; }
+      put(r[j * 3], r[j * 3 + 1]);
+    }else if(av && !bv){
+      if(!open){ m = 0; put(r[i * 3], r[i * 3 + 1]); }
+      rim(i, j); close(); open = 0;
+    }
+  }
+  if(open) close();
 }
-function atlGRotate(v, q){
-  const G = v.G, f = q.x * G.co + q.y * G.so;
-  return { x:q.y * G.co - q.x * G.so,
-           y:G.cl * q.z - G.sl * f,
-           z:G.sl * q.z + G.cl * f };
+function atlGlobePath(v, rings){
+  const p = new Path2D();
+  for(const r of rings) atlGlobeRing(p, v, r);
+  return p;
 }
-function atlGHorizon(a, b){
-  const t = a.z / (a.z - b.z), x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
-  const d = Math.hypot(x, y) || 1;
-  return { x:x / d, y:y / d, z:0 };
-}
+/* ---- one line on the sphere ----
+   The same walk without the rim: a coast, a border or a river is an open run,
+   so a piece that goes round the back simply stops at the horizon. */
 function atlGlobeLine(path, v, pts){
   if(!pts || pts.length < 2) return;
-  const u = atlGUnits(pts);
-  let a = atlGRotate(v, u[0]), pen = false;
-  for(let i = 1; i < pts.length; i++){
-    const b = atlGRotate(v, u[i]), av = a.z >= 0, bv = b.z >= 0;
-    let s = null, e = null;
-    if(av && bv){ s = a; e = b; }
-    else if(av && !bv){ s = a; e = atlGHorizon(a, b); }
-    else if(!av && bv){ s = atlGHorizon(a, b); e = b; }
-    if(s){
-      const p = atlGScreen(v, s), q = atlGScreen(v, e);
-      if(atlGReject(p, q, v)) pen = false;
-      else {
-        if(!pen) path.moveTo(p[0], p[1]);
-        path.lineTo(q[0], q[1]); pen = bv;
-      }
-    }else pen = false;
-    a = b;
+  const G = atlGPrep(pts), n = G.n;
+  if(n < 2 || atlGCull(G, v) < 0) return;
+  const R = GEO_GR * v.k, cx = ATL_W / 2, cy = v.H / 2, H = v.H;
+  const r = atlGSpin(G, v);
+  let pen = 0, ax = r[0], ay = r[1], az = r[2];
+  for(let i = 1; i < n; i++){
+    const k = i * 3, bx = r[k], by = r[k + 1], bz = r[k + 2];
+    const av = az >= 0, bv = bz >= 0;
+    let sx, sy, ex, ey;
+    if(av && bv){ sx = ax; sy = ay; ex = bx; ey = by; }
+    else if(av !== bv){
+      const t = az / (az - bz);
+      const hx = ax + (bx - ax) * t, hy = ay + (by - ay) * t;
+      const d = Math.hypot(hx, hy) || 1;
+      if(av){ sx = ax; sy = ay; ex = hx / d; ey = hy / d; }
+      else  { sx = hx / d; sy = hy / d; ex = bx; ey = by; }
+    }else{ pen = 0; ax = bx; ay = by; az = bz; continue; }
+    const x0 = cx + R * sx, y0 = cy - R * sy, x1 = cx + R * ex, y1 = cy - R * ey;
+    /* both ends off the same side of the picture: no part of the segment can
+       be on it, and the pen lifts rather than drawing across a corner */
+    if((x0 < 0 && x1 < 0) || (x0 > ATL_W && x1 > ATL_W) ||
+       (y0 < 0 && y1 < 0) || (y0 > H && y1 > H)) pen = 0;
+    else{
+      if(!pen) path.moveTo(x0, y0);
+      path.lineTo(x1, y1);
+      pen = bv ? 1 : 0;
+    }
+    ax = bx; ay = by; az = bz;
   }
 }
 function atlGlobeLines(v, runs){
   const p = new Path2D();
   for(const a of runs) atlGlobeLine(p, v, a);
-  return p;
-}
-/* Add one clipped spherical ring to a CanvasPath. Every visible run closes
-   along the circular horizon, never along a chord through the globe. */
-function atlGlobeRing(path, v, pts){
-  const n = pts && pts.length;
-  if(n < 3) return;
-  const q = atlGUnits(pts).map(p => atlGRotate(v, p));
-  let visible = 0, hidden = -1;
-  for(let i = 0; i < n; i++) if(q[i].z >= 0) visible++; else if(hidden < 0) hidden = i;
-  if(!visible) return;
-  if(visible === n){
-    atlGPutRing(path, q.map(p => atlGScreen(v, p)), v); return;
-  }
-  let run = null;
-  const emit = a => {
-    if(!a || a.length < 2) return;
-    const poly = a.map(p => atlGScreen(v, p));
-    const last = a[a.length - 1], first = a[0];
-    let x = Math.atan2(-last.y, last.x), end = Math.atan2(-first.y, first.x);
-    let d = end - x;
-    while(d > Math.PI) d -= Math.PI * 2;
-    while(d < -Math.PI) d += Math.PI * 2;
-    const steps = Math.max(1, Math.ceil(Math.abs(d) / (Math.PI / 45)));
-    const r = GEO_GR * v.k;
-    for(let k = 1; k <= steps; k++){
-      const t = x + d * k / steps;
-      poly.push([ATL_W / 2 + Math.cos(t) * r, v.H / 2 + Math.sin(t) * r]);
-    }
-    atlGPutRing(path, poly, v);
-  };
-  for(let k = 0; k < n; k++){
-    const i = (hidden + k) % n, j = (i + 1) % n, a = q[i], b = q[j];
-    const av = a.z >= 0, bv = b.z >= 0;
-    if(!av && bv) run = [atlGHorizon(a, b), b];
-    else if(av && bv){ if(!run) run = [a]; run.push(b); }
-    else if(av && !bv){ if(!run) run = [a]; run.push(atlGHorizon(a, b)); emit(run); run = null; }
-  }
-  emit(run);
-}
-function atlGlobePath(v, rings){
-  const p = new Path2D();
-  for(const r of rings) atlGlobeRing(p, v, r);
   return p;
 }
 function atlResolveColor(host, value){
@@ -824,46 +1362,213 @@ function atlResolveColor(host, value){
   const c = getComputedStyle(p).color;
   p.remove(); return c;
 }
+/* THE CANVAS PAINTS IN THE STYLESHEET'S COLOURS. Every colour the map has is a
+   --at* variable on the item (see the styles in the CSS below), the SVG rules
+   read them directly, and the canvas reads the same variables off its own
+   computed style and resolves each through one throwaway element — which is
+   what turns a color-mix() into a colour Canvas can be handed. So a style is
+   one block of CSS and nothing here knows its name. */
+const ATL_PAL_KEYS = ['land', 'sea0', 'sea1', 'sea2', 'lake', 'lakeline', 'river', 'coast', 'bord',
+                      'lbl', 'halo', 'relsea', 'edge', 'mark', 'seaname', 'co0', 'co1', 'co2', 'co3', 'co4', 'co5'];
 function atlGlobePalette(canvas){
   const s = getComputedStyle(canvas), get = k => s.getPropertyValue(k).trim();
-  const paper = get('--paper'), ink = get('--ink'), accent = get('--accent'), accent2 = get('--accent2'), line = get('--line');
-  const sig = [paper, ink, accent, accent2, line].join('|');
+  const accent = get('--accent'), disp = get('--disp') || 'sans-serif';
+  const raw = ATL_PAL_KEYS.map(k => get('--at' + k));
+  const sig = raw.join('|') + '|' + accent + '|' + disp;
   if(canvas.__palette && canvas.__palette.sig === sig) return canvas.__palette;
-  const mix = (a, n, b) => atlResolveColor(canvas.parentElement,
-    'color-mix(in srgb,' + a + ' ' + n + '%,' + b + ')');
-  return (canvas.__palette = { sig, paper, ink, accent, accent2, line,
-    land:mix(paper, 88, ink), sea0:mix(accent2, 15, paper), sea1:mix(accent2, 10, paper),
-    sea2:mix(accent2, 30, paper), lake:mix(accent2, 34, paper), lakeLine:mix(accent2, 70, ink),
-    river:mix(accent2, 72, ink), pick:mix(accent, 30, 'transparent'), edge:mix(ink, 58, accent2) });
+  const C = { sig, accent, disp, co: [] };
+  ATL_PAL_KEYS.forEach((k, n) => {
+    const c = atlResolveColor(canvas.parentElement, raw[n] || 'transparent');
+    if(k.length === 3 && k.slice(0, 2) === 'co') C.co[+k[2]] = c; else C[k] = c;
+  });
+  C.pick = atlResolveColor(canvas.parentElement, 'color-mix(in srgb,' + accent + ' 30%,transparent)');
+  return (canvas.__palette = C);
 }
-function atlGlobePaint(canvas, it, v){
-  const box = canvas.getBoundingClientRect();
-  if(!(box.width > 0 && box.height > 0)) return;
-  const dpr = Math.min(2, devicePixelRatio || 1), pw = Math.max(1, Math.round(box.width * dpr)),
+/* The layer table is searched by id seven times a paint, and it is the same
+   seven answers every time. A map is a hash; a turn is sixty paints. */
+const ATL_GLAYER = {};
+const atlGLayer = id => ATL_GLAYER[id] ||
+  (ATL_GLAYER[id] = ATL_LAYERS.find(L => L.id === id));
+/* ---- the two DOM questions a frame used to ask ----
+   The canvas's own box is a layout and its own colours are a style flush, and
+   neither answer can change while a globe is being turned: a hand cannot be on
+   the map and on the theme picker at once. So the box is WATCHED rather than
+   measured, and the palette is re-read on the frames the map is standing still
+   — which is every frame except the ones inside a gesture, including the one a
+   gesture ends on and the one a theme change repaints. */
+function atlGlobeBox(canvas){
+  if(!canvas.__ro && typeof ResizeObserver === 'function'){
+    canvas.__ro = new ResizeObserver(es => {
+      const r = es[es.length - 1].contentRect;
+      if(!(r.width > 0 && r.height > 0)) return;
+      const had = canvas.__box;
+      canvas.__box = { width:r.width, height:r.height };
+      /* A BOX THAT ARRIVES IS A PAINT THAT IS OWED. A map built off the page —
+         which is how every item is built — measured nothing, and a frame that
+         could not paint must not be the last word: the moment the canvas has a
+         size, the picture is asked for again. */
+      if(canvas.__wake && (!had || had.width !== r.width || had.height !== r.height)) canvas.__wake();
+    });
+    canvas.__ro.observe(canvas);
+  }
+  const b = canvas.__box;
+  if(b && b.width > 0 && b.height > 0) return b;
+  const r = canvas.getBoundingClientRect();
+  return (canvas.__box = { width:r.width, height:r.height });
+}
+/* ---- the sea and the shade, painted once ----
+   Both are radial gradients over the whole of the picture, and a radial
+   gradient is worked out PER PIXEL — a square root and a ramp for every one of
+   the million this canvas has. The two of them came to three and a half
+   milliseconds of every frame, which is a seventh of the budget spent redrawing
+   something that had not changed: neither depends on the ORIENTATION, only on
+   how big the globe is and what colour the paper is, and turning changes
+   neither of those.
+
+   So they are drawn once into two canvases of exactly this canvas's size, and
+   a frame blits them. It has to be exactly this size — a tile drawn small and
+   stretched costs as much as the gradient did, because resampling is also
+   per-pixel arithmetic, while a blit at one to one is a copy and costs about a
+   tenth of what either does. They are built under the SAME transform the
+   picture uses, so a widget whose box is not the shape of its own view gets
+   the same slightly oval gradient it always got.
+
+   The pair is rebuilt when the globe is resized, zoomed or re-themed, and a
+   turn does none of those. */
+function atlGlobeBack(canvas, C, pw, ph, sx, sy, v, r){
+  const sig = pw + 'x' + ph + '|' + Math.round(r * 8) + '|' + C.sig;
+  const had = canvas.__back;
+  if(had && had.sig === sig) return had;
+  const cx = ATL_W / 2, cy = v.H / 2;
+  const mk = (old, paint) => {
+    const c = old && old.width === pw && old.height === ph ? old : document.createElement('canvas');
+    if(c.width !== pw){ c.width = pw; } if(c.height !== ph){ c.height = ph; }
+    const g = c.getContext('2d');
+    g.setTransform(sx, 0, 0, sy, 0, 0);
+    g.clearRect(0, 0, ATL_W, v.H);
+    /* NO CLIP IN THE TILE. The disc is the picture's own clip and the tile is
+       blitted inside it; a circle cut here as well would put a second
+       antialiased edge into the blend and the rim would come out a shade
+       different from the one this feature has always drawn. */
+    paint(g);
+    return c;
+  };
+  const sea = mk(had && had.sea, g => {
+    const q = g.createRadialGradient(cx - r * .26, cy - r * .28, r * .04, cx, cy, r * 1.06);
+    q.addColorStop(0, C.sea0); q.addColorStop(.7, C.sea1); q.addColorStop(1, C.sea2);
+    g.fillStyle = q; g.fillRect(0, 0, ATL_W, v.H);
+  });
+  const shade = mk(had && had.shade, g => {
+    const q = g.createRadialGradient(cx - r * .28, cy - r * .3, r * .18, cx, cy, r);
+    q.addColorStop(.58, 'rgba(0,0,0,0)'); q.addColorStop(1, 'rgba(0,0,0,.19)');
+    g.fillStyle = q; g.fillRect(0, 0, ATL_W, v.H);
+  });
+  return (canvas.__back = { sig, sea, shade });
+}
+/* ---- how fine to draw it WHILE IT IS MOVING ----
+   What is left, once nothing is allocated and nothing is worked out twice, is
+   fill rate: a globe filling a page is over a million pixels and a frame
+   passes over most of them a dozen times — the sea, the land, nine bands of
+   terrain, five kinds of line. That is not a thing to be clever about. It is
+   simply more pixels than some machines can paint sixty times a second, and no
+   amount of arithmetic saved will change it.
+
+   So the picture is drawn at fewer pixels WHILE THE HAND IS ON IT, and at
+   every pixel the moment it stops. The canvas is stretched to its box by CSS
+   either way, so a smaller one costs the compositor a scale it was doing
+   anyway and costs this function a quarter of its work. It is the same bargain
+   atlReworld already strikes with the height field one rung up — do less while
+   it is moving, and catch up when it stands still — and it is the honest one
+   to strike here, because a globe being flung round is the one moment nobody
+   is reading the coastline.
+
+   AND IT IS MEASURED, NOT GUESSED. A machine that paints this in four
+   milliseconds never gives up a pixel; one that cannot hold sixteen steps down
+   until it can. Nothing here knows what it is running on, so it watches itself.
+
+   IT WATCHES TWO CLOCKS, because either one alone is a lie on some machine.
+   How long this function takes is the whole story where the canvas is drawn on
+   the processor — and none of it where the canvas is handed to the graphics
+   card, because then this returns long before the picture exists and would
+   report four milliseconds while the reader watches it stutter. The GAP
+   between one frame and the next catches that, and cannot be fooled by where
+   the work happens; but it cannot tell FAST from JUST KEEPING UP either, since
+   a frame that finishes early still waits for the screen. So: step down when
+   either clock says the frame is late, and step back up only when both say
+   there is room. Between the two thresholds is a dead band, which is what
+   stops it hunting, and a step is held for ten frames whatever they say.
+
+   A gesture ends with one full-resolution frame, which is the one anybody
+   actually looks at — see the `owed` line in atlPaint, which is what stops
+   that frame being skipped for having moved too little to be worth drawing. */
+const ATL_GQ = [1, 0.82, 0.67, 0.55];
+const ATL_GAP_LATE = 21, ATL_GAP_ROOM = 17.5;    /* ms between frames */
+const ATL_COST_LATE = 13, ATL_COST_ROOM = 7;     /* ms inside this function */
+function atlGlobeScale(canvas, moving){
+  if(!moving){ canvas.__qn = 0; canvas.__at = 0; canvas.__qheld = 0; return 1; }
+  const q = canvas.__qn | 0, gap = canvas.__gap, cost = canvas.__ema;
+  if(cost == null) return ATL_GQ[q];
+  canvas.__qheld = (canvas.__qheld || 0) + 1;
+  if(canvas.__qheld >= 10){
+    const late = cost > ATL_COST_LATE || (gap != null && gap > ATL_GAP_LATE);
+    const room = cost < ATL_COST_ROOM && (gap == null || gap < ATL_GAP_ROOM);
+    if(late && q < ATL_GQ.length - 1){ canvas.__qn = q + 1; canvas.__qheld = 0; }
+    else if(room && q > 0){ canvas.__qn = q - 1; canvas.__qheld = 0; }
+  }
+  return ATL_GQ[canvas.__qn | 0];
+}
+/* ---- the porthole ----
+   The widget IS the sphere: at home the disc fills the square picture edge to
+   edge, and going in the sphere grows past the picture, so what is seen is the
+   part of it inside the same circle — a porthole onto the surface rather than
+   a square cut out of a ball. Everything under here clips to the smaller of
+   the two, and the rim it inks is whichever one is showing. */
+const atlPorthole = v => Math.min(ATL_W, v.H) / 2;
+/* false when nothing could be painted — a canvas with no size yet — so the
+   caller does not write the view down as drawn */
+function atlGlobePaint(canvas, it, v, moving){
+  const box = atlGlobeBox(canvas);
+  if(!(box.width > 0 && box.height > 0)) return false;
+  const t0 = performance.now();
+  const q = atlGlobeScale(canvas, moving);
+  const dpr = Math.min(2, devicePixelRatio || 1) * q,
+        pw = Math.max(1, Math.round(box.width * dpr)),
         ph = Math.max(1, Math.round(box.height * dpr));
-  if(canvas.width !== pw || canvas.height !== ph){ canvas.width = pw; canvas.height = ph; }
-  const ctx = canvas.getContext('2d'), sx = pw / ATL_W, sy = ph / v.H, C = atlGlobePalette(canvas);
-  const lon = v.P.lon * Math.PI / 180, lat = v.P.lat * Math.PI / 180;
-  v.G = { so:Math.sin(lon), co:Math.cos(lon), sl:Math.sin(lat), cl:Math.cos(lat) };
+  const resized = canvas.width !== pw || canvas.height !== ph;
+  if(resized){ canvas.width = pw; canvas.height = ph; }
+  const ctx = canvas.getContext('2d'), sx = pw / ATL_W, sy = ph / v.H;
+  const C = (moving && canvas.__palette) || atlGlobePalette(canvas);
+  v.A = atlGAxes(v.P.lon * Math.PI / 180, v.P.lat * Math.PI / 180);
   ctx.setTransform(sx, 0, 0, sy, 0, 0); ctx.clearRect(0, 0, ATL_W, v.H);
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  const r = GEO_GR * v.k, cx = ATL_W / 2, cy = v.H / 2;
-  ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
-  const sea = ctx.createRadialGradient(cx - r * .26, cy - r * .28, r * .04, cx, cy, r * 1.06);
-  sea.addColorStop(0, C.sea0); sea.addColorStop(.7, C.sea1); sea.addColorStop(1, C.sea2);
-  ctx.fillStyle = sea; ctx.fillRect(0, 0, ATL_W, v.H);
+  const r = GEO_GR * v.k, cx = ATL_W / 2, cy = v.H / 2, rim = Math.min(r, atlPorthole(v));
+  const B = atlGlobeBack(canvas, C, pw, ph, sx, sy, v, r);
+  ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, rim, 0, Math.PI * 2); ctx.clip();
+  /* a clip is kept in device space, so the transform may be put aside for the
+     length of a blit without the disc moving */
+  const blit = img => { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+                        ctx.drawImage(img, 0, 0); ctx.restore(); };
+  blit(B.sea);
 
   /* Tier two already resolves below a pixel across this canvas. Going to the
      source table at deeper zoom only projects off-screen points; keeping this
      cap fixed also means no detail swap when the hand is released. */
   const lod = Math.min(2, atlLod(atlN(v))), raw = geoGlobeRaw(lod), land = atlGlobePath(v, raw.land);
-  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'grat'))){
-    ctx.strokeStyle = C.line; ctx.globalAlpha = .55; ctx.lineWidth = 1.1;
-    ctx.stroke(atlGlobeLines(v, atlGlobeGraticule()));
+  if(atlOn(it, atlGLayer('grat'))){
+    const G = atlGratRuns(Math.max(10, atlGStep(v)));
+    ctx.strokeStyle = C.bord; ctx.globalAlpha = .35; ctx.lineWidth = 1.1;
+    ctx.stroke(atlGlobeLines(v, G.mer)); ctx.stroke(atlGlobeLines(v, G.par));
   }
   ctx.globalAlpha = 1;
-  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'land'))){ ctx.fillStyle = C.land; ctx.fill(land, 'evenodd'); }
-  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'relief'))){
+  if(atlOn(it, atlGLayer('land'))){ ctx.fillStyle = C.land; ctx.fill(land, 'evenodd'); }
+  if(atlOn(it, atlGLayer('polit'))){
+    const tint = geoCoTints();
+    raw.co.forEach((rings, i) => {
+      if(!rings.length) return;
+      ctx.fillStyle = C.co[tint[i]]; ctx.fill(atlGlobePath(v, rings), 'evenodd');
+    });
+  }
+  if(atlOn(it, atlGLayer('relief'))){
     ctx.save(); ctx.clip(land, 'evenodd'); ctx.globalAlpha = .92;
     const rl = Math.min(2, lod);
     for(const b of geoGlobeRelief(rl)){
@@ -871,21 +1576,21 @@ function atlGlobePaint(canvas, it, v){
     }
     ctx.restore();
   }
-  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'lakes'))){
-    ctx.fillStyle = C.lake; ctx.strokeStyle = C.lakeLine; ctx.globalAlpha = .95; ctx.lineWidth = 1.2;
+  if(atlOn(it, atlGLayer('lakes'))){
+    ctx.fillStyle = C.lake; ctx.strokeStyle = C.lakeline; ctx.globalAlpha = .95; ctx.lineWidth = 1.2;
     const p = atlGlobePath(v, raw.lakes);
     ctx.fill(p, 'evenodd'); ctx.stroke(p);
   }
-  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'rivers'))){
+  if(atlOn(it, atlGLayer('rivers'))){
     ctx.strokeStyle = C.river; ctx.globalAlpha = .75; ctx.lineWidth = 1.6;
     ctx.stroke(atlGlobeLines(v, raw.rivers));
   }
-  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'bord'))){
-    ctx.strokeStyle = C.ink; ctx.globalAlpha = .3; ctx.lineWidth = 1.5;
+  if(atlOn(it, atlGLayer('bord'))){
+    ctx.strokeStyle = C.bord; ctx.globalAlpha = .3; ctx.lineWidth = 1.5;
     ctx.stroke(atlGlobeLines(v, raw.bord));
   }
-  if(atlOn(it, ATL_LAYERS.find(L => L.id === 'coast'))){
-    ctx.strokeStyle = C.ink; ctx.globalAlpha = .9; ctx.lineWidth = 2.4;
+  if(atlOn(it, atlGLayer('coast'))){
+    ctx.strokeStyle = C.coast; ctx.globalAlpha = .9; ctx.lineWidth = 2.4;
     ctx.stroke(atlGlobeLines(v, raw.coast));
   }
   const key = atlSel(it);
@@ -894,12 +1599,36 @@ function atlGlobePaint(canvas, it, v){
     ctx.fillStyle = C.pick; ctx.strokeStyle = C.accent; ctx.globalAlpha = 1; ctx.lineWidth = 2.6;
     ctx.fill(p, 'evenodd'); ctx.stroke(p);
   }
-  const shade = ctx.createRadialGradient(cx - r * .28, cy - r * .3, r * .18, cx, cy, r);
-  shade.addColorStop(.58, 'rgba(0,0,0,0)'); shade.addColorStop(1, 'rgba(0,0,0,.19)');
-  ctx.fillStyle = shade; ctx.globalAlpha = 1; ctx.fillRect(0, 0, ATL_W, v.H);
+  ctx.globalAlpha = 1; blit(B.shade);
   ctx.restore();
   ctx.strokeStyle = C.edge;
-  ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, Math.max(0, r - 1), 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, Math.max(0, rim - 1), 0, Math.PI * 2); ctx.stroke();
+  /* ---- and the names, on the same canvas ----
+     One ctx per frame, in layer order, exactly as the SVG frames get it — so
+     the cities still lay out against what the capitals took. See atlInkName. */
+  const lctx = { it, view: v };
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  for(const L of ATL_LAYERS) if(L.draw && atlOn(it, L)) L.draw(ctx, lctx, C);
+  ctx.globalAlpha = 1;
+  /* what that frame cost, smoothed — the only thing atlGlobeScale has to go on,
+     and it is kept between gestures so the second drag starts out knowing what
+     the first one found out. Only frames WITH THE HAND ON are counted: the one
+     full-resolution frame a gesture ends on is not what the next moving frame
+     will cost, and a frame that resized the canvas paid for a new backing store
+     and two backdrops, which is not what the frame after it will cost either. */
+  if(moving && !resized){
+    const now = performance.now(), dt = now - t0;
+    canvas.__ema = canvas.__ema == null ? dt : canvas.__ema * 0.8 + dt * 0.2;
+    /* the gap, and only when it is a FRAME rather than a pause: a finger that
+       rests halfway through a drag stops asking for paints, and the second it
+       moves again the clock would read half a second and step the picture down
+       for no reason at all */
+    const gap = canvas.__at ? now - canvas.__at : 0;
+    if(gap > 2 && gap < 120)
+      canvas.__gap = canvas.__gap == null ? gap : canvas.__gap * 0.85 + gap * 0.15;
+    canvas.__at = now;
+  }
+  return true;
 }
 
 /* ---- the picture ----
@@ -942,21 +1671,74 @@ function atlSVG(it, view, liveGlobe){
       '<circle class="atglobeedge" cx="' + GEO_GR + '" cy="' + GEO_GR + '" r="' + (GEO_GR - 2) + '"/></g>'
     : '<rect class="atsea" x="0" y="0" width="' + ATL_W + '" height="' + v.H +
       '" fill="url(#atlsea-' + id + ')"/><g class="atworld">' + world + '</g>';
+  /* THE PICTURE'S OWN EDGE IS ROUND WHEN THE WORLD IS: a globe's or a polar
+     disc's picture is the porthole — see atlPorthole — and the frame, the hit
+     plane and the edge are the same circle. A flat map keeps its rounded
+     rectangle. */
+  const round = globe || !!v.P.round;
+  const cx = ATL_W / 2, cy = v.H / 2, pr = round ? atlPorthole(v) : 0;
+  const frame = round
+    ? '<circle cx="' + cx + '" cy="' + cy + '" r="' + pr + '"/>'
+    : '<rect x="0" y="0" width="' + ATL_W + '" height="' + v.H + '" rx="14"/>';
+  const hit = round
+    ? '<circle class="athit" cx="' + cx + '" cy="' + cy + '" r="' + pr + '" fill="#000" fill-opacity=".001" pointer-events="all"/>'
+    : '<rect class="athit" x="0" y="0" width="' + ATL_W + '" height="' + v.H + '" fill="#000" fill-opacity=".001" pointer-events="all"/>';
+  const edge = round
+    ? '<circle class="atedge" cx="' + cx + '" cy="' + cy + '" r="' + (pr - 1) + '"/>'
+    : '<rect class="atedge" x="1" y="1" width="' + (ATL_W - 2) + '" height="' + rd1(v.H - 2) + '" rx="13"/>';
   return '<svg class="atmap" viewBox="0 0 ' + ATL_W + ' ' + v.H + '" xmlns="http://www.w3.org/2000/svg"' +
     (globe ? ' data-projection="globe"' : '') +
     ' data-built="' + esc(atlBuilt(it, v)) + '"' +
     ' style="aspect-ratio:' + ATL_W + '/' + v.H + '">' +
-    '<defs><clipPath id="atl-' + id + '"><rect x="0" y="0" width="' + ATL_W + '" height="' + v.H + '" rx="14"/></clipPath>' +
+    '<defs><clipPath id="atl-' + id + '">' + frame + '</clipPath>' +
     globeClip + seaDef + '</defs>' +
     '<g clip-path="url(#atl-' + id + ')">' +
     /* The live globe's picture is a pointerless canvas beneath this SVG. Keep
        a hit plane in the SVG so a drag that crosses ocean never loses its
        target; `pointer-events:all` also makes transparent water start a turn. */
-    '<rect class="athit" x="0" y="0" width="' + ATL_W + '" height="' + v.H +
-      '" fill="#000" fill-opacity=".001" pointer-events="all"/>' +
-    moving + '<g class="atpins">' + pins + '</g></g>' +
-    '<rect class="atedge" x="1" y="1" width="' + (ATL_W - 2) + '" height="' + rd1(v.H - 2) + '" rx="13"/>' +
+    hit + moving + '<g class="atpins">' + pins + '</g></g>' + edge +
     '</svg>';
+}
+/* the item wears the shape of its picture: a class core's own selection ring,
+   the paper and the shadow all read, so a globe is a sphere on the page and
+   the polar disc a disc, not a ball in a box. Set wherever a map is built or
+   rebuilt, live or not. */
+const atlShape = (el, it) => {
+  el.classList.toggle('atround', atlGlobe(it) || !!geoProj(atlProj(it)).round);
+  el.dataset.atstyle = atlStyle(it);               /* the colours — see the styles in the CSS */
+};
+/* ---- the styles ----
+   A style is a set of colours for the sea, the land, the lines, the names and
+   the six country tints — one block of CSS variables each, keyed by the item's
+   data-atstyle. `paper` is the default and follows the note's own theme; the
+   rest are fixed pictures that look the same on every sheet. Political is the
+   one that also turns a layer on, because tinted countries are what it is. */
+const ATL_STYLES = [
+  ['paper', 'Paper', 'the note’s own colours'],
+  ['atlas', 'Atlas', 'cream land, pale sea, sepia lines'],
+  ['political', 'Political', 'every country its own tint'],
+  ['night', 'Night', 'a dark sea and slate land'],
+  ['blueprint', 'Blueprint', 'white lines on deep blue'],
+  ['sepia', 'Sepia', 'parchment and brown ink']
+];
+const atlStyle = it => ATL_STYLES.some(t => t[0] === it.style) ? it.style : 'paper';
+const atlStyleName = it => ATL_STYLES.find(t => t[0] === atlStyle(it))[1];
+function atlSetStyle(el, it, page, name){
+  if(!ATL_STYLES.some(t => t[0] === name)) return;
+  if(name === 'paper') delete it.style; else it.style = name;
+  if(name === 'political'){ it.on = Object.assign({}, it.on); it.on.polit = 1; }
+  if(el.__atlstyle) atlToolLabel(el.__atlstyle, atlStyleName(it));
+  queueSave(page.id); atlRebuild(el, it, page);
+  SND.tick();
+}
+function atlStyleMenu(it){
+  const cur = atlStyle(it);
+  return '<div class="atlsec">Style</div>' + ATL_STYLES.map(t =>
+    '<button class="atlrow atlstyle' + (t[0] === cur ? ' on' : '') + '" data-s="' + t[0] +
+    '" role="menuitemradio" aria-checked="' + (t[0] === cur ? 'true' : 'false') + '" title="' + esc(t[2]) + '">' +
+    '<i class="atlswatch" data-atstyle="' + t[0] + '" aria-hidden="true"><b style="background:var(--atsea1)"></b>' +
+    '<b style="background:var(--atland)"></b><b style="background:var(--atco0)"></b><b style="background:var(--atco3)"></b></i>' +
+    '<span>' + esc(t[1]) + '</span><i class="atlck" aria-hidden="true">' + icn('tick') + '</i></button>').join('');
 }
 
 /* the one place the view reaches the DOM: a transform, a stroke width a layer,
@@ -965,7 +1747,7 @@ function atlSVG(it, view, liveGlobe){
 function atlPlan(svg, it){
   if(svg.__plan) return svg.__plan;
   const built = svg.dataset.built || '';
-  const plan = { world: svg.querySelector('.atworld'), lay: [], pins: [],
+  const plan = { world: svg.querySelector('.atworld'), pinsG: svg.querySelector('.atpins'), lay: [], pins: [],
                  built, heavy: built, hwin: atlWinOf(built.split('|')[1]) };
   for(const g of svg.querySelectorAll('.atworld .atlay'))
     plan.lay.push({ g, sw: +g.dataset.sw || 0, spec: ATL_LAYERS.find(L => L.id === g.dataset.l) });
@@ -1032,11 +1814,17 @@ function atlPaint(el, it, v, force){
   const canvas = el.querySelector('canvas.atglobeview'), liveGlobe = !!canvas && v.globe;
   if(canvas) canvas.classList.toggle('on', liveGlobe);
   if(p.world) p.world.style.visibility = liveGlobe ? 'hidden' : '';
+  if(p.pinsG) p.pinsG.style.visibility = liveGlobe ? 'hidden' : '';   /* the canvas writes the names — see atlInkName */
+  /* is a hand or a spring still on this map? The flat half has always asked,
+     to know whether a rebuild can wait; the globe asks for the same reason one
+     rung down — a frame in the middle of a gesture may not stop to ask the
+     document a question whose answer cannot have changed. */
+  const LV = ATL_LIVE.get(it.id);
+  const moving = !!LV && !!(LV.hand || LV.sx.active || LV.sy.active || LV.sz.active);
   if(!liveGlobe){
     const built = atlBuilt(it, v);
     if(p.built !== built || (p.slow && p.heavy !== built)){
-      const L = ATL_LIVE.get(it.id);
-      const busy = !!L && !!(L.hand || L.sx.active || L.sy.active || L.sz.active);
+      const busy = moving;
       /* a rebuild the hand is owed is put off until the hand stops — unless what
          is drawn no longer reaches the edge of the picture, and then it is not a
          refinement any more but a hole, and holes are not deferred */
@@ -1044,23 +1832,37 @@ function atlPaint(el, it, v, force){
     }
   }
   /* a settling spring's last frames move the picture by a fraction of a pixel.
-     Nothing on screen can show that, so nothing on screen is touched for it */
+     Nothing on screen can show that, so nothing on screen is touched for it —
+     EXCEPT the frame a globe is owed. A globe that has been turning is standing
+     at fewer pixels than its box, and the paint that puts that right is the one
+     the springs come to rest on, which is also the one that has not moved far
+     enough to be worth drawing. It is worth drawing. */
+  const owed = liveGlobe && !moving && (canvas.__qn | 0) > 0;
   const was = p.was;
-  if(!force && was && v.z === was.z && v.proj === was.proj &&
+  if(!force && !owed && was && v.z === was.z && v.proj === was.proj &&
      (!v.globe || (v.P.lon === was.lon && v.P.lat === was.lat)) &&
      Math.abs((v.cx - was.cx) * v.k) < .05 && Math.abs((v.cy - was.cy) * v.k) < .05) return;
-  p.was = { cx: v.cx, cy: v.cy, z: v.z, proj:v.proj, lon:v.P.lon, lat:v.P.lat };
-  if(liveGlobe) atlGlobePaint(canvas, it, v);
+  if(liveGlobe){
+    /* a canvas with no size yet — the item is being built off the page — paints
+       nothing, and the view is NOT written down as drawn: the first frame after
+       it has a box paints it, and the box's arrival asks for that frame */
+    canvas.__wake = () => atlPaint(el, it, atlView(it, ATL_LIVE.get(it.id) || null), true);
+    if(!atlGlobePaint(canvas, it, v, moving)) return;
+  }
   else if(p.world) p.world.setAttribute('transform',
     'translate(' + rd1(ATL_W / 2 - v.cx * v.k) + ' ' + rd1(v.H / 2 - v.cy * v.k) + ') scale(' + v.k + ')');
+  p.was = { cx: v.cx, cy: v.cy, z: v.z, proj:v.proj, lon:v.P.lon, lat:v.P.lat };
   /* the stroke goes on the group as an ATTRIBUTE and the paths inherit it —
      which is why no rule in the stylesheet may set stroke-width on them: CSS
-     beats a presentation attribute and every line would freeze at one width */
+     beats a presentation attribute and every line would freeze at one width.
+     A layer may answer its width per view (swAt): the lakes' ink is off until
+     the map is far enough in for a shore to be worth drawing. */
   for(const L of liveGlobe ? [] : p.lay){
-    const w = Math.round(L.sw / v.k * 100) / 100;
+    const sw = L.spec && L.spec.swAt ? L.spec.swAt(v) : L.sw;
+    const w = Math.round(sw / v.k * 100) / 100;
     if(L.w !== w){ L.w = w; L.g.setAttribute('stroke-width', w); }
   }
-  if(!p.pins.length) return;
+  if(liveGlobe || !p.pins.length) return;
   const ctx = { it, view: v };
   for(const q of p.pins) q.L.frame(q.g, ctx);
 }
@@ -1125,11 +1927,9 @@ function atlPointers(svg, el, it, page, L){
     /* what is under the finger is worked out ONCE, here — the whole gesture
        hangs off it, and asking again per move would be asking 177 countries a
        question whose answer cannot have changed. */
-    const ring = atlRingAt(it, v, q);
     st = { k: v.k, px: q[0], py: q[1], cx: L.cx, cy: L.cy,
            lim: v.globe ? null : atlLimits(it, v.k), globe:v.globe,
-           co: ring >= 0 ? ring : (isFinite(w[0]) && isFinite(w[1])
-             ? geoCoAt(atlVProj(it, v), w[0], w[1], ATL_TINY / v.k) : -1) };
+           co: atlCoUnder(it, v, q, w) };
     const reg = atlRegOf(it, st.co);
     grab = reg && reg === atlSel(it) && atlOn(it, atlPickLayer()) ? 1 : 0;
     mode = 1;
@@ -1280,6 +2080,28 @@ function atlPointers(svg, el, it, page, L){
   svg.addEventListener('pointercancel', off);
 }
 
+/* ---- what is under the finger ----
+   The ring first — see atlRingAt — and then the polygons. ON THE GLOBE THE
+   POLYGONS ARE ASKED IN LONGITUDE AND LATITUDE, NOT IN THE PICTURE: the
+   country geometry memoised under 'globe' is for whatever orientation happened
+   to build it, and a globe that has turned since is a different picture, so
+   asking it was picking a country a quarter of a world away from the finger —
+   and then, because that country was sometimes the picked one, dragging it off
+   the map instead of turning the globe. The point is taken back to the sphere
+   through the CURRENT orientation and asked of the flat world, whose geometry
+   never moves. `near` is scaled with it: a picture unit at the middle of the
+   disc is 1/π of an equirectangular one. */
+function atlCoUnder(it, v, q, w){
+  const ring = atlRingAt(it, v, q);
+  if(ring >= 0) return ring;
+  if(!isFinite(w[0]) || !isFinite(w[1])) return -1;
+  if(!v.globe) return geoCoAt(atlVProj(it, v), w[0], w[1], ATL_TINY / v.k);
+  const ll = v.P.inv(w[0], w[1]);
+  if(!isFinite(ll[0]) || !isFinite(ll[1])) return -1;      /* off the disc */
+  const e = geoProj('equirect').fwd(ll[0], ll[1]);
+  return geoCoAt('equirect', e[0], e[1], ATL_TINY / v.k / Math.PI);
+}
+
 /* ---- picking one, and lighting it up ----
    Tapping the country that is already picked puts it back, so the same tap is
    both halves of the gesture and there is nothing to learn. */
@@ -1299,7 +2121,8 @@ function atlToolMarks(el, it){
   const b = el && el.__atlgrain;
   if(!b) return;
   b.classList.toggle('on', atlTapCont(it));
-  b.title = 'A tap picks: ' + (atlTapCont(it) ? 'the whole continent' : 'a country');
+  b.title = 'A tap picks: ' + (atlTapCont(it) ? 'the whole continent — click for countries' : 'a country — click for continents');
+  atlToolLabel(b, atlTapCont(it) ? 'Continent' : 'Country');
 }
 /* One layer's markup, replaced. Everything else about the map — the transform,
    every other layer, the springs mid-flight — is left exactly as it stands,
@@ -1391,22 +2214,153 @@ function atlSpawn(name, it, page, at){
   addItem('country', at, page);
 }
 
-/* ---- the ⌕ box: a country by name ----
-   The same glass box the molecules use, over the same kind of list. It serves
-   the map and the card both: on a map picking a name walks there and lights it
-   up, on a card it is simply which country the card is of. It offers CONTINENTS
-   as well as countries — all seven of them when nothing has been typed, which is
-   how a reader finds out they can be had at all. */
-let ATL_ASK = null;
-function atlAskEl(){
-  let d = $('#atlask');
+/* ---- the popovers ----
+   One glass surface for the three things the bar opens — the layers, the
+   projection and the ⌕ box. It is anchored to the button that asked for it,
+   warps out of that button and back into it, and is gone the moment a hand
+   touches anything else: the page, the map, another button, the wheel, Esc.
+   The layers used to be a panel that sat on the map until it was told to go,
+   and a panel that stays is a panel in the way.
+
+   ATL_POP is the one that is open: which map, which button, what kind. Asking
+   for the one already open shuts it, so the button is a toggle. */
+let ATL_POP = null;
+function atlPopEl(){
+  let d = $('#atlpop');
   if(d) return d;
   d = document.createElement('div');
-  d.className = 'atlask glass'; d.id = 'atlask';
-  d.innerHTML = '<input placeholder="a country or a continent — Japan, Peru, Africa…" spellcheck="false">' +
-    '<div class="atsug"></div>';
+  d.className = 'atlpop glass'; d.id = 'atlpop';
+  d.setAttribute('role', 'dialog');
   document.body.appendChild(d);
   d.addEventListener('pointerdown', e => e.stopPropagation());
+  d.addEventListener('dblclick', e => e.stopPropagation());
+  d.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
+  /* one listener for every row it will ever hold — the rows are built afresh
+     each time it opens, the listener is not */
+  d.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if(!b || !ATL_POP) return;
+    const { it, el, page } = ATL_POP;
+    if(b.dataset.l){
+      atlToggleLayer(el, it, page, b.dataset.l);
+      const on = atlOn(it, ATL_LAYERS.find(x => x.id === b.dataset.l));
+      b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+      SND.tick();
+    }
+    else if(b.dataset.p){ atlSetProjection(el, it, page, b.dataset.p); atlPopClose(); }
+    else if(b.dataset.s){ atlSetStyle(el, it, page, b.dataset.s); atlPopClose(); }
+    else if(b.dataset.k) atlAskTake(b.dataset.k);
+  });
+  return d;
+}
+function atlPopMark(anchor, open){
+  if(!anchor) return;
+  anchor.classList.toggle('open', open);
+  if(anchor.hasAttribute('aria-expanded')) anchor.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+/* above the bar when there is room — the map stays clear — and below it when
+   the bar is at the top of the screen */
+function atlPopPlace(d, anchor){
+  const r = anchor.getBoundingClientRect(), w = d.offsetWidth, h = d.offsetHeight;
+  d.style.left = clamp(r.left + r.width / 2 - w / 2, 8, innerWidth - w - 8) + 'px';
+  if(r.top - h - 10 >= 8){ d.style.top = 'auto'; d.style.bottom = (innerHeight - r.top + 10) + 'px'; }
+  else { d.style.bottom = 'auto'; d.style.top = clamp(r.bottom + 10, 8, innerHeight - h - 8) + 'px'; }
+}
+/* the surface, open, with `build`'s markup in it — or nothing, when the call
+   was the toggle shutting it */
+function atlPopOpen(kind, anchor, it, el, page, build){
+  const d = atlPopEl();
+  if(ATL_POP && ATL_POP.anchor === anchor && ATL_POP.kind === kind){ atlPopClose(); return null; }
+  if(ATL_POP) atlPopMark(ATL_POP.anchor, false);
+  ATL_POP = { kind, anchor, it, el, page };
+  d.dataset.kind = kind;
+  d.innerHTML = build(d);
+  atlPopMark(anchor, true);
+  d.classList.add('open');
+  atlPopPlace(d, anchor);
+  const r = anchor.getBoundingClientRect();
+  warpIn(d, r.left + r.width / 2, r.top + r.height / 2);
+  return d;
+}
+function atlPopClose(){
+  const d = $('#atlpop');
+  if(!d || !ATL_POP) return;
+  atlPopMark(ATL_POP.anchor, false);
+  ATL_POP = null;
+  if(d.contains(document.activeElement)) document.activeElement.blur();
+  warpOut(d, () => { if(!ATL_POP) d.classList.remove('open'); });
+}
+window.addEventListener('pointerdown', e => {
+  if(ATL_POP && !e.target.closest('#atlpop') && !ATL_POP.anchor.contains(e.target)) atlPopClose();
+});
+window.addEventListener('wheel', e => { if(ATL_POP && !e.target.closest('#atlpop')) atlPopClose(); },
+  { passive: true, capture: true });
+window.addEventListener('resize', () => atlPopClose());
+window.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && ATL_POP){ e.stopPropagation(); atlPopClose(); }
+}, true);
+
+/* ---- the layers, as a menu of switches ----
+   Built from the registry under the headings the layers name for themselves,
+   so a layer written tomorrow is listed tonight. A switch flips the layer
+   there and then — the map rebuilds under the open menu — and the menu stays
+   until the hand goes elsewhere. */
+function atlLayersMenu(it){
+  return ATL_GROUPS.map(g => {
+    const rows = ATL_LAYERS.filter(L => (L.group || 'Land') === g);
+    if(!rows.length) return '';
+    return '<div class="atlsec">' + esc(g) + '</div>' + rows.map(L => {
+      const on = atlOn(it, L);
+      return '<button class="atlrow' + (on ? ' on' : '') + '" data-l="' + esc(L.id) +
+        '" role="switch" aria-checked="' + (on ? 'true' : 'false') + '"><span>' +
+        esc(L.label || L.id) + '</span><i class="atlsw" aria-hidden="true"></i></button>';
+    }).join('');
+  }).join('');
+}
+/* ---- the projection, as a menu with a tick ---- */
+function atlProjMenu(it){
+  const cur = atlProj(it);
+  return '<div class="atlsec">Projection</div>' + ATL_PROJECTIONS.map(p =>
+    '<button class="atlrow' + (p === cur ? ' on' : '') + '" data-p="' + p +
+    '" role="menuitemradio" aria-checked="' + (p === cur ? 'true' : 'false') + '"><span>' +
+    esc(geoProj(p).label) + '</span><i class="atlck" aria-hidden="true">' + icn('tick') + '</i></button>').join('');
+}
+defineIcon('tick', '<path d="M6 12.4l3.9 3.9 8.1-8.6"/>');
+/* the same place, on the new sheet: the centre is carried across as a
+   longitude and a latitude, and the zoom is clamped to what the new
+   projection allows */
+function atlSetProjection(el, it, page, name){
+  const old = atlProj(it), L = ATL_LIVE.get(it.id);
+  if(name === old) return;
+  let ll = [nz(it.lon, 8), nz(it.lat, 16)];
+  if(L) ll = old === 'globe' ? [geoLon(L.cx), L.cy] : geoProj(old).inv(L.cx, L.cy);
+  it.proj = name;
+  it.lon = ll[0]; it.lat = ll[1];
+  if(L){
+    L.z = clamp(L.z, atlZMin(it), ATL_ZMAX);
+    if(name === 'globe') atlJump(L, ll[0], clamp(ll[1], -89.5, 89.5), L.z);
+    else { const c = geoProj(name).fwd(ll[0], ll[1]); atlJump(L, c[0], c[1], L.z); }
+  }
+  const b = el.__atlproj;
+  if(b){ atlToolLabel(b, ATL_PROJ_SHORT[name] || 'Projection'); b.title = 'Projection: ' + geoProj(name).label; }
+  queueSave(page.id); atlRebuild(el, it, page);
+  SND.tick();
+}
+
+/* ---- the ⌕ box: a country by name ----
+   The same field the molecules have, over the same kind of list. It serves
+   the map and the card both: on a map picking a name walks there and lights
+   it up, on a card it is simply which country the card is of. It offers
+   CONTINENTS as well as countries — all seven of them when nothing has been
+   typed, which is how a reader finds out they can be had at all. */
+function atlAskMenu(){
+  return '<label class="atlfield">' + icn('search') +
+    '<input placeholder="Country or continent" spellcheck="false" autocomplete="off" aria-label="Find a country or a continent"></label>' +
+    '<div class="atsug" role="listbox"></div>';
+}
+function atlAsk(anchor, it, el, page){
+  const d = atlPopOpen('search', anchor, it, el, page, atlAskMenu);
+  if(!d) return;
   const inp = d.querySelector('input'), sug = d.querySelector('.atsug');
   const list = () => {
     sug.innerHTML = geoFindReg(inp.value, 9).map(k => {
@@ -1415,15 +2369,15 @@ function atlAskEl(){
       const cont = geoRegKind(k) === 'ct';
       const c = cont ? null : geoCoCapitals(geoRegNum(k))[0];
       const n = cont ? geoContinents()[geoRegNum(k)].cos.length + ' countries' : c ? c.name : '—';
-      return '<button data-k="' + k + '">' + esc(geoRegName(k)) +
+      return '<button data-k="' + k + '" role="option">' + esc(geoRegName(k)) +
         '<small>' + esc(n) + '</small></button>';
     }).join('');
+    atlPopPlace(d, anchor);
   };
-  d.__list = list;
   inp.addEventListener('input', list);
   inp.addEventListener('keydown', e => {
     e.stopPropagation();
-    if(e.key === 'Escape'){ e.preventDefault(); atlAskClose(); }
+    if(e.key === 'Escape'){ e.preventDefault(); atlPopClose(); }
     if(e.key === 'Enter'){ e.preventDefault(); const b = sug.querySelector('button'); if(b) atlAskTake(b.dataset.k); }
     if(e.key === 'ArrowDown'){ e.preventDefault(); const b = sug.querySelector('button'); if(b) b.focus(); }
   });
@@ -1431,39 +2385,19 @@ function atlAskEl(){
     e.stopPropagation();
     const b = e.target.closest('button');
     if(!b) return;
-    if(e.key === 'Escape'){ e.preventDefault(); atlAskClose(); }
+    if(e.key === 'Escape'){ e.preventDefault(); atlPopClose(); }
     if(e.key === 'Enter'){ e.preventDefault(); atlAskTake(b.dataset.k); }
     if(e.key === 'ArrowDown' && b.nextElementSibling){ e.preventDefault(); b.nextElementSibling.focus(); }
     if(e.key === 'ArrowUp'){ e.preventDefault(); (b.previousElementSibling || inp).focus(); }
   });
-  sug.addEventListener('click', e => { const b = e.target.closest('button'); if(b) atlAskTake(b.dataset.k); });
-  return d;
-}
-function atlAsk(anchor, it, el, page){
-  const d = atlAskEl();
-  if(d.classList.contains('open') && ATL_ASK && ATL_ASK.anchor === anchor) return atlAskClose();
-  ATL_ASK = { it, el, page, anchor };
-  d.classList.add('open');
-  const inp = d.querySelector('input');
-  inp.value = ''; d.__list();                        /* nothing typed: the first few, alphabetically */
-  const r = anchor.getBoundingClientRect(), w = d.offsetWidth, h = d.offsetHeight;
-  d.style.left = clamp(r.left + r.width / 2 - w / 2, 8, innerWidth - w - 8) + 'px';
-  if(r.top - h - 10 >= 8){ d.style.top = 'auto'; d.style.bottom = (innerHeight - r.top + 10) + 'px'; }
-  else { d.style.bottom = 'auto'; d.style.top = clamp(r.bottom + 10, 8, innerHeight - h - 8) + 'px'; }
-  warpIn(d, r.left + r.width / 2, r.top + r.height / 2);
+  list();                                          /* nothing typed: the first few, alphabetically */
   inp.focus({ preventScroll: true });
 }
-function atlAskClose(){
-  const d = $('#atlask');
-  if(!d || !d.classList.contains('open') || !ATL_ASK) return;
-  ATL_ASK = null;
-  if(d.contains(document.activeElement)) document.activeElement.blur();
-  warpOut(d, () => { if(!ATL_ASK) d.classList.remove('open'); });
-}
+function atlAskClose(){ if(ATL_POP && ATL_POP.kind === 'search') atlPopClose(); }
 function atlAskTake(key){
-  if(!ATL_ASK || !key) return;
-  const { it, el, page } = ATL_ASK;
-  atlAskClose();
+  if(!ATL_POP || !key) return;
+  const { it, el, page } = ATL_POP;
+  atlPopClose();
   if(it.type === 'country'){
     it.co = geoRegName(key); queueSave(page.id); ctryRedraw(el, it, page);
     /* a card that is now a different country is a different shape and a
@@ -1481,10 +2415,6 @@ function atlAskTake(key){
   atlToolMarks(el, it);
   SND.pop();
 }
-window.addEventListener('pointerdown', e => {
-  if(ATL_ASK && !e.target.closest('#atlask') &&
-     !(ATL_ASK.anchor === e.target || ATL_ASK.anchor.contains(e.target))) atlAskClose();
-});
 
 /* the wheel zooms about the pointer — by an amount, not a step, so a trackpad
    creeps and a notch is a notch. Ctrl+wheel is still the desk's own zoom. */
@@ -1517,16 +2447,9 @@ function atlHome(el, it, L){
   L.sy.set({ response: .45 }).to(clamp(c[1], lim.y0, lim.y1));
 }
 
-/* ---- the layer panel ----
-   Built from the registry, so a layer written tomorrow is listed tonight. */
-function atlPanel(el, it, page){
-  const p = el.querySelector('.atpanel');
-  if(!p) return;
-  p.classList.toggle('open', ATL_PANEL.has(it.id));
-  p.innerHTML = ATL_LAYERS.map(L =>
-    '<button data-l="' + esc(L.id) + '"' + (atlOn(it, L) ? ' class="on"' : '') + '>' +
-    esc(L.label || L.id) + '</button>').join('');
-}
+/* ---- a layer, flipped ----
+   The menu that flips it is atlLayersMenu; what is on is remembered with
+   the note, and absent means the layer's own default. */
 function atlToggleLayer(el, it, page, id){
   const L = ATL_LAYERS.find(x => x.id === id);
   if(!L) return;
@@ -1543,7 +2466,7 @@ function atlRebuild(el, it, page){
   /* built for where the map is NOW, not for where the record last settled —
      a rebuild while zoomed in must not go through the whole world on the way */
   old.outerHTML = atlSVG(it, atlView(it, ATL_LIVE.get(it.id) || null), !!el.querySelector('canvas.atglobeview'));
-  atlPanel(el, it, page);
+  atlShape(el, it);
   const L = ATL_LIVE.get(it.id) || atlLive(el, it, page);
   L.el = el;
   atlBuildPins(el, it);
@@ -1580,9 +2503,11 @@ function atlMove(el, it, on){
 }
 
 function wireAtlas(el, it, page){
+  const tb = el.querySelector(':scope > .tools');
+  if(tb) atlToolbar(tb, it);                        /* shared buttons exist by wire time */
   const L = atlLive(el, it, page);
   if(ATL_MOVE.has(it.id)) el.classList.add('atmove');
-  atlPanel(el, it, page);
+  atlShape(el, it);
   atlBuildPins(el, it);
   atlPaint(el, it, atlView(it, L));
   const svg = el.querySelector('svg.atmap');
@@ -1591,17 +2516,7 @@ function wireAtlas(el, it, page){
     atlPointers(svg, el, it, page, L);
     atlWheel(el, it, page, L);
   }
-  const p = el.querySelector('.atpanel');
-  if(p){
-    p.addEventListener('pointerdown', e => e.stopPropagation());
-    p.addEventListener('dblclick', e => e.stopPropagation());
-    p.addEventListener('click', e => {
-      const b = e.target.closest('button');
-      if(b) atlToggleLayer(el, it, page, b.dataset.l);
-    });
-  }
   el.addEventListener('dblclick', e => {
-    if(e.target.closest('.atpanel')) return;
     e.stopPropagation(); e.preventDefault();
     atlMove(el, it, !ATL_MOVE.has(it.id));
   });
@@ -1628,35 +2543,35 @@ defineItem('atlas', {
   sound: 'plop',
   html: (it, c) => '<figure class="body atlas"><div class="atbox">' +
     (c.live ? '<canvas class="atglobeview" aria-hidden="true"></canvas>' : '') +
-    atlSVG(it, null, c.live) +
-    (c.live ? '<div class="atpanel"></div>' : '') + '</div><figcaption></figcaption></figure>',
+    atlSVG(it, null, c.live) + '</div><figcaption></figcaption></figure>',
   /* print, the overview and an export come through here too, which is how a
      map that was never on screen still gets its labels put in the right place */
   mount(el, it, c){
+    atlShape(el, it);
     atlBuildPins(el, it);
     atlPaint(el, it, atlView(it, c.live ? ATL_LIVE.get(it.id) : null));
     if(!c.live) el.querySelectorAll('.atpins .atcap:not(.on)').forEach(n => n.remove());
   },
   forget(it){
-    ATL_LIVE.delete(it.id); ATL_MOVE.delete(it.id); ATL_PANEL.delete(it.id);
-    if(ATL_ASK && ATL_ASK.it.id === it.id) atlAskClose();
+    ATL_LIVE.delete(it.id); ATL_MOVE.delete(it.id);
+    if(ATL_POP && ATL_POP.it.id === it.id) atlPopClose();
   },
   tools(mk, it, el, page){
-    mk('◍', 'Layers — what is drawn on the map', () => {
-      if(ATL_PANEL.has(it.id)) ATL_PANEL.delete(it.id); else ATL_PANEL.add(it.id);
-      atlPanel(el, it, page);
-    });
+    mk('◍', 'Layers — what is drawn on the map',
+      b => atlPopOpen('layers', b, it, el, page, () => atlLayersMenu(it)));
+    el.__atlstyle = mk('◐', 'Style — the colours of the sea, the land and the countries',
+      b => atlPopOpen('style', b, it, el, page, () => atlStyleMenu(it)));
     mk('⌕', 'Find a country or a continent — the map walks there and lights it up',
       b => atlAsk(b, it, el, page));
     /* ---- the grain ----
        One button, and it changes one thing: what a press on the map means. The
-       shading, the name, the hold, the drag off onto the page and ⇱ all read
-       `it.sel` and none of them knows the difference. */
-    const tg = mk('▣', 'A tap picks: a country', b => {
+       shading, the name, the hold and the drag off onto the page all read
+       `it.sel`, and none of them knows the difference. The button says which
+       grain is ON, and is lit when it is the wider one. */
+    const tg = mk('▣', '', () => {
       const k = atlSel(it);
       if(atlTapCont(it)) delete it.tap; else it.tap = 'cont';
-      b.classList.toggle('on', atlTapCont(it));
-      b.title = 'A tap picks: ' + (atlTapCont(it) ? 'the whole continent' : 'a country');
+      atlToolMarks(el, it);
       /* what was picked is picked again at the new grain — a country widens to
          the continent it is in, and a continent, which no tap could now mean,
          is put back down */
@@ -1667,57 +2582,25 @@ defineItem('atlas', {
       }else if(!atlTapCont(it) && geoRegKind(k) === 'ct') name = '';
       atlPick(el, it, page, name, false);
     });
-    tg.classList.toggle('on', atlTapCont(it));
-    tg.title = 'A tap picks: ' + (atlTapCont(it) ? 'the whole continent' : 'a country');
     tg.__it = it; el.__atlgrain = tg;
-    mk('⇱', 'Take what is picked off onto the page — or drag it out of the map',
-      () => { const k = atlSel(it);
-              if(k) atlSpawn(geoRegName(k), it, page, { x: it.x + pctW(40), y: it.y + pctH(40) }); });
-    const projection = mk('◎', 'Projection — flat, Mercator or globe', b => {
-      const old = atlProj(it), L = ATL_LIVE.get(it.id);
-      let ll = [nz(it.lon, 8), nz(it.lat, 16)];
-      if(L) ll = old === 'globe' ? [geoLon(L.cx), L.cy] : geoProj(old).inv(L.cx, L.cy);
-      const modes = ['equirect', 'mercator', 'globe'];
-      it.proj = modes[(modes.indexOf(old) + 1) % modes.length];
-      it.lon = ll[0]; it.lat = ll[1];
-      b.title = 'Projection: ' + geoProj(it.proj).label + ' — switch between flat, Mercator and globe';
-      if(L){                                        /* the same place, on the new sheet */
-        L.z = clamp(L.z, atlZMin(it), ATL_ZMAX);
-        if(it.proj === 'globe') atlJump(L, ll[0], clamp(ll[1], -89.5, 89.5), L.z);
-        else {
-          const c = geoProj(it.proj).fwd(ll[0], ll[1]);
-          atlJump(L, c[0], c[1], L.z);
-        }
-      }
-      queueSave(page.id); atlRebuild(el, it, page);
+    atlToolMarks(el, it);
+    /* the projection is a menu with a tick, and the button wears the answer */
+    const projection = mk('◎', 'Projection: ' + geoProj(atlProj(it)).label,
+      b => atlPopOpen('projection', b, it, el, page, () => atlProjMenu(it)));
+    el.__atlproj = projection;
+    /* …and the way back out: the whole world again, walked to rather than cut to */
+    mk('⌂', 'Reset the view — back out to the whole world', () => {
+      const L = ATL_LIVE.get(it.id);
+      if(L) atlHome(el, it, L);
+      SND.tick();
     });
-    projection.title = 'Projection: ' + geoProj(atlProj(it)).label + ' — switch between flat, Mercator and globe';
-    mk('◈', 'Outlines — drawn round, or straight off the data', b => {
-      it.look = it.look === 'crisp' ? 'smooth' : 'crisp';
-      b.title = 'Outlines: ' + (it.look === 'crisp' ? 'straight' : 'round');
-      queueSave(page.id); atlRebuild(el, it, page);
-    });
-    mk('▭', 'How tall the map is', b => {
-      openProps(b, {
-        title: 'Map',
-        rows: [{ t:'range', label:'Height', min:30, max:110, step:2,
-                 get: () => Math.round(clamp(nz(it.ar, .5), .3, 1.1) * 100),
-                 set: v => { it.ar = v / 100; },
-                 fmt: v => v + '%' }],
-        onchange(){ atlRebuild(el, it, page); },
-        onsave(){ queueSave(page.id); },
-        onreset(){ it.ar = 0.5; atlRebuild(el, it, page); queueSave(page.id); }
-      });
-    });
-    mk('⌂', 'The whole world again', () => { const L = ATL_LIVE.get(it.id); if(L) atlHome(el, it, L); });
-    mk('✥', 'Move it about the page — or double-click it', () => atlMove(el, it, !ATL_MOVE.has(it.id)));
   },
   wire(el, it, page){ wireAtlas(el, it, page); },
   icon: it => atlGlyph(it),
   label: () => 'World',
   meta: it => geoProj(atlProj(it)).label + ' · ' + atlWhere(it)
 });
-onNoteOpen(() => { ATL_LIVE.clear(); ATL_MOVE.clear(); ATL_PANEL.clear(); ATL_NEXT = null; atlAskClose(); });
+onNoteOpen(() => { ATL_LIVE.clear(); ATL_MOVE.clear(); ATL_NEXT = null; atlPopClose(); });
 
 /* ---- how it looks ----
    Quiet: a wash of sea, a wash of land, and hairlines. The lines take their
@@ -1726,19 +2609,133 @@ onNoteOpen(() => { ATL_LIVE.clear(); ATL_MOVE.clear(); ATL_PANEL.clear(); ATL_NE
    a path under .atworld — see the note in atlPaint. */
 addCSS('atlas', `
 /* ---------- the atlas ---------- */
+.item[data-type="atlas"]{--atlu:clamp(.72,var(--scale),1.12);--atlbar:#1b2128}
+/* ---- the bar ----
+   A floating strip of glass over the map, centred, one line: line icons with
+   their names under them, in groups. It is the same material every floating
+   surface in the app is made of, dark so the map under it stays the picture. */
+.item[data-type="atlas"] > .tools{
+  left:50%;transform:translateX(-50%);width:max-content;
+  max-width:min(calc(100vw - 28px),calc(var(--atlu)*1240px));
+  gap:calc(var(--atlu)*2px);align-items:stretch;overflow-x:auto;overflow-y:hidden;
+  scrollbar-width:none;padding:calc(var(--atlu)*5px);
+  margin-bottom:calc(var(--atlu)*12px);border:0;
+  border-radius:calc(var(--atlu)*16px);color:#eef2f3;
+  background:
+    linear-gradient(160deg,rgba(255,255,255,.075),rgba(255,255,255,.02) 45%,rgba(255,255,255,0) 75%),
+    color-mix(in srgb,var(--atlbar) 86%,transparent);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.09),inset 0 1px 0 rgba(255,255,255,.1),
+    0 calc(var(--atlu)*14px) calc(var(--atlu)*40px) rgba(0,0,0,.42),0 2px 8px rgba(0,0,0,.28);
+  backdrop-filter:blur(calc(var(--atlu)*24px)) saturate(1.5);
+  -webkit-backdrop-filter:blur(calc(var(--atlu)*24px)) saturate(1.5);
+  isolation:isolate}
+.item[data-type="atlas"] > .tools::-webkit-scrollbar{display:none}
+.item.sel[data-type="atlas"] > .tools{animation:atlbarin .2s cubic-bezier(.2,.8,.25,1) both}
+@keyframes atlbarin{from{opacity:0;transform:translateX(-50%) translateY(calc(var(--atlu)*5px)) scale(.985)}
+  to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+.item[data-type="atlas"] > .tools > button{
+  position:relative;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:calc(var(--atlu)*4px);min-width:calc(var(--atlu)*62px);height:calc(var(--atlu)*54px);
+  padding:0 calc(var(--atlu)*8px);border-radius:calc(var(--atlu)*11px);
+  font-size:0;line-height:1;color:rgba(240,244,246,.8);opacity:1;
+  transition:background-color .14s ease,color .14s ease,transform .12s cubic-bezier(.2,.8,.3,1)}
+.item[data-type="atlas"] > .tools > button .ic{width:calc(var(--atlu)*22px);height:calc(var(--atlu)*22px);flex:none}
+.item[data-type="atlas"] > .tools > button .lb{
+  font-family:system-ui,-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;
+  font-size:max(9.5px,calc(var(--atlu)*10.5px));font-weight:500;letter-spacing:.01em;white-space:nowrap}
+.item[data-type="atlas"] > .tools > button:hover{background:rgba(255,255,255,.085);color:#fff}
+.item[data-type="atlas"] > .tools > button:active{transform:scale(.94)}
+.item[data-type="atlas"] > .tools > button.on,
+.item[data-type="atlas"] > .tools > button.open{color:#fff;background:color-mix(in srgb,var(--accent2) 36%,transparent)}
+.item[data-type="atlas"] > .tools > .atltoolsep{
+  display:block;flex:0 0 1px;width:1px;align-self:center;height:calc(var(--atlu)*28px);
+  margin:0 calc(var(--atlu)*5px);background:rgba(255,255,255,.14);pointer-events:none}
+/* Keep the rotation pin clear of the taller centred material. */
+.item.sel[data-type="atlas"] > .rot{margin-bottom:calc(var(--atlu)*88px)}
+@media (prefers-reduced-motion:reduce){
+  .item.sel[data-type="atlas"] > .tools{animation:none}
+  .item[data-type="atlas"] > .tools > button{transition:none}
+  .item[data-type="atlas"] > .tools > button:active{transform:none}}
+@media (prefers-reduced-transparency:reduce){
+  .item[data-type="atlas"] > .tools{background:var(--atlbar);backdrop-filter:none;-webkit-backdrop-filter:none}}
+@media (prefers-contrast:more){
+  .item[data-type="atlas"] > .tools{background:#0b0f13;box-shadow:inset 0 0 0 1px #e8f4f6}
+  .item[data-type="atlas"] > .tools > button{color:#fff}}
+/* ---- the styles ----
+   EVERY COLOUR THE MAP PAINTS IS A VARIABLE, set here per data-atstyle and
+   read by the SVG rules below and by the globe's canvas (atlGlobePalette).
+   'paper' is the note's own theme mixed the way the map always mixed it; the
+   others are fixed pictures. A style is this block and a line in ATL_STYLES,
+   and nothing else. The six country tints are what the Countries layer fills
+   with; on Paper they are hues folded into the land so they sit on any sheet. */
+[data-atstyle]{
+  --atsea0:color-mix(in srgb,var(--accent2) 15%,var(--paper));
+  --atsea1:color-mix(in srgb,var(--accent2) 10%,var(--paper));
+  --atsea2:color-mix(in srgb,var(--accent2) 30%,var(--paper));
+  --atland:color-mix(in srgb,var(--paper) 88%,var(--ink));
+  --atcoast:var(--ink);--atbord:var(--ink);
+  --atlake:color-mix(in srgb,var(--accent2) 34%,var(--paper));
+  --atlakeline:color-mix(in srgb,var(--accent2) 70%,var(--ink));
+  --atriver:color-mix(in srgb,var(--accent2) 72%,var(--ink));
+  --atrelsea:color-mix(in srgb,var(--accent2) 12%,var(--paper));
+  --atlbl:var(--ink);--athalo:var(--paper);
+  --atedge:color-mix(in srgb,var(--ink) 58%,var(--accent2));--atmark:var(--accent);
+  --atseaname:color-mix(in srgb,var(--accent2) 62%,var(--ink));
+  --atco0:color-mix(in srgb,#e8825a 30%,var(--atland));--atco1:color-mix(in srgb,#e2b93b 32%,var(--atland));
+  --atco2:color-mix(in srgb,#6fae6a 30%,var(--atland));--atco3:color-mix(in srgb,#5f8fd6 28%,var(--atland));
+  --atco4:color-mix(in srgb,#b07cc6 28%,var(--atland));--atco5:color-mix(in srgb,#4fb3b0 30%,var(--atland))}
+[data-atstyle="atlas"]{
+  --atsea0:#d3e6f0;--atsea1:#c4dbe9;--atsea2:#adcbdf;--atland:#f2ebd8;--atcoast:#5d4f3c;--atbord:#86755c;
+  --atlake:#c4dbe9;--atlakeline:#6e93ad;--atriver:#5d8dab;--atrelsea:#cbdfeb;--atlbl:#2a241d;--athalo:#f7f2e6;
+  --atedge:#86755c;--atseaname:#4d7a95;
+  --atco0:#f0d3bd;--atco1:#efe1b0;--atco2:#d3e2bf;--atco3:#cbd8e8;--atco4:#e3d2e4;--atco5:#c9e0d8}
+[data-atstyle="political"]{
+  --atsea0:#dbeaf3;--atsea1:#cfe2ee;--atsea2:#bcd5e6;--atland:#ece7dc;--atcoast:#4c463f;--atbord:#6f6760;
+  --atlake:#cfe2ee;--atlakeline:#6b8fa8;--atriver:#6b8fa8;--atrelsea:#d4e5ef;--atlbl:#201d19;--athalo:#fbf9f4;
+  --atedge:#6f6760;--atseaname:#4f7d9b;
+  --atco0:#f5c7b2;--atco1:#f3dd98;--atco2:#bfdcb0;--atco3:#b9cdee;--atco4:#dcc4e4;--atco5:#b3dbd6}
+[data-atstyle="night"]{
+  --atsea0:#101c2b;--atsea1:#0c1522;--atsea2:#080e18;--atland:#2b3441;--atcoast:#d3dde8;--atbord:#8a9ab0;
+  --atlake:#142536;--atlakeline:#4a6d8f;--atriver:#4d86ad;--atrelsea:#101c2b;--atlbl:#e9eff6;--athalo:#0b121c;
+  --atedge:#6f8aa8;--atmark:#ff9a62;--atseaname:#7ea3c4;
+  --atco0:#4a3a3c;--atco1:#4a4634;--atco2:#344a3b;--atco3:#334458;--atco4:#443a52;--atco5:#33484a}
+[data-atstyle="blueprint"]{
+  --atsea0:#16437f;--atsea1:#123a70;--atsea2:#0e2f5c;--atland:#1d5096;--atcoast:#eaf3ff;--atbord:#a9c6ee;
+  --atlake:#123a70;--atlakeline:#cfe0f7;--atriver:#cfe0f7;--atrelsea:#16437f;--atlbl:#ffffff;--athalo:#123a70;
+  --atedge:#cfe0f7;--atmark:#ffd166;--atseaname:#dbe8fb;
+  --atco0:#245ea9;--atco1:#1a4b8f;--atco2:#2b69b7;--atco3:#17458a;--atco4:#3071bf;--atco5:#1f57a0}
+[data-atstyle="sepia"]{
+  --atsea0:#e9dec7;--atsea1:#e0d2b6;--atsea2:#d3c19f;--atland:#cbb691;--atcoast:#4a3a26;--atbord:#72603f;
+  --atlake:#e0d2b6;--atlakeline:#7f6a47;--atriver:#7f6a47;--atrelsea:#e2d6bd;--atlbl:#382b1b;--athalo:#efe5d0;
+  --atedge:#72603f;--atseaname:#7a6446;
+  --atco0:#d2b48f;--atco1:#cdbb8a;--atco2:#bdb88e;--atco3:#c2b797;--atco4:#c9ae95;--atco5:#bcb28c}
 .atlas{display:block}
 .atbox{position:relative}
 .atglobeview{display:none;position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .atglobeview.on{display:block}
 svg.atmap{position:relative;z-index:1;display:block;width:100%;height:auto;background:none;touch-action:none;
   shape-rendering:geometricPrecision}
-.atmap .atsea0{stop-color:color-mix(in srgb,var(--accent2) 15%,var(--paper));stop-opacity:1}
-.atmap .atsea1{stop-color:color-mix(in srgb,var(--accent2) 10%,var(--paper));stop-opacity:1}
-.atmap .atsea2{stop-color:color-mix(in srgb,var(--accent2) 30%,var(--paper));stop-opacity:1}
+/* ---- a round world is a disc on the page ----
+   No paper behind it, no padding round it, and the ring core draws round a
+   selected item follows the disc: what sits on the page is the ball itself,
+   with the shadow a ball casts. */
+.item.atround .atlas{background:none;padding:0;box-shadow:none}
+.item.atround .atbox{border-radius:50%;overflow:hidden;
+  box-shadow:0 calc(var(--scale)*10px) calc(var(--scale)*26px) rgba(0,0,0,.3)}
+.item.sel.atround > .body{box-shadow:none}
+.item.sel.atround .atbox{box-shadow:0 0 0 1px var(--accent2),
+  0 calc(var(--scale)*10px) calc(var(--scale)*26px) rgba(0,0,0,.3)}
+.item.atround .atlas figcaption{padding-top:calc(var(--scale)*6px)}
+.item.atround .atlas figcaption:empty::before{content:none}
+.item.sel.atround .atlas figcaption:empty::before{content:"caption";opacity:.35}
+.item.sel.atround .atlas figcaption:empty{min-height:1em}
+.atmap .atsea0{stop-color:var(--atsea0);stop-opacity:1}
+.atmap .atsea1{stop-color:var(--atsea1);stop-opacity:1}
+.atmap .atsea2{stop-color:var(--atsea2);stop-opacity:1}
 .atmap .atedge{fill:none;stroke:var(--line);stroke-width:2;opacity:.8}
 .atmap[data-projection="globe"] .atedge{opacity:.34}
 .atmap .atglobeshade{pointer-events:none}
-.atmap .atglobeedge{fill:none;stroke:color-mix(in srgb,var(--ink) 58%,var(--accent2));
+.atmap .atglobeedge{fill:none;stroke:var(--atedge);
   stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:none}
 .atmap .atlay{fill:none;stroke-linejoin:round;stroke-linecap:round}
 /* a layer that has just been rebuilt at a finer step: the old picture, on top
@@ -1746,18 +2743,40 @@ svg.atmap{position:relative;z-index:1;display:block;width:100%;height:auto;backg
 .atmap .atfade{transition:opacity .26s linear}   /* ATL_FADE */
 .atmap .atfade.off{opacity:0}
 @media (prefers-reduced-motion:reduce){.atmap .atfade{transition:none}}
-.atmap path.atland{fill:color-mix(in srgb,var(--paper) 88%,var(--ink));fill-rule:evenodd;stroke:none}
-.atmap path.atcoast{fill:none;stroke:var(--ink);stroke-opacity:.9}
-.atmap path.atbord{fill:none;stroke:var(--ink);stroke-opacity:.3}
-.atmap path.atgrat{fill:none;stroke:var(--line);stroke-opacity:.55}
-/* the capitals: every one is a node from the start, and the frame decides which
-   of them is set. The fade is what stops one popping in as the zoom crosses it */
-.atmap .atcap{opacity:0;pointer-events:none;transition:opacity .22s ease-out}
-.atmap .atcap.on{opacity:1}
-.atmap circle.atdot{fill:var(--accent);stroke:var(--paper);stroke-width:2}
+.atmap path.atland{fill:var(--atland);fill-rule:evenodd;stroke:none}
+/* the countries, each in its tint — see the layer */
+.atmap path.atco{fill-rule:evenodd;stroke:none}
+.atmap .atco0{fill:var(--atco0)}.atmap .atco1{fill:var(--atco1)}.atmap .atco2{fill:var(--atco2)}
+.atmap .atco3{fill:var(--atco3)}.atmap .atco4{fill:var(--atco4)}.atmap .atco5{fill:var(--atco5)}
+.atmap path.atgrat{fill:none;stroke:var(--atbord);stroke-opacity:.35}
+/* the degrees along the edges, and the names on the water */
+.atmap text.atgl{visibility:hidden;font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+  fill:var(--atlbl);fill-opacity:.62;stroke:var(--athalo);stroke-width:3;paint-order:stroke;pointer-events:none}
+.atmap text.atgl.on{visibility:visible}
+.atmap text.atsea{visibility:hidden;font-family:var(--disp);font-size:${ATL_SEAFS[0]}px;font-weight:500;
+  letter-spacing:.1em;text-anchor:middle;fill:var(--atseaname);fill-opacity:.85;
+  stroke:var(--athalo);stroke-width:2.5;paint-order:stroke;stroke-linejoin:round;pointer-events:none}
+.atmap text.atsea.atocean{font-size:${ATL_SEAFS[1]}px;letter-spacing:.22em;text-transform:uppercase}
+.atmap text.atsea.on{visibility:visible;animation:atpin .18s ease-out}
+.atmap path.atcoast{fill:none;stroke:var(--atcoast);stroke-opacity:.9}
+.atmap path.atbord{fill:none;stroke:var(--atbord);stroke-opacity:.3}
+/* ---- the names ----
+   Every capital, city and ring is a node from the start, and the frame decides
+   which of them is set. A node that is not set is INVISIBLE, not transparent:
+   visibility:hidden costs the painter nothing, where opacity:0 still has to be
+   considered, and — the part that showed up as lag — a TRANSITION on opacity
+   made every name that came or went during a pan its own running animation,
+   sixty of them a second at the edges of the picture, each one an offscreen
+   group to composite. A name now arrives with a short fade, played once, and
+   leaves at once, which is what a label on a moving map does anyway. */
+.atmap .atcap,.atmap .atcity,.atmap .attiny{visibility:hidden;opacity:0;pointer-events:none}
+.atmap .atcap.on,.atmap .atcity.on{visibility:visible;opacity:1;animation:atpin .18s ease-out}
+.atmap .attiny.on{visibility:visible;opacity:.55;animation:atpin .2s ease-out}
+@keyframes atpin{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.atmap .atcap.on,.atmap .atcity.on,.atmap .attiny.on{animation:none}}
+.atmap circle.atdot{fill:var(--atmark);stroke:var(--athalo);stroke-width:2}
 .atmap text.atname{font-family:var(--disp);font-size:${ATL_FS}px;font-weight:600;letter-spacing:.4px;
-  fill:var(--ink);stroke:var(--paper);stroke-width:5;paint-order:stroke;stroke-linejoin:round}
-@media (prefers-reduced-motion: reduce){ .atmap .atcap{transition:none} }
+  fill:var(--atlbl);stroke:var(--athalo);stroke-width:5;paint-order:stroke;stroke-linejoin:round}
 /* the picked country: a wash of the accent over it, its own outline inked, and
    its name written across it. All of it is in WORLD units inside the group that
    moves, which is why the name goes on fitting the country however far in the
@@ -1769,12 +2788,12 @@ svg.atmap{position:relative;z-index:1;display:block;width:100%;height:auto;backg
    biggest that fits either — geoCoLabel keeps GEO_LBL_AIR of the room it found
    and gives the rest back, because a name grown until the border stops it is a
    sticker on a country rather than a label on a map. */
-.atmap path.atpick{fill:color-mix(in srgb,var(--accent) 30%,transparent);
+.atmap path.atpick{fill:color-mix(in srgb,var(--accent) 30%,transparent);fill-rule:evenodd;
   stroke:var(--accent);stroke-linejoin:round}
 .atconame{font-family:var(--disp);font-weight:600;text-transform:uppercase;
   letter-spacing:${GEO_LBL_TRK}em;text-anchor:middle;
-  fill:color-mix(in srgb,var(--ink) 74%,transparent);
-  stroke:color-mix(in srgb,var(--paper) 78%,transparent);
+  fill:color-mix(in srgb,var(--atlbl,var(--ink)) 74%,transparent);
+  stroke:color-mix(in srgb,var(--athalo,var(--paper)) 78%,transparent);
   paint-order:stroke;stroke-linejoin:round;pointer-events:none}
 /* ⌕ lit it: it breathes for a moment and is then left alone */
 .atmap .atlay.blink path.atpick{animation:atblink 1.1s ease-in-out 0s infinite}
@@ -1793,29 +2812,61 @@ svg.atmap{position:relative;z-index:1;display:block;width:100%;height:auto;backg
   stroke-linejoin:round;fill-rule:evenodd}
 .atcarry b{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:#fff;
   background:var(--accent);padding:2px 7px;border-radius:2px;white-space:nowrap}
-/* the ⌕ box — the molecules' one, over countries */
-.atlask{position:fixed;z-index:83;display:none;width:250px;padding:10px;border-radius:13px;
-  font-family:var(--mono);will-change:transform,filter,opacity}
-.atlask.open{display:block}
-.atlask input{width:100%;box-sizing:border-box;background:rgba(255,255,255,.07);border:0;outline:0;
-  border-radius:8px;color:inherit;font-family:var(--mono);font-size:12px;padding:7px 9px;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
-.atlask input::placeholder{color:rgba(233,234,239,.35)}
-.atlask input:focus{box-shadow:inset 0 0 0 1.5px var(--accent)}
-.atsug{display:flex;flex-direction:column;gap:2px;margin-top:6px;max-height:210px;overflow:auto}
+/* ---- the popover ----
+   One glass surface for the layers, the projection and the ⌕ box, anchored to
+   the button that opened it. Rows are 32 high and read in the system face;
+   a layer is a switch, a projection is a tick, a country is a line with its
+   capital at the far end. */
+.atlpop{position:fixed;z-index:83;display:none;width:236px;padding:6px;border-radius:14px;
+  font-family:system-ui,-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;color:#e9eaef;
+  will-change:transform,filter,opacity}
+.atlpop.open{display:block}
+.atlsec{padding:8px 10px 4px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:rgba(233,234,239,.42)}
+.atlsec:first-child{padding-top:5px}
+.atlrow{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;height:32px;
+  padding:0 10px;border-radius:9px;font-family:inherit;font-size:12.5px;font-weight:450;
+  color:rgba(233,234,239,.9);text-align:left;transition:background-color .12s ease}
+.atlrow:hover,.atlrow:focus-visible{background:rgba(255,255,255,.08);color:#fff;outline:none}
+.atlrow:active{background:rgba(255,255,255,.12)}
+/* the switch — a track and a knob, the knob thrown over with a little overshoot */
+.atlsw{position:relative;flex:none;width:30px;height:18px;border-radius:9px;background:rgba(255,255,255,.18);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);transition:background-color .2s ease}
+.atlsw::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .24s cubic-bezier(.3,1.25,.5,1)}
+.atlrow.on .atlsw{background:var(--accent2)}
+.atlrow.on .atlsw::after{transform:translateX(12px)}
+/* the style rows: four dots of the style — sea, land, two tints — before the name */
+.atlrow.atlstyle{justify-content:flex-start}
+.atlrow.atlstyle > span{flex:1}
+.atlswatch{display:flex;gap:3px;flex:none;padding:3px;border-radius:99px;background:rgba(255,255,255,.06)}
+.atlswatch b{display:block;width:11px;height:11px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+/* the tick */
+.atlck{display:flex;flex:none;width:16px;height:16px;opacity:0;color:var(--accent2);transition:opacity .12s}
+.atlck .ic{width:16px;height:16px}
+.atlrow.on .atlck{opacity:1}
+/* the field */
+.atlfield{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:9px;
+  background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);cursor:text;
+  transition:box-shadow .14s ease}
+.atlfield .ic{width:15px;height:15px;opacity:.55;flex:none}
+.atlfield input{flex:1;min-width:0;background:none;border:0;outline:0;color:inherit;font:inherit;font-size:12.5px}
+.atlfield input::placeholder{color:rgba(233,234,239,.4)}
+.atlfield:focus-within{box-shadow:inset 0 0 0 1.5px var(--accent2)}
+.atsug{display:flex;flex-direction:column;gap:1px;margin-top:6px;max-height:230px;overflow:auto;scrollbar-width:thin}
 .atsug:empty{margin:0}
-.atsug button{display:flex;justify-content:space-between;gap:10px;align-items:baseline;text-align:left;
-  padding:5px 8px;border-radius:7px;font-size:10.5px;letter-spacing:.04em;
-  color:rgba(233,234,239,.85);background:rgba(255,255,255,.035)}
-.atsug button small{opacity:.5;white-space:nowrap}
-.atsug button:hover,.atsug button:focus{background:var(--accent);color:#fff;outline:none}
-.atsug button:hover small,.atsug button:focus small{opacity:.75}
+.atsug button{display:flex;justify-content:space-between;align-items:baseline;gap:10px;width:100%;
+  padding:7px 10px;border-radius:9px;font-family:inherit;font-size:12.5px;color:rgba(233,234,239,.9);text-align:left}
+.atsug button small{font-size:11px;opacity:.5;white-space:nowrap}
+.atsug button:hover,.atsug button:focus{background:var(--accent2);color:#fff;outline:none}
+.atsug button:hover small,.atsug button:focus small{opacity:.85}
+@media (prefers-reduced-motion:reduce){.atlrow,.atlsw,.atlsw::after,.atlck,.atlfield{transition:none}}
 /* the height of the land: hypsometric tints, the convention rather than the
    theme — but the theme owns the sea painted back over the coast, and how
    heavily the tints are laid on */
 .atmap .atlay[data-l="relief"]{opacity:.92}
 .atmap .atlay[data-l="relief"] path{stroke:none}
-.atmap path.atrelsea{fill:color-mix(in srgb,var(--accent2) 12%,var(--paper));fill-rule:evenodd}
+.atmap path.atrelsea{fill:var(--atrelsea);fill-rule:evenodd}
 /* water. A lake is the sea's own colour, which is what makes it read as water.
    FILL-OPACITY AND STROKE-OPACITY, NEVER PLAIN OPACITY, AND THAT IS THE WHOLE
    OF WHY LAKES ARE FAST. Bare opacity on a shape that is both filled and inked
@@ -1825,44 +2876,29 @@ svg.atmap{position:relative;z-index:1;display:block;width:100%;height:auto;backg
    pan. The two paint opacities say the same thing about one shape and need no
    buffer at all. The stroke-only paths below are the same rule, kept the same
    way: nothing under .atworld may carry a bare opacity of its own. */
-.atmap path.atlake{fill:color-mix(in srgb,var(--accent2) 34%,var(--paper));
-  fill-opacity:.95;stroke:color-mix(in srgb,var(--accent2) 70%,var(--ink));stroke-opacity:.95}
-.atmap path.atriver{fill:none;stroke:color-mix(in srgb,var(--accent2) 72%,var(--ink));stroke-opacity:.75}
+.atmap path.atlake{fill:var(--atlake);fill-opacity:.95;stroke:var(--atlakeline);stroke-opacity:.95}
+.atmap path.atriver{fill:none;stroke:var(--atriver);stroke-opacity:.75}
 /* the cities: the capitals again, quieter — see the note over the layer */
-.atmap .atcity{opacity:0;pointer-events:none;transition:opacity .22s ease-out}
-.atmap .atcity.on{opacity:1}
-.atmap circle.atcdot{fill:none;stroke:var(--ink);stroke-width:1.6;opacity:.75}
+.atmap circle.atcdot{fill:none;stroke:var(--atlbl);stroke-width:1.6;opacity:.75}
 .atmap text.atcname{font-family:var(--disp);font-size:${rd1(ATL_CFS)}px;font-weight:500;letter-spacing:.3px;
-  fill:var(--ink);opacity:.82;stroke:var(--paper);stroke-width:4;paint-order:stroke;stroke-linejoin:round}
+  fill:var(--atlbl);opacity:.82;stroke:var(--athalo);stroke-width:3.5;paint-order:stroke;stroke-linejoin:round}
 /* and the ring round a country smaller than the pen */
-.atmap .attiny{opacity:0;pointer-events:none;transition:opacity .25s ease-out}
-.atmap .attiny.on{opacity:.55}
-.atmap .attiny circle{fill:none;stroke:var(--accent);stroke-width:1.5}
-@media (prefers-reduced-motion: reduce){ .atmap .atcity,.atmap .attiny{transition:none} }
-/* the panel of layers — glass, inside the map, and only ever on screen */
-.atpanel{position:absolute;right:calc(var(--scale)*8px);top:calc(var(--scale)*8px);z-index:24;
-  display:none;flex-direction:column;gap:calc(var(--scale)*2px);padding:calc(var(--scale)*4px);
-  border-radius:calc(var(--scale)*8px);background:color-mix(in srgb,var(--paper) 78%,transparent);
-  border:1px solid color-mix(in srgb,var(--ink) 12%,transparent);
-  backdrop-filter:blur(calc(var(--scale)*9px)) saturate(1.4);
-  box-shadow:0 calc(var(--scale)*6px) calc(var(--scale)*18px) rgba(0,0,0,.16)}
-.atpanel.open{display:flex}
-.atpanel button{font-family:var(--mono);font-size:calc(var(--scale)*11px);letter-spacing:.05em;
-  color:var(--soft);text-align:left;white-space:nowrap;border-radius:calc(var(--scale)*5px);
-  padding:calc(var(--scale)*4px) calc(var(--scale)*9px)}
-.atpanel button:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 7%,transparent)}
-.atpanel button.on{color:var(--ink);background:color-mix(in srgb,var(--accent2) 20%,transparent)}
+.atmap .attiny circle{fill:none;stroke:var(--atmark);stroke-width:1.5}
 /* selected, the map takes the hand; picked up, it is an item again */
 .item.sel[data-type="atlas"] svg.atmap{cursor:grab}
 .item.sel[data-type="atlas"] svg.atmap:active{cursor:grabbing}
 .item.sel[data-type="atlas"].atmove svg.atmap{cursor:grab}
 .item.atmove .atlas{box-shadow:0 0 0 calc(var(--scale)*2px) var(--accent),
   0 calc(var(--scale)*10px) calc(var(--scale)*22px) rgba(0,0,0,.25)}
+.item.atround.atmove .atlas{box-shadow:none}
+.item.atround.atmove .atbox{box-shadow:0 0 0 calc(var(--scale)*2px) var(--accent),
+  0 calc(var(--scale)*10px) calc(var(--scale)*22px) rgba(0,0,0,.25)}
 .item.atmove .atlas::after{content:"✥ move — double-click to work in the map";position:absolute;
   right:0;top:100%;margin-top:calc(var(--scale)*3px);white-space:nowrap;pointer-events:none;
   font-family:var(--mono);font-size:calc(var(--scale)*10px);letter-spacing:.08em;
   color:#fff;background:var(--accent);padding:calc(var(--scale)*2px) calc(var(--scale)*6px);border-radius:2px}
 `);
+
 /* its tile in the palette */
 defineIcon('globe', '<circle cx="12" cy="12" r="8.2"/><path d="M3.9 12h16.2"/>' +
   '<path d="M12 3.8c2.4 2.4 3.6 5.1 3.6 8.2s-1.2 5.8-3.6 8.2c-2.4-2.4-3.6-5.1-3.6-8.2s1.2-5.8 3.6-8.2z"/>');
@@ -2421,8 +3457,8 @@ defineItem('country', {
        card reprojected on its own would be in a frame of its own — the same
        border in two places. So it carries the run with it, and the run is laid
        out again from it. */
-    mk('◎', 'Projection — flat or Mercator', b => {
-      it.proj = atlProj(it) === 'mercator' ? 'equirect' : 'mercator';
+    mk('◎', 'Projection — flat, Mercator or azimuthal equidistant', b => {
+      it.proj = atlNextProjection(atlProj(it), CTRY_PROJECTIONS);
       b.title = 'Projection: ' + geoProj(it.proj).label;
       for(const o of ctryStuck(page, it)){
         o.proj = it.proj;

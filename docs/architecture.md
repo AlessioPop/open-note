@@ -17,7 +17,7 @@ js/
   boot.js           opens the last note — the last <script> on the page
 fonts/              the four families, carried locally — no network to set type
 desktop/            the Electron shell: a window around the app, never a part of it
-tools/verify/       the harness: 2355 assertions, driven in headless Firefox
+tools/verify/       the harness: 2398 assertions, driven in headless Firefox
 ```
 
 **A note is one endless sheet.** It starts three normal pages across and two
@@ -197,6 +197,7 @@ shelf** — a new file under `items/science/` had better call
 | `write/text.js` | 49 | `text` — five styles: heading, text, handwriting, mono, marker |
 | `write/note.js` | 32 | `note` |
 | `write/check.js` | 96 | `check` |
+| `write/mindmap.js` | 1994 | `mindmap` — nine thinking maps behind one tile: mind, circle, bubble, double bubble, tree, brace, flow, multi-flow and bridge, each one a `defineMindMapKind()` block of a seed, a `place()` and a `draw()`. The record is a flat list of thoughts naming their parents and nothing about where they sit; the node bar and the map bar are one registry of actions with a `when()` each; the whole map is a single `<svg>` so a print and an export are the screen; and one integrator springs the boxes, the connectors, the fit and the card's own height whenever any of it changes
 | `write/code.js` | 865 | `code` — the terminal-style code cell: one hand-rolled scanner driven by a table per language (12 of them), the editor schemes as CSS variables plus a Theme scheme mixed from the note's colours, the copy button, typing that recolours under the caret with brackets that close themselves, the band a long one clips to, and the folder glyph and viewer. `cdKey()` is that keyboard as a plain function over (writing, selection, key), and the code pen it registers is the same cell built into a ```fence``` in a sentence — bar, picker, colours and all, less the traffic lights |
 | `write/deck.js` | 1934 | `deck` — flip cards: the eight looks (a set of CSS variables each), widgets off the palette on a card (the feature's own html/mount/wire/tools through the registry, --scale from the card's width), the scope with the throw and its stamps, the scoreboard over a pure score model with the record of runs, and the deck taken to the desk — the same standalone document parked in the store under `desk:<id>` for `desk.html` to become, or saved as a file; the scoreboard's own renderer travels with it |
 | `math/table.js` | 1659 | `table` — the grid, the formula compiler, rows and columns, the band a long one shows, folding it to an icon, reading a workbook in, and handing two columns to a plot |
@@ -213,7 +214,7 @@ shelf** — a new file under `items/science/` had better call
 | `science/fits.js` | 617 | `fits` — an astronomy file as a shortcut, and the reader behind it: `hdu.info()`, the header in three aligned columns with a search over all of them, COMMENT and HISTORY runs folded in place, every data unit given as a shape and a type rather than as numbers, and columns you pick and drag off the window onto the sheet, where they land as an ordinary table |
 | `science/molecule.js` | 2606 | `molecule` — the 2D editor with its glass rail and ChemDraw gestures: the ghost the pointer casts ahead of every click and the valence check that refuses the ones that could not exist, the chain and the row of fused rings dragged out under a running count, the ⟮CH₂⟯ₙ repeat bracket that folds a long chain short without touching the molecule, the lasso and its turn/chirality/move/copy menu, the hydrogen bond kept in a list of its own so chem.js never sees it but respected by tidy, the hotkeys, the three drawing styles, the ⌕ name-or-SMILES box, flat transparent 2D/3D SVG and PNG exports plus clipboard-only ChemFig LaTeX with shifted skeletal double bonds, direct whole-widget corner resizing, and the quiet >/< disclosure for a simultaneous live 3D companion, additive correspondence highlighting with a neutral ghost-free pointer and a screen-space aura above the three 3D looks, momentum orbit, and separately coloured measurement picks |
 | `science/feynman.js` | 734 | `feynman` — lattice-aligned particle diagrams, Standard Model vertex validation and transparent SVG, PNG and TikZ-Feynman exports |
-| `science/atlas.js` | 2114 | `atlas` and `country` — a map of the world and one region off it, a country or a whole continent: the layer registry every extra thing drawn on a map goes through (`defineMapLayer`), the view as a longitude, a latitude and a zoom, spring-driven pan with momentum and rubber-banded edges, wheel and pinch zoom about the pointer, eleven layers including the hypsometric height field and the water, the capitals and then the cities that come up to meet you as you go in, a tap that picks the country under it — or, with `▣` on, the whole continent it is in — and writes its name across it as an atlas sets one, tracked capitals at a fraction of the room the shape has rather than the biggest that fits; a ring on every country the pen is bigger than, the ⌕ box that walks the map to a country or a continent and lights it, a region pressed and held — or simply dragged, if it is the one already picked — that comes up off the map as a card of its own, shaped like the country rather than boxed in a card, carrying the height, the lakes and the rivers the map was wearing, clipped to its own border — and a plate of a continent drawn the same way, filled in one piece with its borders as hairlines inside it, its coast in the heavier pen and as many of its capitals as the greedy layout can set — and clicking together with its neighbours into an arrangement that is in register with the world and travels, resizes and reprojects as one until `⊗` pulls a card back out of it — the sticky detail step and the window a frame is built for, the heavy layer that waits for the map to stand still and then fades in over the one it replaces, and the glass panel of layers built out of the registry |
+| `science/atlas.js` | 2114 | `atlas` and `country` — a map of the world and one region off it, a country or a whole continent: the layer registry every extra thing drawn on a map goes through (`defineMapLayer`), the view as a longitude, a latitude and a zoom, spring-driven pan with momentum and rubber-banded edges, wheel and pinch zoom about the pointer, thirteen layers including the hypsometric height field, the water, the tinted countries, the named seas and a lat/long grid whose step follows the zoom, the capitals and then the cities that come up to meet you as you go in, a tap that picks the country under it — or, with `▣` on, the whole continent it is in — and writes its name across it as an atlas sets one, tracked capitals at a fraction of the room the shape has rather than the biggest that fits; a ring on every country the pen is bigger than, the ⌕ box that walks the map to a country or a continent and lights it, a region pressed and held — or simply dragged, if it is the one already picked — that comes up off the map as a card of its own, shaped like the country rather than boxed in a card, carrying the height, the lakes and the rivers the map was wearing, clipped to its own border — and a plate of a continent drawn the same way, filled in one piece with its borders as hairlines inside it, its coast in the heavier pen and as many of its capitals as the greedy layout can set — and clicking together with its neighbours into an arrangement that is in register with the world and travels, resizes and reprojects as one until `⊗` pulls a card back out of it — the sticky detail step and the window a frame is built for, the heavy layer that waits for the map to stand still and then fades in over the one it replaces, and the glass popover — the layers as switches, the projection as a menu with a tick, the ⌕ box — anchored to the bar's own buttons and built out of the registry |
 | `media/image.js` | 78 | `image` |
 | `media/video.js` | 87 | `video` |
 | `media/model.js` | 614 | `model` — the `.obj` parser and the shared WebGL canvas |
@@ -244,6 +245,7 @@ on a task.
 | `latex.js` | 460 | LaTeX → MathML. No library, nothing downloaded — plus the flatten/scan pair that tells a caret which formula it is standing in, which `chrome/mathpad.js` writes with |
 | `ticks.js` | 296 | code ticks: `` `a phrase` `` and ```` ```a block``` ````, compiled and taken apart the way `latex.js` does formulas — plus what typing a backtick does, and `richify()`/`plainify()`, the pair every writing surface in the app goes through — marks, then ticks, then maths, and unwound in the opposite order. A fenced block itself is built by whatever registered the code pen — the code cell does — and setting its language from the bar rewrites the fence's own opening line, then leaves the box to save itself on the `input` that follows |
 | `marks.js` | 504 | the marks writing wears: `# ` `## ` `### ` a heading, `- ` a bullet, `- [ ] ` a task with a box to tick, `---` a rule, `**bold**`, `*italic*`, and `->` an arrow — compiled and taken apart the way `latex.js` does formulas. First of the three passes, so a heading or a bullet may hold a formula or a phrase of code while a `#` or an `->` inside a fence or a formula is left where it is; a heading is sized in `em`, keeps the face of the box it is in, and differs from the step above it only in size, and a nested bullet carries a hairline down from the one it belongs to. `markEnter()`, `markTab()` and `markWrap()` are here too — what ⏎, ⇥ and ⌃B/⌃I do, over (text, offset) with no DOM in sight — and every marker reads a non-breaking space as a space, since that is what a browser's editor leaves behind wherever it thinks a space might collapse |
+| `mindmap.js` | 335 | the shape of a thinking map: its tree, its type metrics, and where every box goes. Text is measured through a canvas handed in from outside (`mmSetMeasurer`) and wrapped before anything is drawn, so a box always fits its writing; every kind lays out in its own coordinates and `mmFrame()` fits the result into a frame 1000 wide and as tall as that map needs |
 | `matrix.js` | 255 | the n×m arithmetic the cards lean on: multiply, transpose, determinant, inverse, powers, and eigen (Hessenberg + shifted QR, null-space eigenvectors) |
 | `fits.js` | 477 | a `.fits` → its HDUs, their headers, and the shape of every data unit; the walk steps over the data without touching it, so a four-gigabyte cube opens as fast as a small one. Then one column of a binary table, on request — planned before it is read, so what comes back is bounded whatever the file weighs |
 | `workbook.js` | 518 | `.xlsx`, `.ods` and `.csv` → plain rows of plain strings. No library: a workbook is a zip of XML, and the browser has an unzipper |
@@ -569,13 +571,78 @@ there needs a clip either.
 
 Projections are the same kind of list: an entry in `GEO_PROJ` with `fwd`, `inv`,
 its height and the period it wraps at. A projection that does not wrap says
-nothing, and the antimeridian handling stands down for it. The globe is that
-case: its front hemisphere is orthographic and its far hemisphere continues
+nothing, and the antimeridian handling stands down for it. Azimuthal
+equidistant is a fixed, non-wrapping disc centred on the North Pole, with the
+South Pole drawn out into the rim: a ring that winds round the middle of the
+picture (Antarctica's) gets the rim as its second edge, in the land path and in
+the country's own geometry, so it fills as the band it is (`geoWinds`,
+`geoRim`). Its relief is built from the full geographic field because a
+rectangular screen window is not a longitude–latitude rectangle there. Its `round` flag makes the
+whole disc fit the shorter side of the widget at home. The globe is the other
+non-wrapping case: its front hemisphere is orthographic and its far hemisphere
+continues
 outside the circular horizon for static clipping. Print and export keep those
 resolution-free SVG paths; the live globe projects cached geographic vectors
 into one canvas instead. Lines are clipped at the horizon before they are
 issued, and land, height, lakes, rivers, borders and coastline are painted in
 the same frame, so turning never replaces markup or drops an expensive layer.
+
+**What a turning frame is allowed to do**, because sixty of them a second is
+the whole promise and it was not being kept:
+
+- **It allocates nothing.** Every run's unit vectors are worked out once into a
+  `Float32Array` and rotated into scratch buffers that are grown to the largest
+  run the page has drawn and then reused. Points used to be objects and screen
+  positions arrays, which at this detail is well over a hundred thousand
+  short-lived allocations a frame — the arithmetic was never the trouble, the
+  collections between frames were, and a collection mid-turn is what a hand
+  feels as a stutter.
+- **It reads only what is in shot.** Each run carries the smallest circle on
+  the sphere that contains it, as a centre and the sine of its angular radius.
+  One dot product then says whether the whole run is behind the horizon or the
+  whole of it misses the widget, before a single point of it is touched — which
+  is most of the world, most of the time, and nearly all of it at depth.
+- **It asks the document nothing.** The canvas's box is watched with a
+  `ResizeObserver` and its palette re-read only on frames that are standing
+  still; a layout or a style flush inside a frame is a frame the hand waits for,
+  and neither answer can change while a globe is being turned.
+- **The names are on the canvas too.** Every screen-space layer (capitals,
+  cities, small-country rings, the picked name) is a shared `lay(ctx)` and two
+  painters: `frame(g, ctx)` moves SVG nodes for flat maps, print and export;
+  `draw(c, ctx, C)` writes the same layout onto the live globe's canvas. The
+  SVG pins group is hidden while a globe is live, so a turn touches no SVG at
+  all — moving text nodes over a fresh raster every frame was a CPU-side
+  re-rasterisation of the whole transparent SVG, and read as jitter.
+- **Every colour is a CSS variable, per style.** `--atsea0…2`, `--atland`,
+  `--atcoast`, `--atbord`, `--atlake`, `--atriver`, `--atlbl`, `--athalo`,
+  `--atco0…5` and the rest are set on `[data-atstyle]` (Paper, following the
+  theme) and overridden per named style; the SVG rules read them and the globe
+  canvas resolves the same variables through one throwaway element
+  (`atlGlobePalette`). A style is one CSS block and one line in `ATL_STYLES`.
+  The `polit` layer fills every country with `--atco<tint>`, where the tint is
+  `geoCoTints()` — a greedy colouring over the border graph read off the shared
+  arcs, so neighbours never match — built as `geoPolPaths`, windowed like the land.
+- **The finger is asked in longitude and latitude on the globe** (`atlCoUnder`):
+  the country geometry memoised under `'globe'` belongs to whatever orientation
+  built it, so a click is inverted through the current orientation and tested
+  against the equirectangular geometry, which never moves.
+- **It does not redraw what has not changed.** The sea and the shade are radial
+  gradients over the whole picture — a square root and a ramp per pixel, twice —
+  and neither depends on the orientation. Both are drawn once into canvases of
+  exactly this canvas's size and blitted; exactly, because a small tile stretched
+  costs what the gradient did, while a blit at one to one is a copy.
+- **And it draws at fewer pixels while the hand is on it.** What is left after
+  all of that is fill rate, which is not a thing to be clever about: a globe
+  filling a page is over a million pixels and a frame passes over most of them
+  a dozen times. So the backing store shrinks during a gesture and is full size
+  the moment it stops — the same bargain `atlReworld` already strikes with the
+  height field, and the honest one here, because a globe being flung round is
+  the one moment nobody is reading the coastline. **The step is measured, not
+  guessed**: the paint times itself and moves a step at most every eighth
+  frame, so a machine that can hold sixty frames never gives up a pixel and one
+  that cannot steps down until it can. `tools/verify/globebench.sh` is what
+  those steps were chosen against and `tools/verify/globeshot.sh` is what says
+  the picture did not change.
 
 ## Circuits, and the graph seam under them## Circuits, and the graph seam under them
 
@@ -741,6 +808,116 @@ components. Their port coordinates come from the very same symbol geometry and
 are converted directly into that viewBox. Live drawing and static output thus
 produce identical paths without a layout measurement; legacy standalone items
 retain the rotation-aware DOM measurement above.
+
+## Thinking maps, and the kind seam under them
+
+`js/items/write/mindmap.js` is one palette tile with nine maps behind it and one
+item type on the record. That is a decision rather than an economy: a flow map
+and a bubble map are not two features but two readings of the same handful of
+thoughts. Nine types would have meant nine tiles on the shelf, nine records to
+keep in step, and a conversion written for every pair of them.
+
+**A map is stored as what it means.**
+
+```js
+{
+  id, type:'mindmap', x, y, w, rot, z, lay,
+  kind: 'mind'|'circle'|'bubble'|'double'|'tree'|'brace'|'flow'|'multi'|'bridge',
+  nodes: [{ id, pid, text, side, tone, shape, fold, ox, oy }, …],
+  look:  { pal, fill, link, gap, fs, frame, shade },
+  frame: '',                     // what the circle map writes round the outside
+  zoom, viewX, viewY, paper
+}
+```
+
+A node names its parent and, where the kind cares, which side of the middle it
+is on (`'c'` shared, `'l'`/`'r'`). **Nowhere does it say where the box goes.**
+Positions are worked out every time the map is drawn, which is what lets `kind`
+be one word: the same five thoughts are stages when the map is a flow and causes
+when it is a multi-flow, and nothing is rewritten on the way between. It is also
+why a print, a thumbnail and an export come out right without anything
+repainting first, and why undo restores a map rather than a picture of one.
+
+`ox`/`oy` are the exception, and they are still not a position: they are the
+offset from wherever the kind *would* have put that box. A box moved by hand
+therefore survives a change of kind, and `⇥ Tidy` is `delete n.ox`.
+
+### A kind is one block
+
+```js
+defineMindMapKind('flow', {
+  label, hint, blurb, glyph,     // its tile in the gallery
+  defaults: { link, fill },      // what this kind looks best as
+  nest: 2,                       // the deepest it draws
+  seed:  () => [[key, parentKey, text, side, tone], …],
+  place: c => [box, …],          // where the boxes go, in its own units
+  draw:  (c, at) => ({ links, deco }),   // and what joins them up
+  adopt: (it, page) => {},       // the least a map needs to become this kind
+  opts:  x => [propsRow, …],     // extra rows in the design panel
+  adds:  [{ id, label, hint, when(x), run(x) }, …]   // its own bar buttons
+})
+```
+
+The nine below it are written entirely out of the primitives in
+`js/lib/mindmap.js` — wrap, box, edge, curve, elbow, brace, arrow, column and
+ring — and know nothing about the editor, the bars, the animation or the store.
+A tenth is one more block in that one file. Nothing else in the app changes:
+the gallery counts the kinds, the bars ask them what they add, and the design
+panel asks them what else they can be adjusted by.
+
+Two rules make that hold up rather than merely work:
+
+- **Every kind lays out in whatever coordinates suit it and stops thinking about
+  the paper.** `mmFrame()` then fits the result: the frame is a fixed 1000 wide
+  and *whatever height the map turns out to need*, so a wide flow map is a wide
+  short card and a deep tree is a tall one. The content is centred on the origin
+  and the view does the framing, which is what lets that height change without
+  moving the map inside it.
+- **A kind that cannot read a thought still may not lose it.** Circle, multi-flow
+  and double bubble draw one level; a mind map draws any. So `mpLayout()` takes
+  whatever `place()` did not place — including a second root a one-root kind
+  ignored — and fans it out beside its parent on a hairline: visibly an aside
+  rather than part of the pattern, and one drag from somewhere the kind does
+  understand. All eighty-one kind-to-kind readings are checked in the harness,
+  and none of them drops a thought.
+
+### Both bars are one registry
+
+Everything a map offers is a record with a `when()`:
+
+```js
+defineMindMapAction({ id:'fold', group:'node', order:30,
+  icon: x => x.node.fold ? 'unfold' : 'fold',
+  hint: 'Fold away everything hanging off this',
+  when: x => mmKids(x.it, x.node.id).length > 0,
+  run:  x => { … } })
+```
+
+Clicking a box raises the node bar; clicking the paper under it raises the map
+bar. Both are the same component built from `MP_ACTS` filtered by `group` and
+`when`, plus whatever `adds` the kind owns — so neither has a branch on what a
+button means, and an option added tomorrow appears on the right bar on the day
+it is written. `commit:false` is for the ones that only open a panel.
+
+### The whole map is one `<svg>`
+
+Text is measured, wrapped and boxed *before* a glyph is drawn — the measurer is
+a canvas handed to `lib/mindmap.js` through `mmSetMeasurer()`, set to the same
+font the stylesheet names — so a box always fits its writing exactly and the
+wrapping is identical on screen, in a print and in an exported file. There are
+no HTML boxes to keep in step with the drawing. The only HTML over the top is
+the two bars, the popovers and one contenteditable placed on the box being
+written in, repositioned every frame so the box may grow under the caret.
+
+### Nothing moves without a spring
+
+One integrator drives it all: adding a thought, folding one away, dragging a
+box, and turning a flow map into a tree are the same event — the boxes have new
+places to be. A newborn box starts at its parent with a scale of nought and
+grows out of it; a deleted one shrinks away before the record changes; the fit
+and the frame's own height travel with them, and the connectors are redrawn from
+the *interpolated* positions every frame, so a lead bends while its box is still
+on its way rather than snapping into place when it arrives.
 
 ## Adding a new feature
 
@@ -941,8 +1118,8 @@ headless Firefox and has the page **post its results back**:
 tools/verify/run.sh
 ```
 
-**2355 assertions**, and they are the real specification of this app. Among them:
-that all 90 script files load without throwing; that library normalization
+**2398 assertions**, and they are the real specification of this app. Among them:
+that all 92 script files load without throwing; that library normalization
 recovers orphaned entries and breaks folder cycles; that a `[[link]]` finds its
 file whatever its case or extension, ignores one written inside code, survives
 a rename of either end, and appears in the graph's index at both of its ends;

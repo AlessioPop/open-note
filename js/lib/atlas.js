@@ -193,6 +193,57 @@ function geoCapitals(){
 const GEO_D2R = Math.PI / 180, GEO_R2D = 180 / Math.PI, GEO_GR = GEO_W / 2;
 let GEO_GLOBE = { lon: 8, lat: 16, sl: Math.sin(16 * GEO_D2R), cl: Math.cos(16 * GEO_D2R) };
 const geoLon = lon => ((lon + 540) % 360) - 180;
+/* ---- the polar disc ----
+   Azimuthal equidistant centred on the North Pole: the map on the UN flag, the
+   one the flat-earthers hold up. Distance and direction from the pole are true,
+   the meridians are spokes, the parallels are rings, and the South Pole — the
+   projection's one singular point — is the whole of the rim, which is where
+   Antarctica goes: a band of ice round the edge of the world. Greenwich runs
+   straight down, so Europe and Africa are at the bottom, the Americas to the
+   left and Asia to the right, the way the emblem has them.
+
+   It used to be centred on the atlas's home view, which put the antipode in
+   the open Pacific and tore the far side of the world into the rim. */
+function geoAzimuthalFwd(lon, lat){
+  const dl = lon * GEO_D2R, r = GEO_GR * (90 - lat) / 180;
+  return [GEO_GR + r * Math.sin(dl), GEO_GR + r * Math.cos(dl)];
+}
+function geoAzimuthalInv(x, y){
+  const ex = x - GEO_GR, sy = y - GEO_GR, rho = Math.hypot(ex, sy);
+  if(rho < 1e-12) return [0, 90];
+  /* A square viewport has corners outside the circular earth. Clamping them to
+     the rim keeps a panned view serialisable even when its centre is over one
+     of those empty corners. */
+  const lat = 90 - Math.min(GEO_GR, rho) / GEO_GR * 180;
+  return [geoLon(Math.atan2(ex, sy) * GEO_R2D), lat];
+}
+/* the rim itself, as a ring of points — the South Pole drawn out to a circle */
+let GEO_RIM = null;
+function geoRim(){
+  if(GEO_RIM) return GEO_RIM;
+  GEO_RIM = [];
+  for(let a = 0; a < 360; a += 2){
+    const t = a * GEO_D2R;
+    GEO_RIM.push([GEO_GR + GEO_GR * Math.sin(t), GEO_GR + GEO_GR * Math.cos(t)]);
+  }
+  return GEO_RIM;
+}
+/* does this projected ring go round the middle of the picture? On the polar
+   disc a country that holds the South Pole — Antarctica — comes out as a loop
+   round the whole world, and filled even-odd that loop would be everything
+   ELSE. The rim is its other edge: with the rim as a second ring the fill is
+   the band between the two, and everything inside the coast is left alone. */
+function geoWinds(pts){
+  let sum = 0, prev = Math.atan2(pts[pts.length - 1][1] - GEO_GR, pts[pts.length - 1][0] - GEO_GR);
+  for(const p of pts){
+    const a = Math.atan2(p[1] - GEO_GR, p[0] - GEO_GR);
+    let d = a - prev;
+    while(d > Math.PI) d -= 2 * Math.PI;
+    while(d < -Math.PI) d += 2 * Math.PI;
+    sum += d; prev = a;
+  }
+  return Math.abs(sum) > Math.PI;
+}
 function geoGlobeFwd(lon, lat){
   const dl = geoLon(lon - GEO_GLOBE.lon) * GEO_D2R, p = lat * GEO_D2R;
   const sp = Math.sin(p), cp = Math.cos(p), sd = Math.sin(dl), cd = Math.cos(dl);
@@ -246,8 +297,12 @@ const GEO_PROJ = {
     inv: (x, y) => [x / GEO_W * 360 - 180,
                     (2 * Math.atan(Math.exp(Math.PI - y / GEO_W * 2 * Math.PI)) - Math.PI / 2) * 180 / Math.PI]
   },
+  azimuthal: {
+    label: 'Azimuthal equidistant', h: GEO_W, round: 1, noCrop: 1, rim: 1,
+    fwd: geoAzimuthalFwd, inv: geoAzimuthalInv
+  },
   globe: {
-    label: 'Globe', h: GEO_W, globe: 1, lon: 8, lat: 16,
+    label: 'Globe', h: GEO_W, globe: 1, round: 1, lon: 8, lat: 16,
     fwd: geoGlobeFwd, inv: geoGlobeInv, xyz:geoGlobeXYZ,
     visible(lon, lat){
       const dl = geoLon(lon - GEO_GLOBE.lon) * GEO_D2R, p = lat * GEO_D2R;
@@ -388,6 +443,8 @@ function geoGlobeRaw(lod){
     return out;
   };
   hit = { land:geoRings(GEO_WORLD.land).map(ring),
+          /* every country as its own rings, for the tinted layer */
+          co:geoCountries().map(c => c.rings.map(ring).filter(r => r.length > 2)),
           coast:geoIdx(GEO_WORLD.coast).map(arc),
           bord:geoIdx(GEO_WORLD.bord).map(arc),
           rivers:detail(geoRivers(), false), lakes:detail(geoLakes(), true) };
@@ -483,7 +540,13 @@ function geoRunTable(proj, look, lod){
       if(d) runs.push(close ? { d, k, b: geoRunBox(q), p: q } : { d, k, b: geoRunBox(q) });
     }
   };
-  for(const r of geoRings(GEO_WORLD.land)) add(geoRingPts(r, P, lod), true, 0);
+  let rim = 0;
+  for(const r of geoRings(GEO_WORLD.land)){
+    const pts = geoRingPts(r, P, lod);
+    if(P.rim && pts.length > 2 && geoWinds(pts)) rim = 1;
+    add(pts, true, 0);
+  }
+  if(rim) add(geoRim(), true, 0);                  /* Antarctica's outer edge — see geoWinds */
   for(const i of geoIdx(GEO_WORLD.coast)) add(geoArcPts(i, P, lod), false, 1);
   for(const i of geoIdx(GEO_WORLD.bord)) add(geoArcPts(i, P, lod), false, 2);
   hit = { runs, grat: geoGraticule(P, 30) };
@@ -522,6 +585,86 @@ function geoPaths(proj, look, lod, win){
   hit = { land: out[0], coast: out[1], bord: out[2], grat: T.grat, wk, lod };
   GEO_MEMO.set(key, hit);
   while(GEO_MEMO.size > GEO_RUN_KEEP) GEO_MEMO.delete(GEO_MEMO.keys().next().value);
+  return hit;
+}
+
+/* ---- a tint for every country, and no two neighbours the same ----
+   Who borders whom is read straight off the arcs: two countries whose rings
+   use the same arc share that border. Then a greedy colouring, the most
+   bordered country first, each taking the lowest tint none of its neighbours
+   has yet — six tints is comfortably enough for a planar map done this way.
+   Islands with no neighbour at all take a tint by their number, so an
+   archipelago is not all one colour. Worked out once; it depends on nothing
+   but the table, and it is the same answer in every projection and look. */
+const GEO_TINTS = 6;
+let GEO_COTINT = null;
+function geoCoTints(){
+  if(GEO_COTINT) return GEO_COTINT;
+  const cos = geoCountries(), byArc = new Map(), adj = cos.map(() => new Set());
+  cos.forEach((c, i) => {
+    for(const r of c.rings) for(const a of r){
+      const k = a < 0 ? ~a : a, l = byArc.get(k);
+      if(l){ for(const j of l) if(j !== i){ adj[i].add(j); adj[j].add(i); } l.push(i); }
+      else byArc.set(k, [i]);
+    }
+  });
+  const order = cos.map((c, i) => i).sort((a, b) => adj[b].size - adj[a].size);
+  const tint = new Array(cos.length).fill(-1);
+  for(const i of order){
+    if(!adj[i].size){ tint[i] = i % GEO_TINTS; continue; }
+    const used = new Set();
+    for(const j of adj[i]) if(tint[j] >= 0) used.add(tint[j]);
+    let t = 0;
+    while(used.has(t) && t < GEO_TINTS - 1) t++;
+    tint[i] = t;
+  }
+  return (GEO_COTINT = tint);
+}
+/* ---- every country as its own filled shape ----
+   The land again, country by country, built and windowed exactly as geoPaths
+   builds the land: a table of runs per (projection, look, step) with a box and
+   the points each, then a box test and a clip per window. What comes back is
+   one path string per country that has anything in the window. */
+const GEO_POL_MEMO = new Map(), GEO_POL_WIN = new Map();
+function geoPolTable(proj, look, lod){
+  const key = proj + '|' + look + '|' + lod;
+  let hit = GEO_POL_MEMO.get(key);
+  if(hit) return hit;
+  const P = geoProj(proj), sm = look !== 'crisp', W = P.wrap, runs = [];
+  geoCountries().forEach((c, i) => {
+    const rings = c.rings.map(r => geoRingPts(r, P, lod)).filter(r => r.length > 2);
+    if(P.rim && rings.some(geoWinds)) rings.push(geoRim());
+    for(const pts of rings) for(const q of geoRuns(pts, W)){
+      const d = geoRun(q, sm, true);
+      if(d) runs.push({ d, i, b: geoRunBox(q), p: q });
+    }
+  });
+  hit = runs;
+  GEO_POL_MEMO.set(key, hit);
+  while(GEO_POL_MEMO.size > GEO_RUN_KEEP) GEO_POL_MEMO.delete(GEO_POL_MEMO.keys().next().value);
+  return hit;
+}
+function geoPolPaths(proj, look, lod, win){
+  if(lod == null) lod = GEO_LOD_MAX;
+  const key = proj + '|' + look + '|' + lod;
+  const wk = win ? [win.x0, win.y0, win.x1, win.y1].join(',') : '';
+  let hit = GEO_POL_WIN.get(key);
+  if(hit && hit.wk === wk) return hit;
+  const sm = look !== 'crisp', out = new Map();
+  for(const r of geoPolTable(proj, look, lod)){
+    let d = r.d;
+    if(win){
+      if(r.b.x1 < win.x0 || r.b.x0 > win.x1 || r.b.y1 < win.y0 || r.b.y0 > win.y1) continue;
+      if(!(r.b.x0 >= win.x0 && r.b.x1 <= win.x1 && r.b.y0 >= win.y0 && r.b.y1 <= win.y1)){
+        const q = geoClipRing(r.p, win);
+        d = q.length > 2 ? geoRun(q, sm, true) : '';
+      }
+    }
+    if(d) out.set(r.i, (out.get(r.i) || '') + d);
+  }
+  hit = { wk, list: [...out].map(([i, d]) => ({ i, d })) };
+  GEO_POL_WIN.set(key, hit);
+  while(GEO_POL_WIN.size > GEO_RUN_KEEP) GEO_POL_WIN.delete(GEO_POL_WIN.keys().next().value);
   return hit;
 }
 
@@ -612,6 +755,9 @@ function geoCoGeom(proj){
     const rings = c.rings.map(r => geoRingPts(r, P))
       .map(pts => W && pts.length > 1 ? geoUnroll(pts, W) : pts)
       .filter(r => r.length > 2);
+    /* the country round the pole the disc is centred away from is a band, and
+       the rim is the band's other edge — see geoWinds */
+    if(P.rim && rings.some(geoWinds)) rings.push(geoRim().slice());
     if(W && rings.length > 1){                     /* every ring into the first one's frame */
       const ref = geoMeanX(rings[0]);
       for(let i = 1; i < rings.length; i++){
@@ -1300,8 +1446,12 @@ function geoDetailRuns(proj, look, lod){
          step, and at arm's length 172 of the 464 lake runs are smaller than
          one: each of them is still a closed subpath to tessellate, fill and
          stroke on every frame of a pan, for a mark the screen cannot show.
-         Nothing visible changes and the path loses a third of its runs. */
-      if(tol && geoSpanOf(t) < tol) continue;
+         Nothing visible changes and the path loses a third of its runs.
+         A LAKE has to be two pixels across before it is worth its subpath: at
+         one it is a dot the sea's own colour on land, which reads as nothing,
+         and at the coarse steps that is most of the table. A river is a line
+         and a short one still shows, so a river keeps the one-pixel rule. */
+      if(tol && geoSpanOf(t) < tol * (close ? 2 : 1)) continue;
       for(const q of geoRuns(t.map(p => P.fwd(p[0], p[1])), W)){
         const d = geoRun(q, sm, close);
         if(d) runs.push({ d, k, b: geoRunBox(q) });
@@ -1514,10 +1664,14 @@ function geoGlobeRelief(lod){
 function geoReliefBands(proj, look, lod, win){
   const R = geoRelief();
   if(!R.w) return [];
+  const P = geoProj(proj), sm = look !== 'crisp';
+  /* A rectangle in a non-separable azimuthal projection is not a longitude ×
+     latitude rectangle. Draw its relief from the full geographic field; it is
+     memoised per detail step, so correctness costs one build, not every pan. */
+  if(P.noCrop) win = null;
   const key = proj + '|' + look + '|' + lod + '|' + (win ? [win.x0, win.y0, win.x1, win.y1].join(',') : '');
   let hit = GEO_BAND_MEMO.get(key);
   if(hit) return hit;
-  const P = geoProj(proj), sm = look !== 'crisp';
   const step = GEO_STEP[Math.max(0, Math.min(GEO_STEP.length - 1, lod == null ? GEO_LOD_MAX : lod))];
   /* which cells are worth looking at: the window, in the grid's own indices */
   let i0 = 0, i1 = R.w, j0 = 0, j1 = R.h;
@@ -1565,7 +1719,7 @@ function geoClearGlobeCaches(){
       if(s === 'globe' || s.startsWith('globe|')) m.delete(k);
     }
   };
-  [GEO_RUN_MEMO, GEO_MEMO, GEO_CO_GEOM, GEO_CO_MAIN, GEO_TINY, GEO_CO_PATH,
+  [GEO_RUN_MEMO, GEO_MEMO, GEO_POL_MEMO, GEO_POL_WIN, GEO_CO_GEOM, GEO_CO_MAIN, GEO_TINY, GEO_CO_PATH,
    GEO_REG_SPOT, GEO_REG_LBL, GEO_REG, GEO_REG_PATH, GEO_DET_MEMO, GEO_DET_WIN,
    GEO_BAND_MEMO].forEach(clear);
   if(GEO_CO_ORDER && GEO_CO_ORDER.proj === 'globe') GEO_CO_ORDER = null;

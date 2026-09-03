@@ -8747,7 +8747,7 @@
         geoCapitals()[0].name);
       ok('atlas: a name with an apostrophe survived the packing',
         geoCountries().some(function (c) { return c.name === "Côte d'Ivoire"; }));
-      var E = GEO_PROJ.equirect, M = GEO_PROJ.mercator, G = geoGlobeAt(8, 16);
+      var E = GEO_PROJ.equirect, M = GEO_PROJ.mercator, A = GEO_PROJ.azimuthal, G = geoGlobeAt(8, 16);
       var f = E.fwd(-0.1276, 51.5072), rt = E.inv(f[0], f[1]);
       ok('atlas: London lands where London is', Math.round(f[0]) === 2047 && Math.round(f[1]) === 438,
         f.map(Math.round).join(','));
@@ -8756,6 +8756,27 @@
       var mf = M.fwd(-0.1276, 51.5072), mrt = M.inv(mf[0], mf[1]);
       ok('atlas: …and so are Mercator and its own',
         Math.abs(mrt[0] + 0.1276) < 1e-9 && Math.abs(mrt[1] - 51.5072) < 1e-9);
+      var af = A.fwd(-0.1276, 51.5072), art = A.inv(af[0], af[1]);
+      ok('atlas: …and azimuthal equidistant and its own',
+        Math.abs(art[0] + 0.1276) < 1e-8 && Math.abs(art[1] - 51.5072) < 1e-8,
+        art.join(','));
+      var an = A.fwd(8, 60);
+      ok('atlas: the polar disc keeps distance from the pole, puts the South Pole on the rim and Greenwich straight down',
+        A.fwd(0, 90).every(function (x) { return Math.abs(x - GEO_W / 2) < 1e-8; }) &&
+        Math.abs(Math.hypot(an[0] - GEO_W / 2, an[1] - GEO_W / 2) - GEO_W / 12) < 1e-6 &&
+        Math.abs(Math.hypot(A.fwd(-172, -90)[0] - GEO_W / 2,
+          A.fwd(-172, -90)[1] - GEO_W / 2) - GEO_W / 2) < 1e-6 &&
+        Math.abs(A.fwd(0, 0)[0] - GEO_W / 2) < 1e-8 && A.fwd(0, 0)[1] > GEO_W / 2 &&
+        A.fwd(90, 0)[0] > GEO_W / 2 && A.fwd(-90, 0)[0] < GEO_W / 2);
+      ok('atlas: on the disc Antarctica is the band round the rim — its ring winds round the pole and the rim is its other edge',
+        geoCoGeom('azimuthal')[geoCoIndexOf('Antarctica')].rings.length >
+          geoCoGeom('mercator')[geoCoIndexOf('Antarctica')].rings.length &&
+        geoCoAt('azimuthal', GEO_W / 2, GEO_W - 20) === geoCoIndexOf('Antarctica') &&
+        geoCoAt('azimuthal', GEO_W / 2, GEO_W / 2 + 40) !== geoCoIndexOf('Antarctica') &&
+        geoRunTable('azimuthal', 'smooth', 1).runs.filter(function (r) { return r.k === 0 && r.p === geoRim(); }).length === 1);
+      var rv = atlView({ proj:'azimuthal', ar:.5, lon:8, lat:16, zm:0 }, null);
+      ok('atlas: a round projection is a square picture whatever the record says, and its disc fills it',
+        rv.H === 1000 && Math.abs(rv.k - 1000 / GEO_W) < 1e-9, rv.H + ' ' + rv.k);
       ok('atlas: flat is twice as wide as it is tall, Mercator is square',
         E.h === GEO_W / 2 && M.h === GEO_W, E.h + ' / ' + M.h);
       ok('atlas: Mercator is cut where everyone cuts it',
@@ -8802,7 +8823,8 @@
       ok('atlas: one that is not, is not', geoRuns(geoArcPts(0, GEO_PROJ.equirect), GEO_W).length === 1);
       ok('atlas: nothing in the world is NaN',
         !/NaN|undefined/.test(geoPaths('equirect', 'smooth').land + geoPaths('equirect', 'smooth').coast +
-          geoPaths('mercator', 'smooth').bord + geoPaths('mercator', 'smooth').grat));
+          geoPaths('mercator', 'smooth').bord + geoPaths('mercator', 'smooth').grat +
+          geoPaths('azimuthal', 'smooth').land + geoPaths('azimuthal', 'smooth').grat));
       /* laying names out: a box that is taken stays taken */
       var lay = geoLayout([
         { x: 100, y: 100, box: { x: 100, y: 90, w: 80, h: 20 } },
@@ -8969,58 +8991,229 @@
       L.sx.jump(2048); L.sy.jump(1024); L.sz.jump(0); atlSettle(a, L);
       atlPaint(els[0], a, atlView(a, L));
 
-      /* ---- the layers are a registry, and the panel is a view of it ---- */
+      /* ---- the layers are a registry, and the menu is a view of it ---- */
       ok('atlas: the layers are ordered', ATL_LAYERS.map(function (x) { return x.id; }).join(',') ===
-        'grat,land,relief,lakes,rivers,bord,coast,caps,cities,tiny,pick', ATL_LAYERS.map(function (x) { return x.id; }).join(','));
-      var pan = els[0].querySelector('.atpanel');
-      ok('atlas: the panel lists every layer there is', !!pan && pan.querySelectorAll('button').length === ATL_LAYERS.length);
-      ok('atlas: it is shut until it is asked for', !pan.classList.contains('open'));
+        'grat,land,polit,relief,lakes,rivers,bord,coast,seas,caps,cities,tiny,pick', ATL_LAYERS.map(function (x) { return x.id; }).join(','));
+      /* ---- every country its own tint, and no two neighbours alike ---- */
+      var tints = geoCoTints(), clash = 0, byArc = {};
+      geoCountries().forEach(function (c, i) {
+        c.rings.forEach(function (r) { r.forEach(function (a) {
+          var k = a < 0 ? ~a : a; (byArc[k] = byArc[k] || []).push(i); }); });
+      });
+      Object.keys(byArc).forEach(function (k) {
+        var l = byArc[k];
+        for(var u = 0; u < l.length; u++) for(var w = u + 1; w < l.length; w++)
+          if(l[u] !== l[w] && tints[l[u]] === tints[l[w]]) clash++;
+      });
+      ok('atlas: every country has a tint and no two that share a border share one',
+        tints.length === geoCountries().length && tints.every(function (t) { return t >= 0 && t < 6; }) && clash === 0,
+        clash + ' clashes');
+      var pol = geoPolPaths('mercator', 'smooth', 0, null).list;
+      ok('atlas: the tinted layer is one filled path per country, windowed like the land',
+        pol.length > 150 && pol.every(function (q) { return q.d.length > 0 && q.i >= 0; }) &&
+        geoPolPaths('mercator', 'smooth', 2, { x0: 1900, y0: 1000, x1: 2300, y1: 1400 }).list.length < 80,
+        pol.length + ' / ' + geoPolPaths('mercator', 'smooth', 2, { x0: 1900, y0: 1000, x1: 2300, y1: 1400 }).list.length);
+      ok('atlas: every layer names its heading, and the grid is a reference layer that is off until asked for',
+        ATL_LAYERS.every(function (x) { return ATL_GROUPS.indexOf(x.group) >= 0; }) &&
+        ATL_LAYERS.find(function (x) { return x.id === 'grat'; }).group === 'Reference' && !atlOn({}, ATL_LAYERS[0]));
+      ok('atlas: nothing floats over the page until it is asked for', !ATL_POP && !$('#atlpop.open'));
       var btn = function (t) {
-        return QA('#pageHost .item[data-id="' + a.id + '"] .tools button').filter(function (x) { return x.textContent === t; })[0];
+        return QA('#pageHost .item[data-id="' + a.id + '"] .tools button').filter(function (x) {
+          return x.dataset.glyph === t || x.textContent === t; })[0];
       };
       select(a.id); await sleep(30);
-      btn('◍').click();
-      ok('atlas: ◍ opens it', els[0].querySelector('.atpanel').classList.contains('open'));
-      ok('atlas: the panel says which layers are on',
-        els[0].querySelector('.atpanel button[data-l="land"]').classList.contains('on') &&
-        !els[0].querySelector('.atpanel button[data-l="grat"]').classList.contains('on'));
-      els[0].querySelector('.atpanel button[data-l="grat"]').click();
-      await sleep(30);
+      var abar = els[0].querySelector(':scope > .tools');
+      var abr = abar.getBoundingClientRect(), air = els[0].getBoundingClientRect();
+      ok('atlas: its labelled options bar is centred over the widget',
+        Math.abs((abr.left + abr.width / 2) - (air.left + air.width / 2)) < .1 &&
+        abar.querySelectorAll('.atltoolsep').length === 2,
+        ((abr.left + abr.width / 2) - (air.left + air.width / 2)).toFixed(3) + ' px');
+      ok('atlas: every option in the bar is a line icon with its name under it',
+        [].slice.call(abar.querySelectorAll(':scope > button')).every(function (b) {
+          return !!b.querySelector('svg.ic') && !!b.querySelector('.lb') &&
+            !!b.querySelector('.lb').textContent && !!b.getAttribute('aria-label') && !!b.dataset.glyph;
+        }), [].slice.call(abar.querySelectorAll(':scope > button')).map(function (b) { return b.dataset.label; }).join(', '));
+      ok('atlas: redundant local actions stay out of the compact options bar',
+        !btn('⇱') && !btn('◈') && !btn('▭') && !btn('✥') && !btn('✕'),
+        [].slice.call(abar.querySelectorAll(':scope > button')).map(function (b) { return b.dataset.glyph; }).join(' '));
+      ok('atlas: the projection button wears the projection, the grain button the grain',
+        btn('◎').querySelector('.lb').textContent === 'Flat' && btn('▣').querySelector('.lb').textContent === 'Country',
+        btn('◎').querySelector('.lb').textContent + ' · ' + btn('▣').querySelector('.lb').textContent);
+      var search = btn('⌕');
+      ok('atlas: the finder is shut', search.getAttribute('aria-expanded') === 'false' && !search.classList.contains('open'));
+      search.click(); await sleep(60);
+      var pop = $('#atlpop');
+      ok('atlas: ⌕ opens the glass finder out of its button, with the field and the seven continents in it',
+        !!pop && pop.classList.contains('open') && pop.dataset.kind === 'search' &&
+        search.classList.contains('open') && search.getAttribute('aria-expanded') === 'true' &&
+        !!pop.querySelector('input') && pop.querySelectorAll('.atsug button').length >= 7 &&
+        QA('#atlpop .atsug button').slice(0, 7).every(function (b) { return geoRegKind(b.dataset.k) === 'ct'; }),
+        pop && (pop.dataset.kind + ' ' + pop.querySelectorAll('.atsug button').length));
+      ok('atlas: the field has the keyboard', document.activeElement === pop.querySelector('input'));
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); await sleep(30);
+      ok('atlas: a press anywhere else shuts it',
+        !ATL_POP && search.getAttribute('aria-expanded') === 'false' && !search.classList.contains('open'));
+      btn('◍').click(); await sleep(60);
+      ok('atlas: ◍ opens the layers as a menu of switches under three headings',
+        pop.classList.contains('open') && pop.dataset.kind === 'layers' && btn('◍').classList.contains('open') &&
+        pop.querySelectorAll('.atlrow[data-l]').length === ATL_LAYERS.length &&
+        pop.querySelectorAll('.atlsec').length === 4 &&
+        pop.querySelectorAll('.atlrow[data-l] .atlsw').length === ATL_LAYERS.length);
+      var row = function (id) { return pop.querySelector('.atlrow[data-l="' + id + '"]'); };
+      ok('atlas: the switches say which layers are on',
+        row('land').classList.contains('on') && row('land').getAttribute('aria-checked') === 'true' &&
+        !row('rivers').classList.contains('on') && row('rivers').getAttribute('aria-checked') === 'false');
+      row('rivers').click(); await sleep(30);
       ok('atlas: turning one on writes it down and draws it',
-        a.on.grat === 1 && !!els[0].querySelector('.atworld .atlay[data-l="grat"]'));
-      ok('atlas: the panel survived the rebuild and is still open',
-        !!els[0].querySelector('.atpanel.open') &&
-        els[0].querySelector('.atpanel button[data-l="grat"]').classList.contains('on'));
-      els[0].querySelector('.atpanel button[data-l="grat"]').click(); await sleep(30);
-      ok('atlas: and off again', a.on.grat === 0 && !els[0].querySelector('.atworld .atlay[data-l="grat"]'));
+        a.on.rivers === 1 && !!els[0].querySelector('.atworld .atlay[data-l="rivers"]'));
+      ok('atlas: the menu survived the rebuild and is still open',
+        !!$('#atlpop.open') && ATL_POP && ATL_POP.kind === 'layers' &&
+        row('rivers').classList.contains('on') && row('rivers').getAttribute('aria-checked') === 'true');
+      row('rivers').click(); await sleep(30);
+      ok('atlas: and off again', a.on.rivers === 0 && !els[0].querySelector('.atworld .atlay[data-l="rivers"]'));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      ok('atlas: Escape shuts the menu', !ATL_POP && !btn('◍').classList.contains('open'));
+      btn('◍').click(); btn('◍').click(); await sleep(30);
+      ok('atlas: the button is a toggle', !ATL_POP);
       /* absent means the layer's own answer, so an old note gains a new layer */
       ok('atlas: a record that says nothing gets the defaults',
         atlOn({}, ATL_LAYERS[1]) === true && atlOn({}, ATL_LAYERS[0]) === false);
 
-      /* the look and the projection are rebuilds, and rebuild nothing else */
-      btn('◈').click(); await sleep(30);
-      ok('atlas: ◈ draws the outlines straight',
-        a.look === 'crisp' && els[0].querySelector('path.atland').getAttribute('d').indexOf('Q') < 0);
-      btn('◈').click(); await sleep(30);
-      ok('atlas: …and round again', a.look === 'smooth');
+      /* ---- the names on the water, and the degrees along the edges ---- */
+      L = ATL_LIVE.get(a.id);
+      L.sz.jump(0); atlPaint(els[0], a, atlView(a, L));
+      var seaOn = QA('#pageHost .item[data-id="' + a.id + '"] .atpins text.atsea.on');
+      ok('atlas: the oceans are named at the whole world, and only the oceans',
+        seaOn.length >= 2 && seaOn.every(function (t) { return t.classList.contains('atocean'); }),
+        seaOn.map(function (t) { return t.textContent; }).join(', '));
+      L.sz.jump(1.6); L.sx.jump(2230); L.sy.jump(1330); atlPaint(els[0], a, atlView(a, L));
+      seaOn = QA('#pageHost .item[data-id="' + a.id + '"] .atpins text.atsea.on');
+      ok('atlas: a step and a half in over Europe the seas come up too',
+        seaOn.some(function (t) { return !t.classList.contains('atocean'); }),
+        seaOn.map(function (t) { return t.textContent; }).join(', '));
+      atlToggleLayer(els[0], a, page, 'grat'); await sleep(40);
+      L = ATL_LIVE.get(a.id); atlPaint(els[0], a, atlView(a, L));
+      var gl = QA('#pageHost .item[data-id="' + a.id + '"] .atpins text.atgl.on');
+      ok('atlas: latitude and longitude come with their degrees along the edges',
+        !!els[0].querySelector('.atworld .atlay[data-l="grat"] path.atgrat') &&
+        gl.some(function (t) { return /°[NS]$/.test(t.textContent); }) && gl.some(function (t) { return /°[EW]$/.test(t.textContent); }),
+        gl.map(function (t) { return t.textContent; }).join(' '));
+      ok('atlas: the grid step follows the zoom', atlGStep(atlView(a, L)) === 5 && atlGStep({ z: 0, n: 0 }) === 30);
+      atlToggleLayer(els[0], a, page, 'grat'); await sleep(30);
+      L = ATL_LIVE.get(a.id); L.sx.jump(2048); L.sy.jump(1024); L.sz.jump(0); atlPaint(els[0], a, atlView(a, L));
+
+      /* ---- the lakes are inked only from a step and a half in ---- */
+      var lakeG = function () { return els[0].querySelector('.atworld .atlay[data-l="lakes"]'); };
+      L = ATL_LIVE.get(a.id);
+      L.sz.jump(0); atlPaint(els[0], a, atlView(a, L));
+      ok('atlas: at arm’s length the lakes are a fill and no ink', +lakeG().getAttribute('stroke-width') === 0,
+        lakeG().getAttribute('stroke-width'));
+      L.sz.jump(2); atlPaint(els[0], a, atlView(a, L));
+      ok('atlas: two steps in they have a shore', +lakeG().getAttribute('stroke-width') > 0,
+        lakeG().getAttribute('stroke-width'));
+      L.sz.jump(0); atlPaint(els[0], a, atlView(a, L));
+
+      /* Smooth outlines are the default; projection rebuilds nothing else. */
+      ok('atlas: outlines stay smooth without needing a toolbar option',
+        a.look === 'smooth' && els[0].querySelector('path.atland').getAttribute('d').indexOf('Q') >= 0);
       var lon0 = a.lon, lat0 = a.lat;
-      btn('◎').click(); await sleep(40);
-      ok('atlas: ◎ changes the projection and keeps the place',
-        a.proj === 'mercator' && Math.abs(a.lon - lon0) < .5 && Math.abs(a.lat - lat0) < .5,
+      var proj = function (name) {
+        btn('◎').click();
+        var b = $('#atlpop.open[data-kind="projection"] .atlrow[data-p="' + name + '"]');
+        if(b) b.click();
+        return !!b;
+      };
+      ok('atlas: ◎ offers the four projections as a menu with a tick on the current one', (function () {
+        btn('◎').click();
+        var rows = QA('#atlpop.open[data-kind="projection"] .atlrow[data-p]');
+        var good = rows.length === 4 && rows.filter(function (r) { return r.classList.contains('on'); }).length === 1 &&
+          rows.filter(function (r) { return r.classList.contains('on'); })[0].dataset.p === a.proj;
+        atlPopClose();
+        return good;
+      })());
+      /* ---- the styles ---- */
+      ok('atlas: a map wears its style as data, and starts on Paper',
+        els[0].dataset.atstyle === 'paper' && btn('◐').querySelector('.lb').textContent === 'Paper');
+      btn('◐').click(); await sleep(40);
+      var srows = QA('#atlpop.open[data-kind="style"] .atlrow[data-s]');
+      ok('atlas: ◐ offers the styles with a swatch each and a tick on the current one',
+        srows.length === ATL_STYLES.length && srows.every(function (r) { return r.querySelectorAll('.atlswatch b').length === 4; }) &&
+        srows.filter(function (r) { return r.classList.contains('on'); }).map(function (r) { return r.dataset.s; }).join() === 'paper');
+      $('#atlpop .atlrow[data-s="political"]').click(); await sleep(60);
+      ok('atlas: Political tints the countries — the style is written down, the layer comes on, the button says so',
+        a.style === 'political' && a.on.polit === 1 && els[0].dataset.atstyle === 'political' && !ATL_POP &&
+        btn('◐').querySelector('.lb').textContent === 'Political' &&
+        els[0].querySelectorAll('.atworld .atlay[data-l="polit"] path.atco').length > 150);
+      var co0 = els[0].querySelector('.atworld path.atco.atco0'), co1 = els[0].querySelector('.atworld path.atco.atco1');
+      ok('atlas: two tints are two colours, and the sea took the style’s colour',
+        getComputedStyle(co0).fill !== getComputedStyle(co1).fill &&
+        getComputedStyle(els[0].querySelector('.atmap .atsea1')).stopColor === 'rgb(207, 226, 238)',
+        getComputedStyle(els[0].querySelector('.atmap .atsea1')).stopColor);
+      atlSetStyle(els[0], a, page, 'night'); await sleep(40);
+      ok('atlas: Night keeps the tinted layer on and turns the names light',
+        a.on.polit === 1 && els[0].dataset.atstyle === 'night' &&
+        getComputedStyle(els[0].querySelector('text.atname')).fill === 'rgb(233, 239, 246)',
+        getComputedStyle(els[0].querySelector('text.atname')).fill);
+      atlSetStyle(els[0], a, page, 'paper'); await sleep(40);
+      ok('atlas: back to Paper leaves no style in the record', a.style == null && els[0].dataset.atstyle === 'paper');
+      a.on.polit = 0;
+      proj('mercator'); await sleep(40);
+      ok('atlas: Mercator from the menu keeps the place, shuts the menu and names itself on the button',
+        a.proj === 'mercator' && Math.abs(a.lon - lon0) < .5 && Math.abs(a.lat - lat0) < .5 && !ATL_POP &&
+        btn('◎').querySelector('.lb').textContent === 'Mercator',
         a.proj + ' ' + a.lon + ',' + a.lat);
       ok('atlas: Mercator is drawn from the Mercator paths',
         els[0].querySelector('path.atland').getAttribute('d') ===
           atlPathsFor(a, atlView(a, ATL_LIVE.get(a.id))).land);
-      btn('◎').click(); await sleep(40);
-      ok('atlas: ◎ offers the globe in the same World widget',
+      proj('azimuthal'); await sleep(40);
+      ok('atlas: the menu offers azimuthal equidistant in the same World widget',
+        a.proj === 'azimuthal' &&
+        els[0].querySelector('path.atland').getAttribute('d') ===
+          atlPathsFor(a, atlView(a, ATL_LIVE.get(a.id))).land);
+      proj('globe'); await sleep(40);
+      ok('atlas: …and the globe in the same World widget',
         a.proj === 'globe' && els[0].querySelector('svg.atmap').dataset.projection === 'globe' &&
         !!els[0].querySelector('.atglobeedge') && !!els[0].querySelector('clipPath[id^="atlglobe-"]') &&
         !!els[0].querySelector('canvas.atglobeview.on'));
+      ok('atlas: a globe is a sphere on the page — square picture, round frame, round hit plane, and the item says so',
+        els[0].classList.contains('atround') &&
+        els[0].querySelector('svg.atmap').getAttribute('viewBox') === '0 0 1000 1000' &&
+        els[0].querySelector('.athit').tagName === 'circle' && els[0].querySelector('.atedge').tagName === 'circle' &&
+        els[0].querySelector('clipPath[id="atl-' + a.id + '"] circle') &&
+        getComputedStyle(els[0].querySelector('.atbox')).borderRadius === '50%',
+        els[0].querySelector('svg.atmap').getAttribute('viewBox') + ' ' + getComputedStyle(els[0].querySelector('.atbox')).borderRadius);
       var hit = els[0].querySelector('.athit');
       ok('atlas: the live globe keeps one uninterrupted drag surface over land and ocean',
         !!hit && hit.getAttribute('pointer-events') === 'all' && +hit.getAttribute('fill-opacity') > 0);
-      var height = els[0].querySelector('.atpanel button[data-l="relief"]');
-      height.click(); await sleep(80);
+      var gcv = els[0].querySelector('canvas.atglobeview');
+      ok('atlas: the globe is painted the moment it has a box — not blank until touched',
+        gcv.width > 10 && (function (c) {
+          var d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, n = 0;
+          for(var i = 3; i < d.length; i += 4) if(d[i]) n++;
+          return n;
+        })(gcv) > gcv.width * gcv.height * .5, gcv.width + 'x' + gcv.height);
+      atlSetStyle(els[0], a, page, 'blueprint'); await sleep(60);
+      var GP = atlGlobePalette(els[0].querySelector('canvas.atglobeview'));
+      ok('atlas: the globe canvas paints in the stylesheet’s colours — Blueprint’s white coast and six blues',
+        GP.coast === 'rgb(234, 243, 255)' && GP.co.length === 6 && GP.co.every(function (c) { return /^rgb\(/.test(c); }) &&
+        GP.lbl === 'rgb(255, 255, 255)', GP.coast + ' ' + GP.lbl);
+      atlSetStyle(els[0], a, page, 'paper'); await sleep(40);
+      /* ---- the finger on the sphere ---- */
+      var LG = ATL_LIVE.get(a.id);
+      LG.sx.jump(-50); LG.sy.jump(-12); LG.sz.jump(1.5); atlPaint(els[0], a, atlView(a, LG));
+      var gv = atlView(a, LG);
+      var under = function (lon, lat) {
+        var xy = gv.P.fwd(lon, lat);
+        return atlCoUnder(a, gv, [(xy[0] - gv.cx) * gv.k + ATL_W / 2, (xy[1] - gv.cy) * gv.k + gv.H / 2], xy);
+      };
+      ok('atlas: on a turned globe the finger finds the country under it — asked in longitude and latitude, not of a stale picture',
+        geoCoName(under(-47, -12)) === 'Brazil' && geoCoName(under(-64, -34)) === 'Argentina' && under(-30, -20) === -1,
+        [geoCoName(under(-47, -12)), geoCoName(under(-64, -34)), under(-30, -20)].join(' · '));
+      ok('atlas: the SVG names stand down on a live globe — the canvas writes them',
+        els[0].querySelector('.atpins').style.visibility === 'hidden' &&
+        ATL_LAYERS.filter(function (x) { return x.draw; }).length === 5);
+      LG.sx.jump(8); LG.sy.jump(16); LG.sz.jump(0); atlPaint(els[0], a, atlView(a, LG));
+      atlToggleLayer(els[0], a, page, 'relief'); await sleep(80);
       var globeCanvas = els[0].querySelector('canvas.atglobeview');
       var green = function (c) {
         var d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, n = 0;
@@ -9042,7 +9235,7 @@
       ok('atlas: building the static page changes nothing in the record', JSON.stringify(page.items) === json);
       var sm = st.querySelector('.item[data-type="atlas"] svg.atmap');
       ok('atlas: it prints as a picture with no panel and no buttons',
-        !!sm && !st.querySelector('.atpanel') && !st.querySelector('.item[data-type="atlas"] button'));
+        !!sm && !st.querySelector('.atlpop') && !st.querySelector('.item[data-type="atlas"] button'));
       ok('atlas: the printed world is placed too', /scale\(/.test(sm.querySelector('.atworld').getAttribute('transform')));
       var pc = sm.querySelectorAll('.atcap');
       ok('atlas: only the names that fitted are carried out, and every one is set',
@@ -9994,6 +10187,202 @@
       delete m.tap; delete m.sel;
 
       page.items = []; await render();
+    });
+
+    /* ================= thinking maps ================= */
+    await stage('mindmap', async function () {
+      var page = sheet();
+      var keep = page.items.slice();
+      page.items = [];
+      await render();
+
+      /* ---- one tile, nine kinds ---- */
+      var kinds = mpKinds();
+      ok('mindmap: nine kinds are registered', kinds.length === 9,
+        kinds.map(function (k) { return k.id; }).join(','));
+      ok('mindmap: and exactly one tile on the shelf carries them all',
+        TOOLS.filter(function (t) { return t.kind === 'mindmap'; }).length === 1 &&
+        Object.keys(ADD_KINDS).filter(function (k) {
+          return ADD_KINDS[k].type === 'mindmap'; }).length === 1);
+      var noMeta = kinds.filter(function (k) {
+        return !k.label || !k.hint || !k.blurb || !k.glyph ||
+          typeof k.seed !== 'function' || typeof k.place !== 'function' ||
+          typeof k.draw !== 'function';
+      });
+      ok('mindmap: every kind says what it is and how to draw itself',
+        noMeta.length === 0, noMeta.map(function (k) { return k.id; }).join(','));
+
+      /* ---- every kind lays its own seed out, with real numbers ---- */
+      var laidBad = [], wrapBad = [];
+      kinds.forEach(function (k) {
+        var it = { id: uid(), type: 'mindmap', kind: k.id, look: {}, nodes: mpBuildSeed(k.id) };
+        if (k.adopt) k.adopt(it, null);
+        var L = mpLayout(it);
+        var bad = L.boxes.some(function (b) {
+          return !isFinite(b.x) || !isFinite(b.y) || !(b.w > 0) || !(b.h > 0);
+        }) || L.links.some(function (l) { return !l.d || /NaN|Infinity/.test(l.d + (l.head || '')); }) ||
+          !isFinite(L.fit.s) || !isFinite(L.fit.h);
+        if (bad) laidBad.push(k.id);
+        /* the writing was wrapped to fit the box before the box was drawn */
+        L.boxes.forEach(function (b) {
+          var room = b.w - (b.shape === 'circle' || b.shape === 'ellipse' ? b.w * .28 : 26);
+          b.lines.forEach(function (line) {
+            if (mmTextW(line, b.fs, b.bold) > room + 2) wrapBad.push(k.id + ':' + line);
+          });
+        });
+      });
+      ok('mindmap: every kind lays its own seed out with real geometry',
+        laidBad.length === 0, laidBad.join(','));
+      ok('mindmap: and no line of writing is wider than the box round it',
+        wrapBad.length === 0, wrapBad.slice(0, 3).join(' | '));
+
+      /* ---- a map is what it means, so any kind can read any other's ---- */
+      var lost = [];
+      kinds.forEach(function (seed) {
+        kinds.forEach(function (k) {
+          var it = { id: uid(), type: 'mindmap', kind: k.id, look: {}, nodes: mpBuildSeed(seed.id) };
+          if (k.adopt) k.adopt(it, null);
+          var L;
+          try { L = mpLayout(it); } catch (e) { lost.push(seed.id + '→' + k.id + ' threw'); return; }
+          var drawn = {};
+          L.boxes.forEach(function (b) { drawn[b.id] = 1; });
+          var missing = it.nodes.filter(function (n) { return !drawn[n.id]; });
+          if (missing.length) lost.push(seed.id + '→' + k.id + ' lost ' + missing.length);
+        });
+      });
+      ok('mindmap: all 81 kind-to-kind readings draw every thought',
+        lost.length === 0, lost.slice(0, 4).join(' | '));
+
+      /* ---- an empty map, and one with a single thought ---- */
+      var edgeBad = [];
+      [[], [{ id: 'solo', pid: null, text: 'only' }]].forEach(function (nodes) {
+        kinds.forEach(function (k) {
+          var it = { id: uid(), type: 'mindmap', kind: k.id, look: {},
+                     nodes: JSON.parse(JSON.stringify(nodes)) };
+          try {
+            var L = mpLayout(it);
+            if (!isFinite(L.fit.s) || !isFinite(L.fit.h)) edgeBad.push(k.id + '/' + nodes.length);
+            ITEMS.mindmap.html(it, { live: false });
+          } catch (e) { edgeBad.push(k.id + '/' + nodes.length + ' threw'); }
+        });
+      });
+      ok('mindmap: an empty map and a one-thought map still draw',
+        edgeBad.length === 0, edgeBad.join(','));
+
+      /* ---- adding one off the palette ---- */
+      addItem('mindmap', { x: 6, y: 6 }, page);
+      await waitFor(function () { return page.items.length === 1; });
+      await render();
+      var it = page.items[0];
+      var outer = Q('#pageHost .item[data-id="' + it.id + '"]');
+      ok('mindmap: the tile adds the type it claims and seeds a mind map',
+        it.type === 'mindmap' && it.kind === 'mind' && mmNodes(it).length === 4);
+      ok('mindmap: the whole map is one svg — no HTML boxes to keep in step',
+        !!outer.querySelector('.mmsvg') &&
+        outer.querySelectorAll('.mmsvg .mmnode').length === 4 &&
+        outer.querySelectorAll('.mmenv > *:not(.mmstage):not(.mmedit):not(figcaption)').length === 0);
+      ok('mindmap: nothing about where a box sits is stored',
+        mmNodes(it).every(function (n) { return n.x === undefined && n.y === undefined; }));
+
+      /* ---- the bars are built from the registry, never from a list here ---- */
+      var mx = mpX(outer, it, page, mmNodes(it)[1]);
+      var nodeBar = mpBarHTML(mx, 'node'), mapBar = mpBarHTML(mpX(outer, it, page, null), 'map');
+      ok('mindmap: the node bar is every node action whose when() says yes',
+        mpActs('node').filter(function (a) { return !a.when || a.when(mx); })
+          .every(function (a) { return nodeBar.indexOf('data-a="' + a.id + '"') >= 0; }) &&
+        nodeBar.indexOf('data-add="branch"') >= 0);
+      ok('mindmap: the map bar carries the kinds and the design panel, not the node ones',
+        mapBar.indexOf('data-a="kind"') >= 0 && mapBar.indexOf('data-a="design"') >= 0 &&
+        mapBar.indexOf('data-a="del"') < 0);
+      ok('mindmap: a kind with no room for a deeper thought does not offer one',
+        mpActs('node').filter(function (a) { return a.id === 'child'; })[0]
+          .when({ it: { kind: 'circle' }, kind: MP_KINDS.circle, node: mmNodes(it)[1],
+                  c: { depth: function () { return 1; } } }) === false);
+
+      /* ---- picking, and what the bar does ---- */
+      mpPick(outer, it, page, mmNodes(it)[1].id);
+      var bar = outer.querySelector('.mmbar');
+      ok('mindmap: clicking a box raises its bar over it',
+        MP_SEL.get(it.id) === mmNodes(it)[1].id && bar && !bar.hidden);
+      var was = mmNodes(it).length;
+      bar.querySelector('[data-a="child"]').click();
+      ok('mindmap: the bar puts a thought under the one that is picked',
+        mmNodes(it).length === was + 1 &&
+        mmNodes(it)[mmNodes(it).length - 1].pid === mmNodes(it)[1].id);
+      var fresh = mmNodes(it)[mmNodes(it).length - 1];
+      ok('mindmap: a new box is born at its parent and grows out of it',
+        outer._mm.cur.get(fresh.id).s < 1);
+
+      /* ---- writing goes on the record, and the box grows to hold it ---- */
+      fresh.text = 'a longer thought than the box it started in';
+      mpCommit(outer, it, page);
+      var grown = outer._mm.L.at.get(fresh.id);
+      ok('mindmap: the box is measured round the writing, not guessed at',
+        grown.lines.join(' ') === fresh.text && grown.lines.length > 1);
+
+      /* ---- folding ---- */
+      var branch = mmNodes(it)[1];
+      branch.fold = 1;
+      ok('mindmap: folding hides everything under a box',
+        mpLayout(it).boxes.filter(function (b) { return b.id === fresh.id; }).length === 0 &&
+        mpHidden(it).has(fresh.id));
+      delete branch.fold;
+      ok('mindmap: unfolding brings it back',
+        mpLayout(it).boxes.filter(function (b) { return b.id === fresh.id; }).length === 1);
+
+      /* ---- a hand-placed box is an offset from where the kind wanted it ---- */
+      var home = mpLayout(it).at.get(fresh.id).x;
+      fresh.ox = 60; fresh.oy = -30;
+      ok('mindmap: a moved box is stored as an offset, and applied to the layout',
+        Math.abs(mpLayout(it).at.get(fresh.id).x - (home + 60)) < .01);
+      it.kind = 'tree';
+      ok('mindmap: and it survives a change of kind', fresh.ox === 60);
+      it.kind = 'mind';
+      mpTidy(outer, it, page);
+      ok('mindmap: tidy drops every offset and re-centres the view',
+        !mmNodes(it).some(function (n) { return n.ox || n.oy; }) &&
+        it.zoom === 1 && it.viewX === 0 && it.viewY === 0);
+
+      /* ---- the colours are indices, and the middle is always solid ---- */
+      mpSetLook(it, 'pal', 'berry', page);
+      mpSetLook(it, 'fill', 'line', page);
+      mpCommit(outer, it, page);
+      var rootBox = outer.querySelector('.mmnode.mmis-root .mmshape');
+      ok('mindmap: a palette is one word on the record and every box follows it',
+        outer.querySelector('.mmnode:not(.mmis-root) .mmshape').getAttribute('stroke')
+          === MP_PALETTES.berry.colors[0] ||
+        MP_PALETTES.berry.colors.indexOf(
+          outer.querySelector('.mmnode:not(.mmis-root) .mmshape').getAttribute('stroke')) >= 0);
+      ok('mindmap: whatever the boxes do, the middle of a map stays solid',
+        rootBox.getAttribute('fill-opacity') === '1');
+      mpSetLook(it, 'fill', 'soft', page);
+
+      /* ---- the card is as tall as the map it holds ---- */
+      var tall = { id: uid(), type: 'mindmap', kind: 'tree', look: {}, nodes: mpBuildSeed('tree') };
+      var wide = { id: uid(), type: 'mindmap', kind: 'flow', look: {}, nodes: mpBuildSeed('flow') };
+      ok('mindmap: a wide flow map gets a shorter card than a deep tree map',
+        mpLayout(wide).fit.h < mpLayout(tall).fit.h,
+        mpLayout(wide).fit.h + ' vs ' + mpLayout(tall).fit.h);
+      ok('mindmap: and the card never gets sillier than the frame allows',
+        mpLayout(wide).fit.h >= MM_HMIN && mpLayout(tall).fit.h <= MM_HMAX);
+
+      /* ---- print, thumbnails and exports build the same map ---- */
+      var flat = buildItem(it, page, false);
+      ok('mindmap: a static build draws the map with nothing live on it',
+        flat.querySelectorAll('.mmnode').length ===
+          outer.querySelectorAll('.mmnode').length &&
+        !flat.querySelector('.mmbar,.mmedit,.rot,.rs'));
+      ok('mindmap: and carries no NaN into the file it is written to',
+        !/NaN|undefined/.test(flat.innerHTML));
+
+      /* ---- a fresh seed is fresh ---- */
+      var s1 = mpBuildSeed('flow'), s2 = mpBuildSeed('flow');
+      ok('mindmap: two seeds of one kind share no ids',
+        s1.every(function (n) { return !s2.some(function (m) { return m.id === n.id; }); }));
+
+      page.items = keep.slice();
+      MP_SEL.clear();
+      await render();
     });
 
     ok('probe finished', true);

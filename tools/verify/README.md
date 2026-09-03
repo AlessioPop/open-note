@@ -5,7 +5,7 @@ two of these because the app has two lives:
 
 | | Drives | Covers |
 | --- | --- | --- |
-| `run.sh` | headless Firefox | the app itself — every feature, 2355 assertions |
+| `run.sh` | headless Firefox | the app itself — every feature, 2398 assertions |
 | `desktop.sh` | the Electron shell | what only exists once there is a window |
 
 ```bash
@@ -15,6 +15,33 @@ tools/verify/run.sh /some/copy   # or any other copy of it
 tools/verify/desktop.sh          # needs `npm install` first
 ```
 
+There are two more that answer a different question — not *does it work* but
+*how fast is it, and is it still the same picture*. Both drive the same headless
+Firefox as `run.sh` and both take a project directory, so a change can be timed
+and compared against a copy of the tree from before it:
+
+```bash
+tools/verify/globebench.sh                   # time the live globe's canvas
+tools/verify/globeshot.sh                    # photograph it at ten views
+OUT=/tmp/before tools/verify/globeshot.sh /some/copy
+OUT=/tmp/after  tools/verify/globeshot.sh
+python3 tools/verify/globeshot.py diff /tmp/before /tmp/after
+```
+
+`globebench.sh` reports a median and a **p95** per layer set, and the marginal
+cost of every layer measured by running the whole paint without it — timing the
+stages of one frame from the inside does not work, because canvas work is
+queued and each stage gets charged for flushing the one before it. The p95 is
+the number to read: the frame that stops while the other fifty-nine are fine is
+what a hand feels.
+
+`globeshot.py diff` compares **premultiplied** pixels, which is the only
+comparison that means anything here: a PNG keeps colour and alpha apart, so a
+pixel at the antialiased rim of the globe can store a wildly different colour
+for the same visible result. A body of pixels off by more than one part in 255
+means a shape has moved; a spread of them off by exactly one means a gradient
+was composited in two passes instead of one, which is what caching it costs.
+
 Both print the same pass/fail report. `desktop.sh` also **exits non-zero** on a
 failure, because CI gates the release builds on it.
 
@@ -22,12 +49,12 @@ failure, because CI gates the release builds on it.
 Electron is Node; it still verifies by running the real app and asking it
 questions, not by loading modules.
 
-It prints a pass/fail count and every failure. 2355 assertions, and they should
+It prints a pass/fail count and every failure. 2398 assertions, and they should
 all pass — if one doesn't, that is a real regression.
 
 ## What it covers
 
-- nothing throws while the 90 script files load, in order;
+- nothing throws while the 92 script files load, in order;
 - the app boots, opens a note and draws its sheet — one sheet, 1980 × 1320,
   four rails, and no page furniture of any kind;
 - every entry in the add menu adds the type it claims to;

@@ -56,6 +56,18 @@ Select a **Logic circuit** and a larger, wheel-scrollable side rail opens into *
 
 Nothing is a picture of a gate: a component is stored as `{gate:"nand"}` and drawn from shared SVG primitives, so NAND really is AND plus the one inversion bubble every inverting gate wears. Components sit above their leads; their paper fill is slightly translucent, so a wire passing underneath remains faintly traceable without obscuring the symbol. Each symbol's own port stubs stop exactly at its outline, keeping the interior clean. Wire a combinational loop and it says so instead of hanging. **Tidy** lays the contained circuit out by signal flow with clean orthogonal leads.
 
+### Nine ways to lay out one thought
+
+One tile on the **Write** shelf, and nine kinds of map behind it: **mind map, circle map, bubble map, double bubble map, tree map, brace map, flow map, multi-flow map** and **bridge map**. Write the thoughts once and change your mind about which shape they want to be — the map springs from one arrangement to the other and nothing is retyped.
+
+![Four thinking maps on one sheet](docs/img/maps.png)
+
+A map is stored as what it means: a flat list of thoughts, each naming its parent, and **not one word about where a box sits**. Every position is worked out at the moment of drawing, which is why `kind` can be a single word on the record, why a print and an exported `.html` are the screen exactly, and why undo restores a map rather than a picture of one. A box you drag remembers an *offset* from wherever its kind would have put it, so it survives a change of kind and `⇥ Tidy` throws it away.
+
+Everything the map offers comes off a bar that appears where you clicked: click a box for its own bar — add, rename, colour, shape, fold, duplicate, delete — click the paper for the map's: the gallery of nine, the design panel, tidy and fit. Both are one registry of actions with a `when()` each, and a kind is one `defineMindMapKind()` block of a seed, a `place()` and a `draw()` — so a tenth map is one block in one file and nothing else in the app changes.
+
+The whole map is a single `<svg>`, and the writing is measured, wrapped and boxed before a glyph is drawn, so a box always fits what is in it and the wrapping is identical on screen, on paper and in an export. The card is a fixed width and **as tall as the map needs** — a wide flow map is a wide short card, a deep tree a tall one. Nothing moves without a spring: a new box grows out of its parent, a deleted one shrinks away, and the leads bend while their boxes are still travelling.
+
 ### And the rest
 
 **Library** — an Obsidian-style file explorer with nested folders, contextual right-click actions, canvas notes, editable Markdown files, search, drag-in/out organisation and imports for PDFs, spreadsheets, FITS and ordinary files. Markdown keeps its plain source while gaining a formatting bar, nested smart lists and tasks, keyboard shortcuts, a document that recompiles as you type, live equation help and the canvas's syntax-coloured code cells. **Dashboard** — one screen for the library: a month you can walk back through, the files you were last in, a year of your working days as a GitHub-style heat map drawn from a record the app keeps itself, and a force-directed graph of every `[[link]]` between your files that you can drag, zoom and click through. **Linked notes** — `[[double brackets]]` join Markdown files and canvases to each other, with a completion list as you type, a link to a note you have not written yet that offers to start it, and a rename that carries every mention of it along. **Write** — text in five styles, sticky notes, checklists, a terminal-style code cell syntax-coloured for twelve languages, flip cards in eight looks that take any widget off the palette with a right-click, keep a record of every run, and go to the desk as a window of their own that outlives the app. **Media** — pictures, video, `.obj` models in their own little window, `.pptx` decks that draw themselves as SVG, file attachments and the folders they file into. **Shapes** — five wireframe solids to draw over. **Over the top of all of it** — a stylus, layers, string tied between anything and anything, and a toolbar selection mode that drags a rectangle around several things so they move or delete as one on a mouse or touchscreen.
@@ -112,7 +124,7 @@ js/lib/           algorithms that owe nothing to this app — latex, pptx, workb
 js/data/          tables the lib files read — the nuclides, the elements. Data, never code
 fonts/            the four families, carried locally so nothing needs the network
 desktop/          the Electron shell — main process and icon; wraps the app, never part of it
-tools/verify/     headless-Firefox verification harness — 2355 assertions
+tools/verify/     headless-Firefox verification harness — 2398 assertions
 tools/shots/      rebuilds the pictures above from the real app
 docs/             manual, architecture, and those pictures
 ```
@@ -126,7 +138,7 @@ Only `index.html`, `js/`, `fonts/` and `desktop/` are packaged into a build — 
 There is no test runner — the app *is* the test.
 
 ```
-tools/verify/run.sh        # 2355 assertions, in headless Firefox
+tools/verify/run.sh        # 2398 assertions, in headless Firefox
 tools/verify/desktop.sh    # 47 more, driving the real Electron shell
 tools/shots/run.sh         # rebuild the pictures in this README
 ```

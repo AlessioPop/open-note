@@ -6,6 +6,11 @@
 tools/verify/prof/
 tools/verify/run/
 tools/verify/run-desktop/
+tools/verify/bench/
+tools/verify/benchprof/
+tools/verify/shots/
+tools/verify/shotprof/
+tools/verify/__pycache__/
 tools/shots/run/
 
 # Generated MCP config — contains absolute paths to this machine

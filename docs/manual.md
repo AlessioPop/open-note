@@ -81,6 +81,7 @@ Things scale to the paper they are on: a sticky note is the size it would be on 
 | Code | A terminal-style code cell, syntax-coloured the way VS Code does it — display only, nothing runs. Python by default, or JavaScript, TypeScript, C, C++, C#, Rust, Go, Java, GDScript, Shell and SQL from the picker in its title bar, which also holds the copy button. ◑ cycles six colour schemes — Dark, Light, Monokai, Dracula, Solarized, and a Theme scheme whose terminal is mixed from the note's own ink and paper, going deeper than the paper when the paper itself is dark. Double-click to type: it recolours under the caret as you go, Tab indents and Shift+Tab un-indents (over a selection, every line at once), Enter keeps the line's indent, brackets and quotes close themselves the way the editor's do (type the close and it steps over, backspace an empty pair and both go, Enter between braces opens the block out), and pasting strips any formatting. ⏎ wraps long lines or lets them run; a cell past ~16 lines shows a band of itself with its own scrollbar, and ⊞ shows the whole thing. Drop one on another icon and it files into a folder, wearing a little terminal with its language on the tag — click it in there and it opens highlighted, with copy in the title bar. The same cell turns up inside a sentence wherever you write ```` ```fenced ```` code — see **Code in a sentence** |
 | Table | A spreadsheet on the page — cells, four styles, `=SUM(A2:B4)` formulas, sorting, a live readout of what you have picked, and drag it onto a coordinate system to plot it; see **Tables** below |
 | Spreadsheet | The same table, read straight out of an `.xlsx`, `.ods` or `.csv` — or just drop the file on the page. A long one shows a band of itself and folds down to an icon; see **Tables** below |
+| Mind map | Nine kinds of thinking map behind one tile — mind, circle, bubble, double bubble, tree, brace, flow, multi-flow and bridge. Write the thoughts once and change which shape they are in; every option comes off a bar that appears where you click. See **Thinking maps** below |
 | Sticky | Sticky notes in 5 colours, with a folded corner — as wide as what is written on them; see **How wide a writing box is** below |
 | Flip cards | A deck of index cards in eight looks — question on the front, answer on the back, laid out how you like with whole widgets on them, marked ✓ or ✗ as you go, with a record of every run, and exportable as a file that studies on its own |
 | Coordinate system | Axes you can drag around, with functions, vectors and a table's points drawn in them — see **Maths** below |
@@ -107,6 +108,87 @@ Things scale to the paper they are on: a sticky note is the size it would be on 
 Every item: drag to move — **it leans into the push and keeps your momentum when you let go**, sliding a little way like paper on a desk (grab it mid-slide and it's simply yours again) — corner dot to resize, **drag the red handle above an item to rotate it** (hold Shift for 15° snapping), ⤒ / ⤓ to send it to the front or the back, ✕ or `Delete` to remove.
 
 For several things, press **□ Select** in the main toolbar and drag a rectangle around them, like selecting desktop icons. The mode finishes on release; drag any selected member to move the whole arrangement, use **✕ Delete** in the same toolbar (or the keyboard's `Delete`) to remove it, and press `Esc` to clear the selection. `Ctrl`/`Cmd`+`C` copies the whole set and `Ctrl`/`Cmd`+`V` pastes it into this or another note with its scale, spacing, stacking order, internal strings/wires and pictures intact. The gesture is the same with a mouse, pen or finger.
+
+## Thinking maps
+
+One tile on the **Write** shelf — **Mind map** — and nine kinds of map behind
+it. Write your thoughts once, then change which shape they are in; the boxes
+spring to their new places and nothing is retyped.
+
+| Kind | What it is for |
+|---|---|
+| **Mind map** | A central idea with branches left and right of it, each limb keeping its own colour. Any depth |
+| **Circle map** | The thing in the middle, everything you know about it round it, and a dashed *frame of reference* outside that for how you know it |
+| **Bubble map** | Describing — the thing itself, and bubbles of the words that describe it |
+| **Double bubble map** | Comparing two things — what they share down the middle, what only one of them has out on its own side |
+| **Tree map** | Classifying — a heading, its groups, and what is in each group |
+| **Brace map** | Taking a physical whole apart — the thing, its parts, and their parts, joined by braces |
+| **Flow map** | Sequencing — stages left to right with arrows, sub-steps hanging under them, wrapping onto another row when there are many |
+| **Multi-flow map** | Cause and effect — the event in the middle, causes arrowed in from the left, effects arrowed out to the right |
+| **Bridge map** | Analogies — one relating factor carried across pair after pair along a bridge |
+
+### Writing one
+
+Double-click any box to type in it — the box grows around the words as you go,
+and the writing wraps to fit rather than spilling out. `Enter` finishes,
+`Shift`+`Enter` breaks a line, `Esc` leaves it.
+
+With a box picked, just start typing and the words go into it, replacing what
+was there. `Tab` puts a new thought underneath it, `Enter` puts one right after
+it (on the middle of the map, `Enter` writes in it instead), `F2` renames it,
+`Delete` removes it and everything under it and picks the thought it hung off,
+and `Esc` lets it go.
+
+### The bars
+
+Everything a map can do comes off a bar that appears where you clicked.
+
+**Click a box** and its own bar comes up over it: the kind's own add buttons
+(*Branch*, *Stage*, *Cause*, *Shared*… — whatever this kind of map has), then
+rename, a thought underneath, its colour, its shape, fold, duplicate, put it
+back where the map wants it, and delete.
+
+**Click the paper** under the boxes and the map's bar comes up there instead: a
+new thought, the gallery of nine kinds, the design panel, tidy, and centre the
+map again.
+
+The map's own toolbar — the one that appears above it when it is selected —
+holds ✥ to drag the whole card, ◈ for the gallery, ✎ for the design panel, ＋
+for a new thought, the zoom, and ▣ to take the card away and leave the map on
+the paper.
+
+### Moving things about
+
+Drag a box and it goes where you put it — and stays there: the map is fitted to
+where its kind put things, so moving a box never shifts or shrinks everything
+else. What is remembered is not the place but the *offset* from where its kind
+would have put it, so the box keeps your arrangement when you change the map's
+kind. **⇥ Tidy** on the map bar throws every offset away and puts everything
+back.
+
+Drag the empty paper to pan the map inside its card, wheel over it to zoom about
+the pointer, and double-click the paper to centre it again. Fold a box with ⌄ to
+hide everything hanging off it — a little chip on the box says how many are
+folded away — and click it again to bring them back.
+
+### How it looks
+
+**✎ Design** opens the panel: six palettes (Ink, Graphite, Sunset, Ocean,
+Meadow, Berry), four ways of drawing a box (Soft, Solid, Outline, Glass), three
+kinds of line (Curved, Straight, Squared), spacing, type size, the drop shadow,
+and the card the map is drawn on. A single box can be given its own colour or
+shape from its bar; leave it on **auto** and it takes its branch's colour, so a
+whole limb reads as one thought.
+
+The card is as wide as you drag it and **as tall as the map needs** — a wide
+flow map is a wide short card, a deep tree a tall one.
+
+### Changing kind
+
+**◈** opens the gallery of all nine, each with a little drawing of itself.
+Picking one keeps every thought you have written: a kind that only draws one
+level down — circle, multi-flow, double bubble — hangs anything deeper off its
+parent on a hairline rather than losing it, so you can always go back.
 
 ## Tables
 
@@ -669,7 +751,7 @@ Everything here is arithmetic and SVG — no library, no server, nothing downloa
 
 **Select it and it takes the hand.** Drag to move about the world; let go mid-drag and it carries on and slows down, the way a sheet of paper pushed across a desk does. Push it past the edge of the world and it gives a little, then springs back. The wheel zooms about the pointer — by an amount rather than a step, so a trackpad creeps and a mouse notch is a notch — and two fingers pinch. `Ctrl`+wheel is still the desk's own zoom, so the map never eats it.
 
-**Double-click hands the map back to the notebook** — then it drags, rotates, resizes and files like anything else on the sheet, and double-clicking again steps back into it. `✥` in its toolbar does the same thing from a button.
+**Double-click hands the map back to the notebook** — then it drags, rotates, resizes and files like anything else on the sheet, and double-clicking again steps back into it.
 
 ### Tap a country
 
@@ -681,7 +763,7 @@ A country smaller than the pen wears **a small ring** instead, which keeps its s
 
 ### …or a whole continent
 
-**`▣` changes what a tap means.** With it on, a tap picks the *continent* the country under it is in: the whole of Africa shades at once and **AFRICA** is written across it, in the same tracked capitals and by the same rule — the name stays inside the continent's own coast, though it is free to cross the borders inside it, which is exactly what an atlas does. Everything else about a picked place works as it did, because nothing downstream knows the difference: the hold, the drag off onto the page, `⇱`, and what is remembered with the note.
+**`▣` changes what a tap means.** With it on, a tap picks the *continent* the country under it is in: the whole of Africa shades at once and **AFRICA** is written across it, in the same tracked capitals and by the same rule — the name stays inside the continent's own coast, though it is free to cross the borders inside it, which is exactly what an atlas does. Everything else about a picked place works as it did, because nothing downstream knows the difference: the hold, the drag off onto the page, and what is remembered with the note.
 
 Turning it on widens what is already picked — France becomes Europe — and turning it off puts a picked continent back down, since no tap could mean it any more.
 
@@ -689,11 +771,11 @@ The seven are Natural Earth's own, with two calls this app makes for the sake of
 
 ### Find one
 
-**`⌕` finds a country or a continent by name.** Type and a list comes up; pick one and the map **walks** there and fits it, with a shaded pulse for a moment so your eye finds it. It answers to what people actually write as well as to the map's own spelling: `USA`, `UK`, `Ivory Coast`, `Holland`, `Burma`, `East Timor`, `Bosnia`, `Cote d'Ivoire` without the circumflex. Open the box with nothing typed and the seven continents are the first thing in it. Asking for one by name also sets the map to picking continents, and asking for a country sets it back — otherwise the thing you had just asked for could not be dragged off, because a press on it would have meant something else.
+**`⌕` finds a country or a continent by name.** It opens a glass field out of its own button, with the seven continents already listed. Type and the list follows; pick one and the map **walks** there and fits it, with a shaded pulse for a moment so your eye finds it. It answers to what people actually write as well as to the map's own spelling: `USA`, `UK`, `Ivory Coast`, `Holland`, `Burma`, `East Timor`, `Bosnia`, `Cote d'Ivoire` without the circumflex. Open the box with nothing typed and the seven continents are the first thing in it. Asking for one by name also sets the map to picking continents, and asking for a country sets it back — otherwise the thing you had just asked for could not be dragged off, because a press on it would have meant something else.
 
 ### Take one off the map
 
-**Hold a country and it comes off the map.** Press on a country and keep still for a third of a second: the plop is the map letting go, and from then on the country follows the hand as a shape while **the map itself does not move at all**. Let go on the paper and it lands there as a **Country** card — the country on its own, framed on itself, with its name across it and its capital marked. Bring it back over the map before you let go and nothing happened. Move before the hold is up and it is an ordinary pan, so the two gestures never fight over the same drag. `⇱` in the toolbar does the same for the country already picked, and **Country** on the Science shelf makes one from scratch.
+**Hold a country and it comes off the map.** Press on a country and keep still for a third of a second: the plop is the map letting go, and from then on the country follows the hand as a shape while **the map itself does not move at all**. Let go on the paper and it lands there as a **Country** card — the country on its own, framed on itself, with its name across it and its capital marked. Bring it back over the map before you let go and nothing happened. Move before the hold is up and it is an ordinary pan, so the two gestures never fight over the same drag. **Country** on the Science shelf makes one from scratch.
 
 **And the country that is already picked needs no hold at all.** Tap one to pick it — it shades and takes its name — and from then on a drag off *that* country pulls it straight out. The hold is how you say which country; one you have already said needs no saying twice.
 
@@ -735,15 +817,17 @@ If you bring a big country up to a much smaller one — France to Luxembourg —
 
 **The capitals come up to meet you, and then the cities.** At arm's length only the largest capitals are named; going in offers more, and past a step and a bit the five hundred largest cities that are not capitals begin to appear behind them. A name is only set if its whole box is clear of every name already down — the picked country's first, then the capitals biggest-city-first, then the cities — so the map fills up as there is room for it rather than all at once, a city never takes a capital's place, and nothing is ever half-cut by the edge.
 
-**◍ Layers** opens a small glass panel on the map. What is on is remembered with the note:
+**◍ Layers** opens a menu of switches out of its button — Land, Water, Places — and the menu goes the moment you touch anything else: the map, the page, another button, the wheel, `Esc`. Flip a switch and the map redraws under the open menu. What is on is remembered with the note:
 
 | | |
 |---|---|
-| **Graticule** | meridians and parallels every 30° |
+| **Latitude & longitude** | meridians and parallels at a step that follows the zoom — 30° at the whole world, half a degree thirty times in — with the degrees along the left and bottom edges |
 | **Land** | the wash the outlines are filled with |
+| **Countries** | every country in its own tint, no two neighbours alike |
 | **Height** | the land shaded by how high it is — see below |
-| **Lakes** | filled in the sea's own colour |
+| **Lakes** | filled in the sea's own colour, and inked only from a step and a half in — at arm's length a shore round a three-pixel lake is ink for nothing |
 | **Rivers** | 254 major rivers |
+| **Seas & oceans** | the oceans named at the whole world, the seas from a step in, the gulfs and straits from two; the names lay out first, so a capital steps aside for the water |
 | **Borders** | the lines two countries share |
 | **Coastline** | the ink round the land |
 | **Capitals** | 199 of them |
@@ -753,11 +837,18 @@ If you bring a big country up to a much smaller one — France to Luxembourg —
 
 **Height** shades the land by how high it is: green lowland through yellow and brown to grey rock and snow, the hypsometric tints an atlas has used for a century. It is a real field of numbers — 1080 × 540 cells of ETOPO20 — but it is **drawn rather than photographed**. The contours where the land crosses each of nine heights are traced and filled, so what you get is paths like everything else on the map: crisp at any magnification instead of a picture going soft as you go in, and a few tens of kilobytes in an export instead of four hundred. The sea is painted back over the lowest band, so the tints stop exactly where the coastline does. At arm's length five of the nine are drawn rather than all nine, because nine tints over a world four hundred pixels wide is nine bands nobody can tell apart — but the five are five *of* the nine, so going in **adds** a contour between two already there and never repaints ground a different colour. It is off until you ask for it.
 
-The rest of the toolbar:
+The remaining map options stay deliberately compact:
 
-- **◎ Projection** switches between **Mercator**, which is what a new map is, and **Flat** — the whole world, twice as wide as it is tall. The place you were looking at stays where it was.
-- **◈ Outlines** draws them round or straight off the data. Round is the default: the outline is run through the middle of every point rather than between them, which is what lets one coarse world stand up to being magnified thirty times without turning into a polygon.
-- **▭** sets how tall the map is, and **⌂** walks back out to the whole world.
+- **◎ Projection** is a menu with a tick on the current one, and the button itself wears the answer: **Mercator**, which is what a new map is, **Flat** — the whole world, twice as wide as it is tall — **Azimuthal equidistant**, the polar disc on the UN flag — the North Pole in the middle, Greenwich straight down, distance and direction from the pole true, and Antarctica the ring of ice round the edge — and **Globe**. The place you were looking at stays where it was.
+- **A round world is a disc on the page.** Choose the globe or the polar disc and the widget itself is round: no paper behind it, no box round it, the selection ring follows the disc, and it casts the shadow a ball casts. Going in, the sphere grows past the widget and you see the part of it inside the same circle — a porthole onto the surface.
+- **◐ Style** is the map's colours — the sea, the land, the lines, the names and the country tints — as a menu with a swatch each. **Paper** follows the note's own theme; **Atlas** is cream land and a pale sea with sepia lines; **Political** tints every country and turns the **Countries** layer on for you; **Night** is a dark sea and slate land; **Blueprint** is white lines on deep blue; **Sepia** is parchment. A style is remembered with the note and travels with a print or an export.
+- **Countries**, in the Layers menu, fills every country with one of six tints so that no two that share a border share a colour — decided from the borders themselves, not by hand — and each style says which six.
+- **⌂ Reset** walks the map back out to the whole world.
+- **▣** says which grain a tap picks — **Country** or **Continent** — and is lit when it is the wider one.
+
+The bar is a strip of glass over the map: a line icon and its name for each tool, and the search, the layers and the projection each open out of their own button and fold back into it.
+
+World outlines use the smooth default: each outline runs through the middle of every point rather than between them, which is what lets one coarse world stand up to being magnified thirty times without turning into a polygon. Zooming back out returns to the whole world, while moving and deleting remain available through the notebook's normal item gestures and selection controls instead of being repeated in the map bar.
 
 **It draws only what you are looking at.** The map keeps four copies of the world at four levels of detail and uses the one that matches the zoom, and it builds only the window you are over rather than the whole planet — both stepped, so a pan crosses a boundary a few times in a gesture rather than sixty times a second, and between crossings a frame is still one transform and nothing else. At thirty-two times in, that is about a fortieth of the ink it would otherwise be laying down, which is the difference between a map you can throw and one that stutters.
 
