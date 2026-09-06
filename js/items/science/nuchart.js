@@ -55,12 +55,12 @@ const NU_DIV = [[176, 58, 46], [216, 132, 96], [238, 232, 214], [110, 160, 200],
    the squares and the labels can never drift apart. */
 const NU_VIEWS = {
   decay: {
-    label: 'Decay', title: 'how it comes apart',
+    label: 'Decay', title: 'Decay mode',
     bin: e => e.cls,
     keys: NU_CLS, col: k => NU_C[k], txt: k => NU_CLS_TXT[k], wide: true
   },
   half: {
-    label: 'T½', title: 'how long it lasts',
+    label: 'Half-life', title: 'Half-life',
     bin: e => {
       if(e.t === Infinity) return 'st';
       if(e.t == null) return 'u';
@@ -72,14 +72,14 @@ const NU_VIEWS = {
     txt: k => k === 'st' ? 'stable' : k === 'u' ? 'unknown' : NU_HLB[+k.slice(1)].l
   },
   ba: {
-    label: 'B/A', title: 'binding energy per nucleon — the iron peak',
+    label: 'B/A', title: 'Binding energy per nucleon',
     bin: e => { const b = nucBA(e); return b == null ? 'u' : 'b' + Math.min(17, Math.max(0, Math.floor(b / 500))); },
     keys: Array.from({ length: 18 }, (v, i) => 'b' + i).concat(['u']),
     col: k => k === 'u' ? NU_C.u : nuRamp(NU_SEQ, (+k.slice(1)) / 17),
     txt: k => k === 'u' ? 'unknown' : (+k.slice(1)) % 4 === 0 ? ((+k.slice(1)) / 2) + ' MeV' : ''
   },
   sn: {
-    label: 'Sn', title: 'what it costs to pull one neutron off — where this goes to nothing is the drip line',
+    label: 'Sₙ', title: 'Neutron separation energy',
     bin: e => { const q = nucQ(e); if(q.sn == null) return 'u';
       return 's' + clamp(Math.round(q.sn / 2000) + 1, 0, 10); },
     keys: Array.from({ length: 11 }, (v, i) => 's' + i).concat(['u']),
@@ -101,7 +101,7 @@ function nuWin(it){
   const nw = clamp(it.zw || NU_NW, 5, NU_NW * 1.2), zh = nw / NU_ASPECT;
   const n0 = clamp((it.cn == null ? NU_NW / 2 : it.cn) - nw / 2, -nw * .35, NU_NW - nw * .65);
   const z0 = clamp((it.cz == null ? NU_ZH / 2 : it.cz) - zh / 2, -zh * .35, NU_ZH - zh * .65);
-  const mx = nw * (nw <= 34 ? .078 : .05), mb = nw * .034;   /* room down the side and along the foot for the counts — wider once the side carries the elements' symbols as well as their number */
+  const mx = nw * .078, mb = nw * .04; // Fixed proportions keep the card and pointer anchor steady at every zoom.
   return { n0, z0, nw, zh, mx, mb, vb: (n0 - mx) + ' ' + (-(z0 + zh)) + ' ' + (nw + mx) + ' ' + (zh + mb),
     w: nw + mx, h: zh + mb };
 }
@@ -149,7 +149,7 @@ function nuGrid(it, w){
   /* the weight is in user units and follows the window, so a rule is the same
      hairline on the screen whether the whole chart is in view or twelve
      nuclides are */
-  const sw = nuR(w.nw * .0022), dash = nuR(w.nw * .012) + ' ' + nuR(w.nw * .009);
+  const sw = nuR(w.nw * .0008), dash = nuR(w.nw * .012) + ' ' + nuR(w.nw * .009);
   let s = '<g class="nugrid" stroke-width="' + sw + '">';
   const d = Math.min(NU_NW, NU_ZH);
   s += '<path class="nudiag" stroke-dasharray="' + dash + '" d="M0 0L' + d + ' ' + (-d) + '"/>';
@@ -189,9 +189,9 @@ function nuAxes(it, w){
   if(w.nw > 60){
     const halo = ' stroke-width="' + nuR(fs * .5) + '" font-size="' + nuR(fs * 1.35) + '"';
     s += '<text class="nuaxn" x="' + nuR(w.n0 + w.nw - 1.5) + '" y="' + nuR(-(w.z0 + w.zh * .13)) +
-      '"' + halo + '>neutrons N →</text>';
+      '"' + halo + '>Neutrons N →</text>';
     s += '<text class="nuaxz" x="' + nuR(w.n0 + w.nw * .06) + '" y="' + nuR(-(w.z0 + w.zh * .9)) +
-      '"' + halo + '>↑ protons Z</text>';
+      '"' + halo + '>↑ Protons Z</text>';
   }
   return s + '</g>';
 }
@@ -203,7 +203,11 @@ function nuAxes(it, w){
    this is a question about the window and not about the screen. */
 function nuInk(hex){
   const v = parseInt(hex.slice(1), 16), r = v >> 16 & 255, g = v >> 8 & 255, b = v & 255;
-  return (r * .299 + g * .587 + b * .114) > 150 ? '#181b21' : '#f4f5f7';
+  const linear = c => { c /= 255; return c <= .04045 ? c / 12.92 : Math.pow((c + .055) / 1.055, 2.4); };
+  const luminance = .2126 * linear(r) + .7152 * linear(g) + .0722 * linear(b);
+  // Choose the stronger contrast, including orange and mid-blue cells where
+  // the old brightness threshold incorrectly chose pale text.
+  return (luminance + .05) / .0609 >= .9623 / (luminance + .05) ? '#181b21' : '#f4f5f7';
 }
 function nuLabels(it, w){
   if(w.nw > 34) return '';
@@ -221,9 +225,9 @@ function nuLabels(it, w){
        with metastable states that anyone came here to read. */
     const y1 = gy - (br && !k ? .2 : hl ? (k ? .1 : .11) : 0);
     s += '<text class="nun" x="' + nuR(cx) + '" y="' + nuR(y1) + '" fill="' + ink +
-      '" font-size="' + nuR(k ? .2 : .28) + '">' + g.sym + ' ' + g.a + '</text>';
+      '" font-size="' + nuR(k ? .18 : .25) + '">' + g.sym + ' ' + g.a + '</text>';
     if(hl) s += '<text class="nun t" x="' + nuR(cx) + '" y="' + nuR(y1 + (k ? .21 : br ? .21 : .24)) +
-      '" fill="' + ink + '" font-size="' + nuR(k ? .155 : .2) + '">' + esc(nucHl(g)) + '</text>';
+      '" fill="' + ink + '" font-size="' + nuR(k ? .145 : .18) + '">' + esc(nucHl(g)) + '</text>';
     if(br && !k) s += '<text class="nun t" x="' + nuR(cx) + '" y="' + nuR(y1 + .42) +
       '" fill="' + ink + '" font-size=".17">' + esc(g.dec[0] ? nucBranchTxt(g.dec[0]) : (g.ab != null ? (+g.ab) + ' %' : '')) + '</text>';
     if(deep) for(let i = 1; i <= k; i++){
@@ -296,7 +300,7 @@ function nuKey(it){
   const v = nuView(it);
   return '<div class="nukey' + (v.wide ? '' : ' ramp') + '">' + v.keys.map(k =>
     '<span style="--kc:' + v.col(k) + '"><i></i>' + esc(v.txt(k) || '') + '</span>').join('') +
-    '<em>' + esc(v.title) + '</em></div>';
+    '</div>';
 }
 
 /* ---- the foot ----
@@ -306,19 +310,19 @@ function nuKey(it){
    excesses of this nuclide and its neighbours, subtracted here. */
 function nuFacts(it){
   const e = nuSel(it);
-  if(!e) return '<div class="nunone">Press a square. Wheel to zoom, drag to move about.</div>';
+  if(!e) return '<div class="nunone">Select a nucleus to explore its properties.</div>';
   const g = e.gs ? e : e.parent, el = CHEM_EL[e.z], q = nucQ(e), ba = nucBA(e);
-  const row = (l, v) => '<span class="nurow"><i>' + l + '</i>' + v + '</span>';
-  const bit = (l, v) => v == null ? '' : '<b>' + l + '</b> ' + v;
+  const row = (l, v) => '<div class="nurow"><i>' + l + '</i><div class="nuvalue">' + v + '</div></div>';
+  const bit = (l, v) => v == null ? '' : '<span class="nuenergy"><b>' + l + '</b><span>' + v + '</span></span>';
   let s = '<div class="nutop"><b class="nubig" data-c="' + e.cls + '">' + nucName(e) + '</b>' +
     '<span class="nutit">' + esc(el ? el.name + '-' + e.a + (e.tag || '') : 'neutron') +
     '<small>Z ' + e.z + ' · N ' + e.n + ' · A ' + e.a + ' · ' + esc(e.gs ? NUC_CLASS_NAME[e.cls] : 'metastable, ' + NUC_CLASS_NAME[e.cls]) + '</small></span></div>';
-  s += row('half-life', '<u>' + esc(nucHlLong(e)) + '</u>' +
-    (e.jp ? ' · <i>Jπ</i> ' + esc(e.jp) : '') +
-    (e.exc ? ' · <i>at</i> ' + nucEn(e.exc) + ' <i>above the ground state</i>' : '') +
-    (e.ab != null ? ' · <i>' + (+e.ab) + ' % of natural ' + esc(el ? el.name.toLowerCase() : '') + '</i>' : '') +
-    (e.yr ? ' · <i>found</i> ' + e.yr : ''));
-  if(e.dec.length) s += row('decays by', e.dec.map(d => {
+  s += '<div class="numetrics"><div><small>Half-life</small><strong>' + esc(nucHlLong(e)) + '</strong></div>' +
+    '<div><small>Spin / parity</small><strong>' + esc(e.jp || 'Unknown') + '</strong></div>' +
+    '<div><small>Discovered</small><strong>' + (e.yr || '—') + '</strong></div></div>';
+  if(e.exc) s += row('Excitation', nucEn(e.exc) + ' above the ground state');
+  if(e.ab != null) s += '<p class="nuabundance">' + (+e.ab) + ' % of natural ' + esc(el ? el.name.toLowerCase() : '') + '</p>';
+  if(e.dec.length) s += row('Decay', e.dec.map(d => {
     const t = nucDaughter(e, d.m);
     return '<span class="nubr" data-c="' + nucClass({ t: null, dec: [d] }) + '">' + esc(nucBranchTxt(d)) +
       (t && t.e ? '<em>→ ' + nucName(t.e) + '</em>' : '') + '</span>';
@@ -327,14 +331,14 @@ function nuFacts(it){
     bit('Sn', nucEn(q.sn)), bit('Sp', nucEn(q.sp)),
     bit('B/A', ba == null ? null : (ba / 1000).toFixed(3) + ' MeV'),
     bit('Δ', e.me == null ? null : nucEn(e.me) + (e.est ? '#' : ''))].filter(Boolean);
-  s += row('energies', en.join(' · '));
+  s += row('Energy', '<div class="nuenergies">' + en.join('') + '</div>');
   const iso = (g.iso || []).filter(i => i !== e);
-  if(iso.length) s += row('also', iso.map(i => '<span class="nuiso" data-k="' + nuSelKey(i) + '">' +
+  if(iso.length || e.tag) s += row('States', iso.map(i => '<span class="nuiso" role="button" tabindex="0" data-k="' + nuSelKey(i) + '">' +
     nucName(i) + '<em>' + esc(nucHl(i)) + '</em></span>').join('') +
-    (e.tag ? '<span class="nuiso" data-k="' + nuSelKey(g) + '">' + nucName(g) + '<em>' + esc(nucHl(g)) + '</em></span>' : ''));
+    (e.tag ? '<span class="nuiso" role="button" tabindex="0" data-k="' + nuSelKey(g) + '">' + nucName(g) + '<em>' + esc(nucHl(g)) + '</em></span>' : ''));
   if(it.chain){
     const ch = nucChain(e);
-    s += row('chain', ch.length
+    s += row('Chain', ch.length
       ? nucName(ch[0].from) + ch.map(st => ' <em>' + esc(nucModeTxt(st.mode)) + '</em> ' + nucName(st.to)).join('') +
         ' · <i>' + ch.length + (ch.length === 1 ? ' step' : ' steps') +
         (ch[ch.length - 1].to.t === Infinity ? ', stable' : '') + '</i>'
@@ -347,7 +351,7 @@ function nuFacts(it){
    The squares and the magic-number rules are drawn once and never touched
    again; only the layer over them — the writing, the arrows, the counts — is
    rebuilt as the window moves, and moving the window is one attribute. */
-const nuDyn = (it, w, cid) => '<g clip-path="url(#' + cid + ')">' + nuGrid(it, w) + nuLabels(it, w) +
+const nuDyn = (it, w, cid) => '<g clip-path="url(#' + cid + ')">' + nuLabels(it, w) +
   nuMarks(it, w) + '</g>' + nuAxes(it, w);
 /* The margins are paper, and the squares must not run over them — the picture
    is 5646 squares wide whatever the window is, so it is clipped to the plotting
@@ -361,7 +365,8 @@ function nuSVG(it){
   const w = nuWin(it), cid = 'nuclip' + (++NU_UID) + '_';
   return '<svg class="nusvg" viewBox="' + w.vb + '" preserveAspectRatio="xMidYMid meet" style="aspect-ratio:' +
     nuR(w.w) + '/' + nuR(w.h) + '"><defs><clipPath id="' + cid + '">' + nuClipR(w) + '</clipPath></defs>' +
-    '<g class="nuplot" clip-path="url(#' + cid + ')">' + nuCells(it) + '</g>' +
+    '<title>Chart of nuclei. Neutrons on the horizontal axis, protons on the vertical axis.</title>' +
+    '<g class="nuplot" clip-path="url(#' + cid + ')">' + nuGrid(it, w) + nuCells(it) + '</g>' +
     '<g class="nudyn" data-clip="' + cid + '">' + nuDyn(it, w, cid) + '</g></svg>';
 }
 function nuPaint(el, it){
@@ -371,10 +376,23 @@ function nuPaint(el, it){
   svg.style.aspectRatio = nuR(w.w) + '/' + nuR(w.h);
   const clip = svg.querySelector('clipPath');
   if(clip) clip.innerHTML = nuClipR(w);
+  const grid = svg.querySelector('.nugrid');
+  if(grid) grid.outerHTML = nuGrid(it, w);
   const dyn = svg.querySelector('.nudyn');
   if(dyn) dyn.innerHTML = nuDyn(it, w, dyn.dataset.clip);
   const f = el.querySelector('.nufacts');
-  if(f) f.innerHTML = nuFacts(it);
+  const factsKey = it.sel + ':' + !!it.chain;
+  if(f && f.dataset.key !== factsKey){ f.innerHTML = nuFacts(it); f.dataset.key = factsKey; }
+  el.querySelectorAll('[data-nu-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.nuView === (it.view || 'decay'))));
+  el.querySelectorAll('[data-nu-action="chain"]').forEach(b => b.setAttribute('aria-pressed', String(!!it.chain)));
+  const cycle = el.querySelector('[data-nu-toolbar="view"]');
+  if(cycle){ cycle.textContent = nuView(it).label; cycle.title = nuView(it).title; }
+  const chain = el.querySelector('[data-nu-toolbar="chain"]');
+  if(chain){ chain.classList.toggle('on', !!it.chain); chain.setAttribute('aria-pressed', String(!!it.chain)); }
+  const status = el.querySelector('.nuzoom');
+  if(status) status.textContent = (NU_NW / w.nw).toFixed(1) + '×';
+  const viewLabel = el.querySelector('.nuviewlabel');
+  if(viewLabel) viewLabel.textContent = nuView(it).title;
 }
 function nuRecolour(el, it){
   const svg = el.querySelector('.nusvg'), old = svg && svg.querySelector('.nucells');
@@ -435,7 +453,7 @@ const nuHome = (el, it, page) => { it.cn = NU_NW / 2; it.cz = NU_ZH / 2; it.zw =
 function nuHover(el, it, e){
   const h = el.querySelector('.nuhov');
   if(!h) return;
-  if(!e){ h.textContent = ''; return; }
+  if(!e){ h.textContent = 'Select a nucleus · Scroll to zoom · Drag to pan'; return; }
   h.innerHTML = '<b>' + nucName(e) + '</b> ' + esc(nucHl(e)) +
     (e.dec[0] ? ' · ' + esc(nucBranchTxt(e.dec[0])) : '') +
     (e.ab != null ? ' · ' + (+e.ab) + ' %' : '');
@@ -451,7 +469,7 @@ function nuAskEl(){
   if(d) return d;
   d = document.createElement('div');
   d.className = 'nuask glass'; d.id = 'nuask';
-  d.innerHTML = '<input placeholder="a nuclide — U238, Tc-99m, 14C…" spellcheck="false"><div class="nufound"></div>';
+  d.innerHTML = '<input aria-label="Find a nucleus" placeholder="Find a nucleus: U238, Tc-99m…" spellcheck="false"><div class="nufound" aria-live="polite"></div>';
   document.body.appendChild(d);
   d.addEventListener('pointerdown', e => e.stopPropagation());
   const inp = d.querySelector('input'), out = d.querySelector('.nufound');
@@ -523,6 +541,7 @@ function nuDown(ev, el, it, page){
     const dx = e2.clientX - sx, dy = e2.clientY - sy;
     if(!moved && Math.hypot(dx, dy) < 4) return;
     moved = true;
+    svg.classList.add('panning');
     it.cn = cn0 - dx / start.sc; it.cz = cz0 + dy / start.sc;
     if(!raf) raf = requestAnimationFrame(() => { raf = 0; nuPaint(el, it); });
   };
@@ -530,6 +549,7 @@ function nuDown(ev, el, it, page){
     if(e2.pointerId !== pid) return;
     svg.removeEventListener('pointermove', mv);
     svg.removeEventListener('pointerup', up); svg.removeEventListener('pointercancel', up);
+    svg.classList.remove('panning');
     try{ svg.releasePointerCapture(pid); }catch(err){}
     if(!moved && e2.type === 'pointerup'){
       const e = nuPickAt(nuHit(el, it, e2));
@@ -545,8 +565,18 @@ defineItem('nuchart', {
   add: { nuchart: base => ({ ...base, type:'nuchart', w:96, view:'decay', sel:'92:146',
     chain:0, cn:NU_NW / 2, cz:NU_ZH / 2, zw:NU_NW, cap:'' }) },
   sound: 'tape',
-  html: (it, c) => '<figure class="body nuc">' + nuSVG(it) + nuKey(it) +
-    '<div class="nuhov"></div><div class="nufacts">' + nuFacts(it) + '</div><figcaption></figcaption></figure>',
+  html: (it, c) => '<figure class="body nuc"><header class="nuheader"><div><h3>Chart of nuclei</h3>' +
+    '<p>' + NUC_GS.length.toLocaleString('en-US') + ' nuclei <span>· NUBASE2020</span></p></div>' +
+    (c.live ? '<div class="nuviews" role="group" aria-label="Colour nuclei by">' + NU_VKEYS.map(k =>
+      '<button type="button" data-nu-view="' + k + '" aria-pressed="' + (k === (it.view || 'decay')) + '" title="' + NU_VIEWS[k].title + '">' + NU_VIEWS[k].label + '</button>').join('') + '</div>' : '') +
+    '</header><div class="nuchartbox">' + nuSVG(it) + '</div>' +
+    '<div class="nulegend"><div class="nulegendtitle"><b class="nuviewlabel">' + nuView(it).title + '</b><span>Lines indicate closed shells</span></div>' + nuKey(it) + '</div>' +
+    (c.live ? '<div class="nunav"><div class="nuhov">Select a nucleus · Scroll to zoom · Drag to pan</div><div class="nuactions">' +
+      '<button type="button" data-nu-action="find" aria-label="Find a nucleus">Find</button>' +
+      '<button type="button" data-nu-action="chain" aria-pressed="' + !!it.chain + '">Chain</button>' +
+      '<button type="button" data-nu-action="out" aria-label="Zoom out">−</button><span class="nuzoom">' + (NU_NW / nuWin(it).nw).toFixed(1) + '×</span>' +
+      '<button type="button" data-nu-action="in" aria-label="Zoom in">+</button><button type="button" data-nu-action="home">Reset</button></div></div>' : '') +
+    '<div class="nufacts" data-key="' + it.sel + ':' + !!it.chain + '">' + nuFacts(it) + '</div><figcaption></figcaption></figure>',
   after(it, el, page){ select(it.id); },
   tools(mk, it, el, page){
     const vb = mk(nuView(it).label, 'Colour the squares by decay mode, half-life, binding energy per nucleon or neutron separation energy', b => {
@@ -560,6 +590,8 @@ defineItem('nuchart', {
       b.classList.toggle('on', !!it.chain);
       nuPaint(el, it); queueSave(page.id); SND.tick();
     });
+    vb.dataset.nuToolbar = 'view'; cb.dataset.nuToolbar = 'chain';
+    cb.setAttribute('aria-pressed', String(!!it.chain));
     if(it.chain) cb.classList.add('on');
     mk('⌕', 'Go to a nuclide by name — U238, Tc-99m, 14C', b => nuAsk(b, it, el, page));
     mk('⟲', 'The whole chart again', () => { nuHome(el, it, page); SND.pop(); });
@@ -567,6 +599,25 @@ defineItem('nuchart', {
   },
   wire(el, it, page){
     const fig = el.querySelector('.nuc'), svg = el.querySelector('.nusvg');
+    fig.addEventListener('pointerdown', e => { if(e.target.closest('.nuviews,.nuactions,.nuiso')) e.stopPropagation(); });
+    fig.addEventListener('click', e => {
+      const b = e.target.closest('[data-nu-view],[data-nu-action]');
+      if(!b) return;
+      e.stopPropagation();
+      if(b.dataset.nuView){ it.view = b.dataset.nuView; nuRecolour(el, it); }
+      else switch(b.dataset.nuAction){
+        case 'find': nuAsk(b, it, el, page); return;
+        case 'chain': it.chain = it.chain ? 0 : 1; nuPaint(el, it); break;
+        case 'home': nuHome(el, it, page); break;
+        case 'in': nuZoom(el, it, page, 1 / 1.35); break;
+        case 'out': nuZoom(el, it, page, 1.35); break;
+      }
+      queueSave(page.id); SND.tick();
+    });
+    fig.addEventListener('keydown', e => {
+      if(e.target.closest('button,.nuiso')) e.stopPropagation();
+      if(e.target.closest('.nuiso') && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); e.target.closest('.nuiso').click(); }
+    });
     if(PLOT_MOVE.has(it.id)) el.classList.add('mmove');
     fig.addEventListener('pointerdown', e => nuDown(e, el, it, page));
     svg.addEventListener('pointermove', e => {
@@ -574,7 +625,7 @@ defineItem('nuchart', {
       nuHover(el, it, nuPickAt(nuHit(el, it, e)));
     });
     svg.addEventListener('pointerleave', () => nuHover(el, it, null));
-    fig.addEventListener('wheel', e => {
+    svg.addEventListener('wheel', e => {
       if(e.ctrlKey || e.metaKey || PLOT_MOVE.has(it.id) || !el.classList.contains('sel')) return;
       e.preventDefault(); e.stopPropagation();
       nuZoom(el, it, page, e.deltaY > 0 ? 1.13 : 1 / 1.13, nuHit(el, it, e));
@@ -594,21 +645,34 @@ defineItem('nuchart', {
   forget(it){ PLOT_MOVE.delete(it.id); },
   css: `
 /* ---------- the chart of the nuclides ---------- */
-.nuc{container-type:inline-size;color:var(--ink)}
-.nusvg{display:block;width:100%;height:auto;overflow:hidden;touch-action:none;font-family:var(--mono);
-  background:color-mix(in srgb,var(--ink) 4%,transparent);border-radius:.4cqw}
+.nuc{container-type:inline-size;color:var(--ink);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --nu-muted:color-mix(in srgb,var(--ink) 66%,var(--paper));--nu-line:color-mix(in srgb,var(--ink) 12%,transparent);
+  border:1px solid var(--nu-line);border-radius:2cqw;background:var(--paper);overflow:hidden;
+  box-shadow:0 .3cqw 1cqw color-mix(in srgb,var(--ink) 4%,transparent);font-size:1.55cqw}
+.nuheader{display:flex;align-items:center;justify-content:space-between;gap:2cqw;padding:2.6cqw 3cqw 2cqw}
+.nuheader h3{font:650 2.65cqw/1.15 system-ui,sans-serif;letter-spacing:-.035em;margin:0}
+.nuheader p{font-size:1.35cqw;line-height:1.5;margin:.6cqw 0 0;color:var(--nu-muted)}
+.nuheader p span{margin-left:.25em}
+.nuviews{display:flex;padding:.35cqw;gap:.2cqw;border-radius:1cqw;background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.nuviews button{padding:.85cqw 1.3cqw;border-radius:.75cqw;font-size:1.4cqw;font-weight:550;line-height:1.2;white-space:nowrap;color:var(--nu-muted)}
+.nuviews button[aria-pressed="true"]{background:var(--paper);color:var(--ink);box-shadow:0 .15cqw .5cqw #00000016}
+.nuviews button:active,.nuactions button:active{background:color-mix(in srgb,var(--ink) 13%,var(--paper))}
+.nuchartbox{padding:1cqw 2.5cqw 0}
+.nusvg{display:block;width:100%;height:auto;overflow:hidden;touch-action:none;font-family:inherit;
+  background:color-mix(in srgb,var(--ink) 2%,var(--paper));border-radius:1cqw}
 .item.sel[data-type="nuchart"] .nusvg{cursor:crosshair}
+.item.sel[data-type="nuchart"] .nusvg.panning{cursor:grabbing}
 .item.mmove[data-type="nuchart"] .nusvg{cursor:move}
 .item[data-type="nuchart"] .rs{display:none}
 /* the rules: the magic numbers over the squares, N = Z behind them */
-.nusvg .numag{stroke:color-mix(in srgb,var(--ink) 42%,transparent);fill:none}
-.nusvg .nudiag{stroke:color-mix(in srgb,var(--ink) 24%,transparent);fill:none}
+.nusvg .numag{stroke:color-mix(in srgb,var(--ink) 16%,transparent);fill:none}
+.nusvg .nudiag{stroke:color-mix(in srgb,var(--ink) 20%,transparent);fill:none}
 .nusvg .nurule{stroke:color-mix(in srgb,var(--ink) 40%,transparent);stroke-width:.05;fill:none}
 /* the counts, in user units so they keep their size as the chart is zoomed */
 .nusvg .nut{fill:var(--soft);text-anchor:middle;dominant-baseline:central}
 .nusvg .nut.r{text-anchor:end}
 .nusvg .nut.mg{fill:var(--ink);font-weight:700}
-.nusvg .nuaxn,.nusvg .nuaxz{fill:var(--soft);opacity:.8;letter-spacing:.14em;dominant-baseline:central;
+.nusvg .nuaxn,.nusvg .nuaxz{fill:var(--nu-muted);font-weight:500;letter-spacing:-.015em;dominant-baseline:central;
   stroke:var(--paper);paint-order:stroke;stroke-linejoin:round}
 .nusvg .nuaxn{text-anchor:end}
 .nusvg .nuaxz{text-anchor:start}
@@ -624,47 +688,66 @@ defineItem('nuchart', {
 .nusvg .nualab{fill:var(--ink);text-anchor:middle;dominant-baseline:central;font-weight:600;
   stroke:var(--paper);stroke-width:.09;paint-order:stroke}
 /* the key */
-.nukey{display:flex;flex-wrap:wrap;align-items:center;gap:.25em 1.1cqw;margin-top:.75cqw;
-  font-family:var(--mono);font-size:1.15cqw;opacity:.85}
+.nulegend{padding:1.8cqw 3cqw}
+.nulegendtitle{display:flex;justify-content:space-between;gap:1em;font-size:1.3cqw;margin-bottom:1cqw;color:var(--nu-muted)}
+.nulegendtitle b{font-weight:600;color:var(--ink)}
+.nukey{display:flex;flex-wrap:wrap;align-items:center;gap:.65em 1.5cqw;font-size:1.4cqw;color:var(--nu-muted)}
 .nukey span{display:inline-flex;align-items:center;gap:.4em;white-space:nowrap}
 .nukey i{width:.85em;height:.85em;border-radius:.18em;background:var(--kc);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ink) 18%,transparent)}
-.nukey em{font-style:normal;opacity:.55;letter-spacing:.06em}
-.nukey.ramp{gap:.25em 0}
-.nukey.ramp span{gap:.25em;margin-right:.55em}
-.nukey.ramp i{border-radius:0;margin-right:-.1em}
-.nukey.ramp em{margin-left:.9em}
+.nukey.ramp{flex-wrap:nowrap;gap:.25cqw;align-items:flex-start}
+.nukey.ramp span{display:flex;flex:1;min-width:0;flex-direction:column;align-items:flex-start;gap:.5cqw;font-size:1.15cqw}
+.nukey.ramp i{width:100%;height:1.1cqw;border-radius:.15cqw}
 /* the line the pointer writes, and the foot */
-.nuhov{font-family:var(--mono);font-size:1.25cqw;letter-spacing:.05em;color:var(--soft);min-height:1.5em;
-  padding-top:.7cqw}
+.nunav{display:flex;align-items:center;justify-content:space-between;gap:1cqw;padding:1cqw 3cqw;border-top:1px solid var(--nu-line)}
+.nuactions{display:flex;align-items:center;gap:.3cqw;flex-shrink:0}
+.nuactions button{font-size:1.3cqw;font-weight:550;line-height:1.2;padding:.8cqw;border-radius:.65cqw;color:var(--nu-muted)}
+.nuactions button:hover{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink)}
+.nuactions button[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
+.nuzoom{font-size:1.2cqw;font-variant-numeric:tabular-nums;min-width:3em;text-align:center;color:var(--nu-muted)}
+.nuhov{font-size:1.2cqw;line-height:1.5;color:var(--nu-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nuhov b{color:var(--ink);font-weight:600;margin-right:.5em}
-.nufacts{font-family:var(--mono);font-size:1.45cqw;line-height:1.5}
+.nufacts{font-size:1.5cqw;line-height:1.5;padding:2.3cqw 3cqw 2.7cqw;border-top:1px solid var(--nu-line);
+  background:color-mix(in srgb,var(--ink) 2.5%,var(--paper));font-variant-numeric:tabular-nums}
 .nufacts .nunone{opacity:.5;letter-spacing:.06em}
-.nutop{display:flex;align-items:baseline;gap:.7em;margin-bottom:.3em}
-.nufacts .nubig{font-size:2.1em;font-weight:700;line-height:1;
-  color:color-mix(in srgb,var(--nc,var(--ink)) 72%,var(--ink))}
-.nufacts .nutit{font-size:1.05em;font-weight:600;letter-spacing:.03em}
-.nufacts .nutit small{display:block;font-weight:400;font-size:.72em;opacity:.6;letter-spacing:.09em;
-  text-transform:uppercase;margin-top:.15em}
-.nurow{display:block;margin-top:.2em}
-.nurow>i:first-child{font-style:normal;opacity:.45;text-transform:uppercase;letter-spacing:.11em;font-size:.8em;
-  display:inline-block;min-width:7em}
-.nurow i{font-style:normal;opacity:.55}
+.nutop{display:flex;align-items:center;gap:1.6cqw;margin-bottom:2cqw}
+.nufacts .nubig{display:flex;align-items:center;justify-content:center;min-width:7.5cqw;height:6.5cqw;padding:.6cqw 1cqw;
+  border-radius:1.2cqw;font-size:3cqw;font-weight:650;line-height:1;letter-spacing:-.04em;
+  color:var(--ink);background:color-mix(in srgb,var(--nc,var(--ink)) 13%,var(--paper));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--nc,var(--ink)) 22%,transparent)}
+.nufacts .nutit{font-size:2cqw;font-weight:600;letter-spacing:-.02em}
+.nufacts .nutit small{display:block;font-weight:400;font-size:1.3cqw;color:var(--nu-muted);letter-spacing:0;margin-top:.3cqw}
+.numetrics{display:grid;grid-template-columns:2fr 1fr 1fr;gap:2cqw;margin-bottom:1.4cqw}
+.numetrics>div+div{padding-left:2cqw;border-left:1px solid var(--nu-line)}
+.numetrics small{display:block;font-size:1.25cqw;color:var(--nu-muted);margin-bottom:.4cqw}
+.numetrics strong{display:block;font-size:1.85cqw;font-weight:600;letter-spacing:-.025em}
+.nuabundance{font-size:1.25cqw;color:var(--nu-muted);margin:.3cqw 0 1.5cqw}
+.nurow{display:grid;grid-template-columns:7cqw minmax(0,1fr);gap:1.5cqw;margin-top:1.2cqw;align-items:baseline}
+.nurow>i:first-child{font-style:normal;color:var(--nu-muted);font-size:1.25cqw}
+.nuvalue{min-width:0;overflow-wrap:anywhere}
+.nurow i{font-style:normal;color:var(--nu-muted)}
 .nurow u{text-decoration:none;font-weight:600}
-.nurow b{font-weight:400;opacity:.55}
+.nurow b{font-weight:500;color:var(--nu-muted)}
+.nuenergies{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75cqw}
+.nuenergy{display:flex;flex-direction:column;gap:.2cqw;border-radius:.65cqw;background:color-mix(in srgb,var(--ink) 4%,transparent);padding:.8cqw 1cqw;font-size:1.25cqw;white-space:nowrap}
+.nuenergy b{font-size:1.15cqw}
 .nubr{display:inline-flex;align-items:baseline;gap:.35em;margin-right:1em;white-space:nowrap}
 .nubr::before{content:"";align-self:center;width:.6em;height:.6em;border-radius:.15em;background:var(--nc,var(--ink))}
-.nubr em{font-style:normal;opacity:.7}
+.nubr em{font-style:normal;color:var(--nu-muted)}
 .nuiso{display:inline-flex;align-items:baseline;gap:.4em;margin-right:1em;cursor:pointer;white-space:nowrap;
   border-bottom:1px dotted color-mix(in srgb,var(--ink) 35%,transparent)}
 .nuiso:hover{border-bottom-color:var(--accent);color:var(--accent)}
 .nuiso em{font-style:normal;opacity:.6;font-size:.9em}
+.nuc figcaption:empty{display:none}
+.nuc figcaption:not(:empty){padding:1cqw 3cqw}
+@media print{.nuviews,.nunav{display:none}.nuc{box-shadow:none;break-inside:avoid}}
+@media(prefers-contrast:more){.nuc{--nu-muted:var(--ink);--nu-line:var(--ink)}}
 /* the ⌕ box */
-.nuask{position:fixed;z-index:83;display:none;width:262px;padding:10px;border-radius:13px;font-family:var(--mono);
+.nuask{position:fixed;z-index:83;display:none;width:min(320px,calc(100vw - 16px));padding:12px;border-radius:15px;font-family:system-ui,sans-serif;
   will-change:transform,filter,opacity}
 .nuask.open{display:block}
 .nuask input{width:100%;box-sizing:border-box;background:rgba(255,255,255,.07);border:0;outline:0;border-radius:8px;
-  color:inherit;font-family:var(--mono);font-size:12px;padding:7px 9px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+  color:inherit;font-family:inherit;font-size:13px;padding:10px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
 .nuask input::placeholder{color:rgba(233,234,239,.35)}
 .nuask input:focus{box-shadow:inset 0 0 0 1.5px var(--accent)}
 .nufound{font-size:10.5px;letter-spacing:.04em;color:rgba(233,234,239,.8)}

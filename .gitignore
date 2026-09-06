@@ -25,6 +25,9 @@ tools/shots/run/
 .agents/
 .codex/
 
+# Graphify's local codebase graph and generated reports
+graphify-out/
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

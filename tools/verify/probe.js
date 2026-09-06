@@ -7555,15 +7555,77 @@
       ok('sheet: and you can pull back far enough to see it all', zMin() < 0.05, zMin());
     });
 
+    /* ---- the binary orbit: one record, one physically consistent still ---- */
+    await stage('binary orbit', async function () {
+      var em = { id:'orbit-test', type:'orbit', m1:3.003e-6, m2:3.694e-8,
+        a:.00257, e:.0549, inc:0, arg:0, mean:62, look:'space', tex1:'earth', tex2:'moon',
+        vectors:'velocity', marks:1, area:1 };
+      var ef = orbFacts(em);
+      ok('orbit: Earth–Moon comes out to its 27.3-day period',
+        Math.abs(ef.period * 365.25 - 27.3) < .2, ef.period * 365.25);
+      ok('orbit: the two barycentric semi-major axes add to the relative one',
+        Math.abs(ef.a1 + ef.a2 - em.a) < 1e-12, ef.a1 + ' + ' + ef.a2);
+      var oe = orbKepler(137, .82), om = 137 * Math.PI / 180;
+      ok('orbit: Kepler equation converges for a strongly eccentric system',
+        Math.abs(oe - .82 * Math.sin(oe) - om) < 1e-10, oe - .82 * Math.sin(oe) - om);
+      var p1 = orbBodyPoint(em, 1), p2 = orbBodyPoint(em, 2);
+      ok('orbit: both bodies balance exactly around their barycentre',
+        Math.abs(em.m1 * (p1.x - ORB_CX) + em.m2 * (p2.x - ORB_CX)) < 1e-10 &&
+        Math.abs(em.m1 * (p1.y - ORB_CY) + em.m2 * (p2.y - ORB_CY)) < 1e-10,
+        JSON.stringify([p1.x, p1.y, p2.x, p2.y]));
+      var mapA = orbPlanetMap('earth', 424242), mapAgain = orbPlanetMap('earth', 424242);
+      var mapB = orbPlanetMap('earth', 424243);
+      ok('orbit: procedural RGB maps are deterministic, cached and seed-sensitive',
+        /^data:image\/png;base64,/.test(mapA) && mapA.length > 100 && mapA === mapAgain && mapA !== mapB,
+        mapA.length + ' bytes / ' + ORB_MAP_CACHE.size + ' cached');
+      var made = ADD_KINDS.orbit.make({ id:'orbit-card', x:0, y:0, rot:0, z:1, lay:'base' });
+      made.tex1 = 'earth'; made.tex2 = 'moon';
+      var firstSeed = made.seed1, firstMap = orbPlanetMap(made.tex1, firstSeed);
+      orbReroll(made, 1);
+      ok('orbit: each component can generate and persist a new surface variation',
+        made.seed1 !== firstSeed && orbPlanetMap(made.tex1, made.seed1) !== firstMap,
+        firstSeed + ' -> ' + made.seed1);
+      var host = document.createElement('div'); host.innerHTML = specOf(made).html(made, { live:false });
+      specOf(made).mount(host, made, { live:false });
+      ok('orbit: its still carries controls, time marks, metrics and two procedural surface maps',
+        host.querySelectorAll('.orbobject').length === 2 && host.querySelectorAll('.orbtickhit').length === 12 &&
+        !!host.querySelector('.orbphase input') && host.querySelectorAll('.orbmetrics > span').length === 4 &&
+        host.querySelectorAll('image.orbmap').length === 2,
+        host.innerText.slice(0, 180));
+      ok('orbit: students can choose stars, planets, compact objects and four diagram styles',
+        ORB_TEXTURES.length >= 10 && ORB_PLANET_TEXTURES.size === 4 && ORB_LOOKS.length === 4,
+        ORB_TEXTURES.length + ' textures / ' + ORB_PLANET_TEXTURES.size + ' procedural / ' + ORB_LOOKS.length + ' looks');
+      var solar = ADD_KINDS.solar.make({ id:'solar-card', x:0, y:0, rot:0, z:1, lay:'base' });
+      var earth0 = orbSolarPoint(solar, ORB_SOLAR[2]), earthLater = orbSolarPoint(solar, ORB_SOLAR[2], 90);
+      ok('orbit: the Solar System model carries eight planets with physical periods and changing positions',
+        solar.mode === 'solar' && ORB_SOLAR.length === 8 && Math.abs(ORB_SOLAR[2].period - 365.256) < .001 &&
+        Math.hypot(earth0.x-earthLater.x,earth0.y-earthLater.y) > 20,
+        ORB_SOLAR.map(function (p) { return p.name; }).join(', '));
+      var sf = orbSolarFacts(solar);
+      ok('orbit: the focused planet exposes Keplerian distance, speed, period and Earth-relative mass',
+        sf.planet.id === 'earth' && sf.r > .98 && sf.r < 1.02 && sf.speed > 29 && sf.speed < 31 && sf.planet.mass === 1,
+        JSON.stringify({r:sf.r,speed:sf.speed,period:sf.period,mass:sf.planet.mass}));
+      var solarHost = document.createElement('div'); solarHost.innerHTML = specOf(solar).html(solar, { live:false });
+      specOf(solar).mount(solarHost, solar, { live:false });
+      ok('orbit: the Solar System still renders eight selectable, procedurally textured planets and a shared epoch control',
+        solarHost.querySelectorAll('.solarplanet').length === 8 && solarHost.querySelectorAll('.solarlegend button').length === 8 &&
+        solarHost.querySelectorAll('image.orbmap').length === 8 && solarHost.querySelector('.orbphase input').max === String(ORB_SOLAR_SPAN),
+        solarHost.querySelectorAll('.solarplanet').length + ' planets / ' + solarHost.querySelectorAll('image.orbmap').length + ' maps');
+      solar.solarView = 'inner'; orbPaint(solarHost, solar);
+      ok('orbit: the inner-system view uses a linear distance scale and removes the outer four orbits',
+        solarHost.querySelectorAll('.solarplanet').length === 4 && Math.abs(orbSolarRadius(solar,1.72)-183) < 1e-9,
+        solarHost.querySelectorAll('.solarplanet').length + ' inner planets');
+    });
+
     /* ---- chemistry: the library, the molecule and the periodic table ---- */
     await stage('chemistry', async function () {
       var page = sheet();
       page.items = []; await render();
       /* the keys find the molecule under the pointer, so the whole sheet must be on screen */
       fitToDesk(true); await sleep(150);
-      ok('chem: Science holds molecules, Feynman diagrams and logic circuits', !!TOOL_CATS.science &&
-        palTools('science').length === 9 &&
-        ['molecule','feynman','circuit','atlas','country','continent'].every(function (kind) {
+      ok('chem: Science holds molecules, orbits, the Solar System, Feynman diagrams and logic circuits', !!TOOL_CATS.science &&
+        palTools('science').length === 11 &&
+        ['molecule','orbit','solar','feynman','circuit','atlas','country','continent'].every(function (kind) {
           return palTools('science').some(function (t) { return t.kind === kind; });
         }),
         palTools('science').map(function (t) { return t.kind; }).join(','));
@@ -8633,6 +8695,26 @@
          elements away from where it was aimed. */
       var nfig = nel.querySelector('.nuc');
       nfig.style.width = '820px'; await sleep(40);
+      var fullAspect = nuWin(np).w / nuWin(np).h;
+      np.zw = 33; nuPaint(nel, np);
+      ok('nuchart: revealing element labels preserves the chart aspect ratio',
+        Math.abs(nuWin(np).w / nuWin(np).h - fullAspect) < .000001);
+      var inspector = nel.querySelector('.nutop');
+      nel.querySelector('[data-nu-action="in"]').click();
+      ok('nuchart: visible zoom controls zoom without rebuilding the inspector',
+        np.zw < 33 && nel.querySelector('.nutop') === inspector);
+      nel.querySelector('[data-nu-view="half"]').click();
+      ok('nuchart: segmented views keep the key and floating toolbar in sync',
+        np.view === 'half' && nel.querySelector('[data-nu-view="half"]').getAttribute('aria-pressed') === 'true' &&
+        nel.querySelector('[data-nu-toolbar="view"]').textContent === 'Half-life' &&
+        nel.querySelector('.nuviewlabel').textContent === 'Half-life');
+      nel.querySelector('[data-nu-action="chain"]').click();
+      ok('nuchart: visible chain control synchronizes both controls', np.chain === 1 &&
+        nel.querySelector('[data-nu-toolbar="chain"]').getAttribute('aria-pressed') === 'true');
+      nel.querySelector('[data-nu-action="chain"]').click();
+      nel.querySelector('[data-nu-view="decay"]').click();
+      nel.querySelector('[data-nu-action="home"]').click();
+      ok('nuchart: reset restores the complete chart', np.zw === NU_NW && np.cn === NU_NW / 2);
       /* where a nuclide is on the screen — the inverse of what nuHit does */
       function nuSpot(z, n, fy) {
         var svg = nel.querySelector('.nusvg'), r = svg.getBoundingClientRect(), w = nuWin(np);
@@ -8705,6 +8787,10 @@
       ok('nuchart: Enter goes there and zooms in on it',
         np.sel === '43:56:m' && Math.abs(np.cn - 56.5) < .01 && np.zw <= 26 && NU_ASK === null,
         np.sel + ' @ ' + np.cn + ' w' + np.zw);
+      var groundState = nel.querySelector('.nuiso[data-k="43:56"]');
+      ok('nuchart: a metastable state always offers its ground state', !!groundState);
+      if(groundState) groundState.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      ok('nuchart: state links work from the keyboard', np.sel === '43:56');
       nfig.style.width = '';
       np.zw = NU_NW; np.cn = NU_NW / 2; np.cz = NU_ZH / 2; np.sel = '92:146'; nuPaint(nel, np);
       var nps = buildPage(page, false, {});
