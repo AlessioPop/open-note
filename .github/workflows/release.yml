@@ -67,6 +67,10 @@ jobs:
 
       - run: npm ci
 
+      - name: Install Arch packaging tools
+        if: matrix.target == 'linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y libarchive-tools
+
       - name: Package
         run: npm run dist:${{ matrix.target }} -- --publish never
         env:
