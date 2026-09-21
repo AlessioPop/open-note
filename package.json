@@ -3,6 +3,7 @@
   "productName": "Open Note",
   "version": "0.1.0-alpha.6",
   "description": "An endless canvas for notes, sketches, data and maths.",
+  "homepage": "https://github.com/AlessioPop/open-note",
   "author": "Alessio Popovic <alessiopopovic@gmail.com>",
   "license": "PolyForm-Noncommercial-1.0.0",
   "private": true,
@@ -14,6 +15,7 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:linux": "electron-builder --linux",
+    "dist:arch": "electron-builder --linux pacman --x64",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac"
   },
@@ -36,12 +38,17 @@
       "desktop/icon.png"
     ],
     "linux": {
-      "target": ["AppImage"],
+      "target": ["AppImage", "pacman"],
       "icon": "desktop/icon.png",
       "category": "Office",
       "synopsis": "An endless canvas for notes, sketches, data and maths",
       "executableName": "open-note",
       "syncDesktopName": true
+    },
+    "pacman": {
+      "artifactName": "${name}-${version}-${arch}.pkg.tar.xz",
+      "depends": ["alsa-lib", "gtk3", "nss", "libxss", "libxtst", "xdg-utils", "libnotify", "libsecret", "mesa", "libcups", "libxkbcommon", "systemd-libs"],
+      "compression": "xz"
     },
     "win": {
       "target": [

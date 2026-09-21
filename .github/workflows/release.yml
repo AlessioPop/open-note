@@ -80,6 +80,7 @@ jobs:
           if-no-files-found: error
           path: |
             dist/*.AppImage
+            dist/*.pkg.tar.xz
             dist/*.exe
             dist/*.dmg
 
@@ -99,6 +100,7 @@ jobs:
           # the verify-report artifact, which has no business on a release page
           files: |
             artifacts/**/*.AppImage
+            artifacts/**/*.pkg.tar.xz
             artifacts/**/*.exe
             artifacts/**/*.dmg
           generate_release_notes: true

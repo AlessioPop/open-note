@@ -81,6 +81,7 @@ Then take it out again: one self-contained `.html` anyone can open, a PDF, or a 
 | | File | First run |
 | --- | --- | --- |
 | Linux | `.AppImage` | `chmod +x` it, then open it. Nothing is installed. |
+| Arch Linux (x86_64) | `.pkg.tar.xz` | Install with `sudo pacman -U ./open-note-*.pkg.tar.xz`, then launch **Open Note** from your app menu. |
 | Windows | `-setup.exe` to install, or `-portable.exe` to just run it | SmartScreen will warn. **More info → Run anyway.** |
 | macOS | `.dmg` | Right-click the app → **Open**, once. Double-clicking shows a "damaged" error. |
 
@@ -92,6 +93,11 @@ The alpha builds are **unsigned**, which is what those two warnings are about �
 npm install
 npm start
 ```
+
+To build the Arch Linux package on Linux, run `npm ci` followed by
+`npm run dist:arch -- --publish never`. The installable package is written to
+`dist/` and includes Electron; pacman installs its system library dependencies.
+`npm run dist:linux -- --publish never` builds both the AppImage and Arch package.
 
 **In a browser.** Double-click `index.html`, or serve the folder:
 
