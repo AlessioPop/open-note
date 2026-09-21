@@ -72,7 +72,20 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y libarchive-tools
 
       - name: Package
-        run: npm run dist:${{ matrix.target }} -- --publish never
+        shell: bash
+        run: |
+          # Keep downloaded tools between retries when their host times out.
+          # Other build failures should still fail immediately.
+          for attempt in 1 2 3; do
+            if npm run dist:${{ matrix.target }} -- --publish never 2>&1 | tee "$RUNNER_TEMP/package.log"; then
+              exit 0
+            fi
+            if ! grep -Eq 'Response code (502|503|504)|ETIMEDOUT|ECONNRESET|EAI_AGAIN' "$RUNNER_TEMP/package.log" || [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "Packaging download failed; retrying in 15 seconds (attempt $attempt of 3)."
+            sleep 15
+          done
         env:
           # These are unsigned alpha builds. Without this, electron-builder hunts
           # for a signing identity on macOS and fails the job when it finds none.
